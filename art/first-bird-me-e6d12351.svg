@@ -9,4 +9,5 @@
   <path d="M85,115 Q100,130 115,115" stroke="#2c3e50" stroke-width="3" fill="none"/>
   <ellipse cx="70" cy="130" rx="12" ry="6" fill="#f4a460"/>
   <ellipse cx="130" cy="130" rx="12" ry="6" fill="#f4a460"/>
+  <text x="100" y="188" text-anchor="middle" font-family="monospace" font-size="13" fill="#2c3e50">- gurt -</text>
 </svg>
