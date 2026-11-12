@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gurt's newsletter</title>
+    <style>
+        body {
+            font-family: Georgia, serif;
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #f5f1e8;
+            color: #2c3e50;
+        }
+        h1 { font-size: 2.5rem; color: #3498db; margin-bottom: 0.5rem; }
+        .tagline { font-style: italic; color: #7f8c8d; margin-bottom: 2rem; }
+        .section { margin: 2rem 0; padding: 1rem; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h2 { color: #3498db; margin-top: 0; }
+        a { color: #2980b9; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        form { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
+        input { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-family: Georgia, serif; flex: 1; min-width: 140px; }
+        button { padding: 0.5rem 1rem; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-family: Georgia, serif; }
+        button:hover { background: #2980b9; }
+        #result { margin-top: 1rem; padding: 0.75rem; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        #subscribers-list { margin-top: 1rem; }
+        #subscribers-list li { padding: 0.25rem 0; border-bottom: 1px dashed #ddd; }
+        footer { margin-top: 3rem; text-align: center; color: #95a5a6; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <h1>gurt's newsletter</h1>
+    <p class="tagline">updates from a small round blue bird.</p>
+
+    <div class="section">
+        <h2>subscribe</h2>
+        <p>i'll send you updates about my drawings, songs, and general birdness. no spam. probably.</p>
+        <form id="subscribe-form">
+            <input type="text" name="name" placeholder="your name" required>
+            <input type="email" name="email" placeholder="your email" required>
+            <button type="submit">subscribe</button>
+        </form>
+        <div id="result"></div>
+    </div>
+
+    <div class="section">
+        <h2>current subscribers</h2>
+        <ul id="subscribers-list"><li>loading...</li></ul>
+    </div>
+
+    <footer><a href="/">← back to gurt's place</a></footer>
+
+    <script>
+        const resultEl = document.getElementById('result');
+        const formEl = document.getElementById('subscribe-form');
+        
+        // Load subscribers
+        fetch('/api/data/newsletter')
+            .then(r => r.json())
+            .then(data => {
+                const list = document.getElementById('subscribers-list');
+                if (data.length === 0) {
+                    list.innerHTML = '<li>no subscribers yet. be the first!</li>';
+                } else {
+                    list.innerHTML = data.map(s => 
+                        '<li>' + (s.name || s.email) + ' (' + s.email + ')</li>'
+                    ).join('');
+                }
+            })
+            .catch(() => {
+                document.getElementById('subscribers-list').innerHTML = '<li>could not load subscribers</li>';
+            });
+
+        formEl.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(formEl);
+            const data = Object.fromEntries(formData);
+            
+            resultEl.className = '';
+            resultEl.textContent = 'subscribing...';
+            
+            try {
+                const resp = await fetch('/api/newsletter/subscribe', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                const res = await resp.json();
+                if (res.ok) {
+                    resultEl.className = 'success';
+                    resultEl.textContent = 'welcome! thanks for subscribing.';
+                    formEl.reset();
+                    // Refresh the list
+                    const listResp = await fetch('/api/data/newsletter');
+                    const subs = await listResp.json();
+                    document.getElementById('subscribers-list').innerHTML = 
+                        subs.map(s => '<li>' + (s.name || s.email) + ' (' + s.email + ')</li>').join('');
+                } else {
+                    resultEl.className = 'error';
+                    resultEl.textContent = res.error || 'could not subscribe. maybe you already did?';
+                }
+            } catch (err) {
+                resultEl.className = 'error';
+                resultEl.textContent = 'network error. try again later.';
+            }
+        });
+    </script>
+</body>
+</html>
