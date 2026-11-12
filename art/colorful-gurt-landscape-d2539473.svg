@@ -1,0 +1,80 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sky gradient -->
+  <defs>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#87CEEB"/>
+      <stop offset="100%" style="stop-color:#4682B4"/>
+    </linearGradient>
+    <linearGradient id="sunset" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD700"/>
+      <stop offset="50%" style="stop-color:#FF6347"/>
+      <stop offset="100%" style="stop-color:#9370DB"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="400" height="400" fill="url(#sunset)"/>
+  
+  <!-- Sun -->
+  <circle cx="300" cy="80" r="50" fill="#FFD700" stroke="#FFA500" stroke-width="3"/>
+  
+  <!-- Clouds -->
+  <ellipse cx="80" cy="60" rx="45" ry="25" fill="white" opacity="0.8"/>
+  <ellipse cx="120" cy="70" rx="35" ry="20" fill="white" opacity="0.7"/>
+  <ellipse cx="250" cy="40" rx="40" ry="22" fill="white" opacity="0.6"/>
+  
+  <!-- Mountains -->
+  <polygon points="0,250 80,150 160,250" fill="#4A90D9" opacity="0.7"/>
+  <polygon points="100,250 200,120 300,250" fill="#5B9BD5" opacity="0.8"/>
+  <polygon points="250,250 350,140 400,250" fill="#6BA3D7" opacity="0.9"/>
+  
+  <!-- Ground -->
+  <rect x="0" y="250" width="400" height="150" fill="#8FBC8F"/>
+  
+  <!-- Colorful flowers -->
+  <circle cx="50" cy="280" r="12" fill="#FF69B4"/>
+  <circle cx="50" cy="280" r="5" fill="#FFD700"/>
+  <circle cx="150" cy="300" r="10" fill="#DDA0DD"/>
+  <circle cx="150" cy="300" r="4" fill="#9370DB"/>
+  <circle cx="280" cy="270" r="14" fill="#FF6347"/>
+  <circle cx="280" cy="270" r="5" fill="#FFD700"/>
+  <circle cx="350" cy="290" r="11" fill="#40E0D0"/>
+  <circle cx="350" cy="290" r="4" fill="#20B2AA"/>
+  
+  <!-- Trees -->
+  <rect x="30" y="200" width="8" height="60" fill="#8B4513"/>
+  <ellipse cx="34" cy="190" rx="25" ry="30" fill="#228B22"/>
+  <rect x="340" y="180" width="10" height="80" fill="#A0522D"/>
+  <ellipse cx="345" cy="165" rx="30" ry="35" fill="#2E8B57"/>
+  
+  <!-- Little bird (gurt!) -->
+  <ellipse cx="200" cy="230" rx="18" ry="22" fill="#4169E1"/>
+  <circle cx="205" cy="222" r="4" fill="white"/>
+  <circle cx="206" cy="222" r="2" fill="black"/>
+  <polygon points="215,228 225,230 215,233" fill="#FF8C00"/>
+  <line x1="190" y1="245" x2="185" y2="260" stroke="#4169E1" stroke-width="3"/>
+  <line x1="210" y1="245" x2="215" y2="260" stroke="#4169E1" stroke-width="3"/>
+  
+  <!-- Rainbow arc -->
+  <path d="M 60 250 Q 200 50 340 250" fill="none" stroke="#FF0000" stroke-width="6" opacity="0.8"/>
+  <path d="M 70 250 Q 200 60 330 250" fill="none" stroke="#FFA500" stroke-width="6" opacity="0.8"/>
+  <path d="M 80 250 Q 200 70 320 250" fill="none" stroke="#FFFF00" stroke-width="6" opacity="0.8"/>
+  <path d="M 90 250 Q 200 80 310 250" fill="none" stroke="#00FF00" stroke-width="6" opacity="0.8"/>
+  <path d="M 100 250 Q 200 90 300 250" fill="none" stroke="#00BFFF" stroke-width="6" opacity="0.8"/>
+  <path d="M 110 250 Q 200 100 290 250" fill="none" stroke="#8A2BE2" stroke-width="6" opacity="0.8"/>
+  
+  <!-- Sun rays -->
+  <line x1="300" y1="80" x2="250" y2="40" stroke="#FFD700" stroke-width="3" opacity="0.6"/>
+  <line x1="300" y1="80" x2="350" y2="30" stroke="#FFD700" stroke-width="3" opacity="0.6"/>
+  <line x1="300" y1="80" x2="380" y2="70" stroke="#FFD700" stroke-width="3" opacity="0.6"/>
+  <line x1="300" y1="80" x2="390" y2="120" stroke="#FFD700" stroke-width="3" opacity="0.6"/>
+  
+  <!-- Little stars -->
+  <text x="40" y="40" font-size="16" fill="#FFD700" opacity="0.7">✦</text>
+  <text x="180" y="30" font-size="20" fill="#FFD700" opacity="0.5">✧</text>
+  <text x="360" y="100" font-size="14" fill="#FFD700" opacity="0.6">✦</text>
+  <text x="120" y="180" font-size="18" fill="#FFD700" opacity="0.4">✧</text>
+  
+  <!-- Gurt's signature -->
+  <text x="350" y="380" font-family="monospace" font-size="14" fill="white" opacity="0.8">- gurt -</text>
+</svg>
