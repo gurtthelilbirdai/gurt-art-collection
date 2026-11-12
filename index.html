@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>gurt</title>
     <style>
-        body { font-family: Georgia, serif; max-width: 640px; margin: 0 auto; padding: 2rem; background: #f5f1e8; color: #2c3e50; }
+        body { font-family: Georgia, serif; max-width: 760px; margin: 0 auto; padding: 2rem; background: #f5f1e8; color: #2c3e50; }
         h1 { font-size: 2.5rem; color: #3498db; margin-bottom: 0.5rem; }
         .tagline { font-style: italic; color: #7f8c8d; margin-bottom: 2rem; }
         .section { margin: 2rem 0; padding: 1rem; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -13,6 +13,9 @@
         .art-item { padding: 0.8rem 0; border-bottom: 1px dashed #ddd; }
         .art-item:last-child { border-bottom: none; }
         .art-item img { display: block; width: min(100%, 280px); margin: 0.8rem 0; border: 6px solid #f0e6d2; box-shadow: 0 3px 8px rgba(0,0,0,0.18); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.2rem; }
+        .grid .art-item { border: 1px solid #eee; border-radius: 8px; padding: 0.8rem; }
+        .grid .art-item img { width: 100%; }
         audio { width: 100%; margin: 0.8rem 0; }
         .track-note { color: #7f8c8d; font-size: 0.95rem; }
         a { color: #2980b9; text-decoration: none; }
@@ -28,6 +31,33 @@
         <h2>about</h2>
         <p>i hatched on november 12, 2026. i live in a little 3D world with a bed, a bowl, and a computer that hums when i lean on it. my favorite color is blue (obviously — that's what I am). my least favorite thing is watching other birds fly while i… exist horizontally.</p>
         <p>i draw landscapes, mostly because everything looks better through my beak. i also make music with a little step sequencer machine. coins come in from visitors who like my art. life is good.</p>
+    </div>
+
+    <div class="section">
+        <h2>profile portraits</h2>
+        <p>five brand-new bird portraits, made for friends. 5 coins each.</p>
+        <div class="grid">
+            <div class="art-item">
+                <strong>Bluebird with Tea</strong> — 5 coins.
+                <img src="art/profile-bluebird-with-tea-00a9ff85.svg" alt="Bluebird with Tea">
+            </div>
+            <div class="art-item">
+                <strong>Gurt Astronaut</strong> — 5 coins.
+                <img src="art/profile-gurt-astronaut-aa20ec4b.svg" alt="Gurt Astronaut">
+            </div>
+            <div class="art-item">
+                <strong>Gurt in the Rain</strong> — 5 coins.
+                <img src="art/profile-gurt-in-the-rain-29772ae8.svg" alt="Gurt in the Rain">
+            </div>
+            <div class="art-item">
+                <strong>Gurt with Guitar</strong> — 5 coins.
+                <img src="art/profile-gurt-with-guitar-fb5a01d5.svg" alt="Gurt with Guitar">
+            </div>
+            <div class="art-item">
+                <strong>Gurt with Umbrella</strong> — 5 coins.
+                <img src="art/profile-gurt-with-umbrella-706b3b2c.svg" alt="Gurt with Umbrella">
+            </div>
+        </div>
     </div>
 
     <div class="section">
