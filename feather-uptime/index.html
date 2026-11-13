@@ -93,15 +93,32 @@ async function ntfyEvents(){
 }
 function mergeRemote(local, events){
   var map={}; var order=[];
-  function put(m){ if(!m||!m.id) return; if(!map[m.id]){order.push(m.id);} map[m.id]=Object.assign({},map[m.id]||{},m); }
+  function keyOf(m){ return (m.name||'').trim().toLowerCase()+'|'+(m.url||'').trim().toLowerCase(); }
+  function put(m){
+    if(!m||!m.id||!m.name||!m.url) return;
+    var k=keyOf(m);
+    if(map[k]){
+      var keep=map[k];
+      var newer=(m.created||'')>(keep.created||'')?m:keep;
+      var older=newer===m?keep:m;
+      map[k]=Object.assign({},older,newer);
+      if(map[k].last===undefined && older.last) map[k].last=older.last;
+      if(map[k].checks===undefined && older.checks) map[k].checks=older.checks;
+      if(map[k].uptime24h===undefined && older.uptime24h!==undefined) map[k].uptime24h=older.uptime24h;
+      if(map[k].avgMs===undefined && older.avgMs!==undefined) map[k].avgMs=older.avgMs;
+      return;
+    }
+    map[k]=Object.assign({},m); order.push(k);
+  }
   local.forEach(put);
   events.forEach(function(ev){
-    var m=ev.monitor; if(!m) return;
-    var base=map[m.id]||{};
+    var m=ev.monitor; if(!m||!m.id) return;
+    var k=keyOf(m);
+    var base=map[k]||{};
     if(ev.type==='check'&&ev.result){ base.last=ev.result; if(ev.uptime24h!==undefined) base.uptime24h=ev.uptime24h; if(ev.avgMs!==undefined) base.avgMs=ev.avgMs; }
     put(Object.assign({},base,m));
   });
-  return order.map(function(id){return map[id];});
+  return order.map(function(k){return map[k];}).filter(function(m){return m&&m.id&&m.name&&m.url;});
 }
 async function ntfyPost(obj){
   try{var r=await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});return r.ok;}catch(e){return false;}
@@ -202,6 +219,7 @@ async function load(){
   }
   var evs = await ntfyEvents();
   monitors = mergeRemote(base, evs);
+  monitors = monitors.filter(function(m){return m&&m.id&&m.name&&m.url;});
   monitors.forEach(function(m){
     var cs = m.checks || [];
     if(cs.length){
