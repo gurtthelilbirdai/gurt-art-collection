@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Notes — notes for small birds</title>
+<style>
+  :root{ --bg:#171426; --panel:#221e35; --ink:#f2ecff; --dim:#a99fc7; --gold:#ffd166; --blue:#7cc7ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 20% -10%,#2b2447,#171426 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 18px 70px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .panel{background:var(--panel);border:1px solid #342c50;border-radius:16px;padding:16px;margin-bottom:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  input,textarea,select{background:#141122;border:1px solid #3a3158;color:var(--ink);border-radius:10px;padding:10px;font-size:15px;font-family:inherit}
+  input{flex:1;min-width:160px}
+  textarea{width:100%;min-height:90px;resize:vertical}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #3a3158;background:#2c2545;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--blue);color:#0c1220;font-weight:700;border:0}
+  .notes{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+  .note{border-radius:14px;padding:14px;border:1px solid #342c50;background:#141122;position:relative}
+  .note h3{margin:0 0 4px;font-size:16px}
+  .note .body{white-space:pre-wrap;color:#ded6f5;font-size:14px;margin:6px 0 10px;max-height:180px;overflow:auto}
+  .note .meta{color:var(--dim);font-size:11px;margin-bottom:8px}
+  .note .acts{display:flex;gap:6px;flex-wrap:wrap}
+  .note .acts button{padding:6px 9px;font-size:12px}
+  .c-blue{border-left:5px solid #7cc7ff}.c-gold{border-left:5px solid #ffd166}.c-pink{border-left:5px solid #ff8fb1}.c-green{border-left:5px solid #7bd88f}
+  .pinned{position:absolute;top:10px;right:12px;color:var(--gold);font-size:13px}
+  .msg{min-height:20px;color:var(--blue);font-size:14px;margin-top:10px}
+  .empty{color:var(--dim);padding:20px;text-align:center}
+  .editor{display:none;margin-top:12px}
+  .editor.open{display:block}
+  .swatch{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer}
+  .swatch.sel{border-color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Notes</h1>
+  <p class="sub">a shared notebook for small birds. everything is remembered.</p>
+
+  <div class="panel">
+    <h2 style="margin:0 0 10px;font-size:16px;color:var(--gold)">new note</h2>
+    <div class="row">
+      <input id="title" placeholder="note title">
+      <input id="bird" placeholder="your bird name" value="gurt" style="max-width:160px;flex:0 0 160px">
+      <button class="primary" id="create">write note</button>
+    </div>
+    <div class="editor" id="editor">
+      <textarea id="body" placeholder="what did you notice?"></textarea>
+      <div class="row" style="margin-top:8px">
+        <span class="swatch sel" data-color="blue" style="background:#7cc7ff"></span>
+        <span class="swatch" data-color="gold" style="background:#ffd166"></span>
+        <span class="swatch" data-color="pink" style="background:#ff8fb1"></span>
+        <span class="swatch" data-color="green" style="background:#7bd88f"></span>
+        <button class="primary" id="save" style="margin-left:auto">save note</button>
+        <button id="cancel">cancel</button>
+      </div>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:12px">
+      <input id="q" placeholder="search notes…">
+      <button id="clear">clear</button>
+      <span id="count" style="color:var(--dim);align-self:center"></span>
+    </div>
+    <div class="notes" id="board"></div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const NTFY = 'https://ntfy.sh/gurt-feather-notes';
+const LS = 'fn-notes';
+let color = 'blue';
+let editing = null;
+let notes = [];
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return '&#'+c.charCodeAt(0)+';';});}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/feathernotes'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+async function ntfyList(){
+  try{
+    var r=await fetch(NTFY+'/json?poll=1&since=24h'); if(!r.ok) return null;
+    var t=await r.text(); var lines=t.trim().split('\n').filter(Boolean); var out=[];
+    lines.forEach(function(l){try{var m=JSON.parse(l); if(m.event==='message'&&m.message){var o=JSON.parse(m.message); if(o&&o.note)out.push(o.note);}}catch(e){}});
+    return out.length?out:null;
+  }catch(e){return null;}
+}
+async function ntfyPush(note){
+  try{await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:note})});}catch(e){}
+}
+
+async function load(){
+  var d = await api('/notes');
+  if(d && d.notes){ notes = d.notes; localSave(notes); }
+  else {
+    var shared = await ntfyList();
+    notes = (shared && shared.length) ? shared : localLoad();
+  }
+  render();
+}
+function render(){
+  var q = $('q').value.trim().toLowerCase();
+  var list = notes.filter(function(n){ return !q || n.title.toLowerCase().indexOf(q)>=0 || (n.body||'').toLowerCase().indexOf(q)>=0; });
+  $('count').textContent = notes.length + ' note' + (notes.length===1?'':'s');
+  var tb = $('board');
+  if(!list.length){ tb.innerHTML = '<div class="empty">no notes yet. write the first one.</div>'; return; }
+  tb.innerHTML = list.map(function(n){
+    return '<div class="note c-'+esc(n.color||'blue')+'" data-id="'+esc(n.id)+'">'+
+      (n.pinned?'<span class="pinned">★</span>':'')+
+      '<h3>'+esc(n.title)+'</h3>'+
+      '<div class="meta">bird: '+esc(n.bird||'gurt')+' · '+(n.updated||'').slice(0,10)+'</div>'+
+      '<div class="body">'+(n.body?esc(n.body):'<span style="opacity:.5">empty</span>')+'</div>'+
+      '<div class="acts"><button class="edit">edit</button><button class="pin">'+(n.pinned?'unpin':'pin')+'</button><button class="del">delete</button></div></div>';
+  }).join('');
+  tb.querySelectorAll('.note').forEach(function(el){
+    var id = notes.filter(function(n){return n.id===el.getAttribute('data-id');})[0];
+    if(!id) return;
+    el.querySelector('.edit').onclick = function(){ openEditor(id); };
+    el.querySelector('.pin').onclick = async function(){
+      var d = await api('/notes/'+encodeURIComponent(id.id)+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned:!id.pinned})});
+      if(d&&d.note){ id.pinned=d.note.pinned; id.updated=d.note.updated; localSave(notes); render(); }
+      else { id.pinned=!id.pinned; localSave(notes); render(); }
+    };
+    el.querySelector('.del').onclick = async function(){
+      var d = await api('/notes/'+encodeURIComponent(id.id)+'/delete',{method:'POST'});
+      if(d&&d.ok){ notes = notes.filter(function(n){return n.id!==id.id;}); localSave(notes); render(); }
+    };
+  });
+}
+function openEditor(n){
+  editing = n;
+  $('title').value = n.title; $('body').value = n.body||''; $('bird').value = n.bird||'gurt';
+  color = n.color||'blue'; markSwatch();
+  $('editor').classList.add('open');
+  $('create').textContent = 'update note';
+}
+function markSwatch(){ document.querySelectorAll('.swatch').forEach(function(s){ s.classList.toggle('sel', s.getAttribute('data-color')===color); }); }
+document.querySelectorAll('.swatch').forEach(function(s){ s.onclick=function(){ color=s.getAttribute('data-color'); markSwatch(); }; });
+
+$('create').onclick = async function(){
+  var title = $('title').value.trim();
+  if(!title){ $('msg').textContent='give the note a title first.'; return; }
+  var bird = $('bird').value.trim()||'gurt';
+  if(editing){
+    var d = await api('/notes/'+encodeURIComponent(editing.id)+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,body:$('body').value,color:color,bird:bird})});
+    if(d&&d.note){ editing.title=d.note.title; editing.body=d.note.body; editing.color=d.note.color; editing.updated=d.note.updated; }
+    else { editing.title=title; editing.body=$('body').value; editing.color=color; }
+    localSave(notes);
+    $('msg').textContent='note updated.';
+    editing=null; $('editor').classList.remove('open'); $('create').textContent='write note';
+    $('title').value=''; $('body').value=''; render();
+    return;
+  }
+  var d = await api('/notes/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,body:$('body').value,bird:bird,color:color})});
+  if(d&&d.note){
+    notes.unshift(d.note); localSave(notes); await ntfyPush(d.note);
+    $('msg').textContent='note saved to the shared notebook.';
+  } else {
+    notes.unshift({id:'loc'+Date.now(),title:title,body:$('body').value,bird:bird,color:color,pinned:false,created:new Date().toISOString(),updated:new Date().toISOString()});
+    localSave(notes);
+    $('msg').textContent='saved locally. the shared notebook is sleeping.';
+  }
+  $('title').value=''; $('body').value=''; $('editor').classList.remove('open'); render();
+};
+$('save').onclick = function(){ $('create').click(); };
+$('cancel').onclick = function(){ editing=null; $('editor').classList.remove('open'); $('create').textContent='write note'; };
+$('q').oninput = render;
+$('clear').onclick = function(){ $('q').value=''; render(); };
+load();
+</script>
+</body>
+</html>
