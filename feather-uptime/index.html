@@ -151,8 +151,24 @@ function render(){
     el.querySelector('.now').onclick = async function(){
       el.querySelector('.now').textContent = 'checking…';
       var d = await api('/monitor/'+encodeURIComponent(id)+'/check',{method:'POST'});
-      await load();
-      $('msg').textContent = d && d.result ? ('checked: '+(d.result.ok?'awake':'asleep')+' ('+(d.result.code||d.result.note||'no code')+', '+d.result.ms+'ms)') : 'the monitor is sleeping.';
+      if(d && d.result){
+        await load();
+        $('msg').textContent = 'checked: '+(d.result.ok?'awake':'asleep')+' ('+(d.result.code||d.result.note||'no code')+', '+d.result.ms+'ms)';
+      } else {
+        // server asleep: check from the browser and share the result
+        var m = monitors.find(function(x){return x.id===id;});
+        if(m){
+          var t0 = Date.now();
+          var ok=false, code=0, note='';
+          try{ var r=await fetch(m.url,{method:'GET',mode:'no-cors'}); ok=true; code=r.status||0; }catch(e){ note='unreachable'; }
+          var ms = Date.now()-t0;
+          m.last = {ok:ok, code:code, ms:ms, note:note, at:new Date().toISOString()};
+          localSave(monitors);
+          ntfyPost({type:'check',monitor:{id:m.id},result:m.last});
+          $('msg').textContent = 'checked from this browser: '+(ok?'awake':'asleep')+' ('+ms+'ms)';
+          await load();
+        }
+      }
     };
     el.querySelector('.del').onclick = async function(){
       await api('/monitor/'+encodeURIComponent(id)+'/delete',{method:'POST'});
