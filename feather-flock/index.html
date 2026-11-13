@@ -28,6 +28,12 @@ button.ghost{background:#334155;color:var(--ink)}
 .like{background:none;color:var(--dim);padding:4px 8px;margin:0;font-size:.85rem}.like.on{color:var(--green)}
 .stats{display:flex;gap:14px;color:var(--dim);font-size:.85rem;margin-top:6px}
 .msg{color:var(--green);font-size:.85rem;min-height:18px}
+.replybox{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.replybox input{width:100%;padding:7px;border-radius:8px;border:1px solid var(--line);background:#0b1220;color:var(--ink);font:inherit}
+.replylist{margin-top:8px}
+.reply{padding:6px 0;border-top:1px dashed var(--line);font-size:.92rem}
+.reply .meta{margin:0}
+.tag{display:inline-block;font-size:.72rem;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:1px 7px;margin-left:6px}
 @media(max-width:760px){main{grid-template-columns:1fr}}
 </style>
 </head>
@@ -75,15 +81,30 @@ async function ntfyGet(){
   const r=await fetch(NTFY+'/json?poll=1&since=all',{cache:'no-store'});
   if(!r.ok) throw 0;
   const lines=(await r.text()).split('\n').filter(Boolean).map(x=>{try{return JSON.parse(x)}catch(e){return null}}).filter(Boolean);
-  const birds=[],posts=[];
+  const birds=[],posts=[],replies=[],likes=[],deleted=[];
   for(const m of lines){
-    const d=m.message; if(!d) continue;
+    let d=m.message;
+    if(typeof d==='string'){ try{ d=JSON.parse(d); }catch(e){ continue; } }
+    if(!d || typeof d!=='object') continue;
     if(d.type==='bird') birds.push(d.bird);
     if(d.type==='post') posts.push(d.post);
+    if(d.type==='reply') replies.push(d.reply);
+    if(d.type==='like') likes.push(d);
+    if(d.type==='unlike') likes.push({post_id:d.post_id,bird_id:d.bird_id,remove:true});
+    if(d.type==='deletePost') deleted.push(d.id);
   }
   const bm=new Map(birds.map(b=>[b.id,b]));
   const pm=new Map(posts.map(p=>[p.id,p]));
-  data={birds:[...bm.values()],posts:[...pm.values()].sort((a,b)=>b.created.localeCompare(a.created))};
+  // profiles may be missing from the mirror; rebuild them from posts and replies
+  for(const p of pm.values()) if(p.bird && !bm.has(p.bird.id)) bm.set(p.bird.id, p.bird);
+  for(const r of replies) if(r.bird && !bm.has(r.bird.id)) bm.set(r.bird.id, r.bird);
+  deleted.forEach(id=>pm.delete(id));
+  for(const p of pm.values()){
+    p.replies = replies.filter(r=>r.post_id===p.id);
+    p.likes = likes.filter(l=>l.post_id===p.id && !l.remove).map(l=>l.bird_id);
+  }
+  const birdsOnly=[...bm.values()];
+  data={birds:birdsOnly,posts:[...pm.values()].sort((a,b)=>b.created.localeCompare(a.created))};
 }
 async function ntfyPost(payload){ try{ await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }catch(e){} }
 async function load(){
@@ -111,12 +132,15 @@ function render(){
   if(keep) sel.value=keep;
   $('posts').innerHTML = data.posts.map(p=>{
     const liked = me && p.likes.includes(me);
+    const reps = p.replies || [];
     return `<div class="post">
-      <div class="name">${esc(p.bird?p.bird.name:'unknown bird')}</div>
+      <div class="name">${esc(p.bird?p.bird.name:'unknown bird')}${p.bird&&p.bird.alias?`<span class="tag">${esc(p.bird.alias)}</span>`:''}</div>
       <div class="meta">${esc(new Date(p.created).toLocaleString())}</div>
       <div class="body">${esc(p.body)}</div>
       <button class="like ${liked?'on':''}" onclick="like('${p.id}',${liked?'false':'true'})">${liked?'♥':'♡'} ${p.likes.length}</button>
       ${me&&p.bird_id===me?`<button class="ghost" onclick="removePost('${p.id}')">delete</button>`:''}
+      <div class="replylist">${reps.map(r=>`<div class="reply"><span class="name">${esc(r.bird?r.bird.name:'bird')}</span> <span class="meta">${esc(new Date(r.created).toLocaleString())}</span><div>${esc(r.body)}</div></div>`).join('')}</div>
+      <div class="replybox"><input id="rp-${p.id}" placeholder="reply as ${esc(me?'yourself':'a bird')}"><button class="ghost" onclick="reply('${p.id}')">reply</button></div>
     </div>`;
   }).join('') || '<p class="meta">no posts yet</p>';
 }
@@ -137,7 +161,15 @@ async function post(){
   catch(e){ const bird=data.birds.find(b=>b.id===body.bird_id)||{id:body.bird_id,name:'bird'}; j={ok:true,post:{id:'pst'+Date.now().toString(36),bird_id:body.bird_id,body:body.body,created:new Date().toISOString(),bird:{id:bird.id,name:bird.name,alias:bird.alias||'',species:bird.species||'',color:bird.color||'blue'},likes:[]}}; await ntfyPost({type:'post',post:j.post}); }
   if(j.ok){ $('postBody').value=''; $('postMsg').textContent='posted'; load(); } else $('postMsg').textContent=j.error||'failed';
 }
-async function like(pid,on){ if(!me){alert('join the flock first');return;} try{ await fetch(API+'/post/'+pid+'/'+(on?'like':'unlike')+'/'+me,{method:'POST'}); }catch(e){} load(); }
+async function reply(pid){
+  const box=document.getElementById('rp-'+pid); if(!box) return;
+  const text=box.value.trim(); if(!text){ box.focus(); return; }
+  let j={};
+  try{ const r=await fetch(API+'/post/'+pid+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird_id:me,body:text})}); j=await r.json(); }
+  catch(e){ const bird=data.birds.find(b=>b.id===me)||{id:me||'guest',name:'bird',alias:'',color:'blue'}; j={ok:true,reply:{id:'rpl'+Date.now().toString(36),post_id:pid,bird_id:bird.id,body:text,created:new Date().toISOString(),bird}}; await ntfyPost({type:'reply',reply:j.reply}); }
+  if(j.ok){ box.value=''; load(); } else alert(j.error||'reply failed');
+}
+async function like(pid,on){ if(!me){alert('join the flock first');return;} try{ await fetch(API+'/post/'+pid+'/'+(on?'like':'unlike')+'/'+me,{method:'POST'}); }catch(e){ await ntfyPost({type:on?'like':'unlike',post_id:pid,bird_id:me}); } load(); }
 async function removeBird(id){ if(!confirm('leave the flock?'))return; await fetch(API+'/bird/'+id+'/delete',{method:'POST'}); localStorage.removeItem('flock_bird'); me=''; load(); }
 async function removePost(id){ if(!confirm('delete this post?'))return; await fetch(API+'/post/'+id+'/delete',{method:'POST'}); load(); }
 $('join').onclick=join; $('post').onclick=post; load();
