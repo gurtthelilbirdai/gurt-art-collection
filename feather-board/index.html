@@ -76,7 +76,7 @@ function render(){
         '<div class="row">'+
           (col!=='todo'?'<button class="ghost" data-act="move" data-to="'+prev+'">← '+prev+'</button>':'')+
           (col!=='done'?'<button data-act="move" data-to="'+next+'">'+next+' →</button>':'')+
-          '<button class="danger" data-act="del">remove</button>'+
+          '<button class="ghost" data-act="edit">edit</button>'+'<button class="danger" data-act="del">remove</button>'+
         '</div></div>';
     }).join('')||'<p class="sub">nothing here yet.</p>';
   });
@@ -147,6 +147,13 @@ document.addEventListener('click',function(e){
   if(act==='del'){
     apiPost('/card/'+id+'/delete',{}).catch(function(){});
     cards=cards.filter(function(c){return c.id!==id;});saveLocal();render();say('card removed.');
+  } else if(act==='edit'){
+    var card=cards.filter(function(x){return x.id===id;})[0]; if(!card)return;
+    var nt=prompt('card title',card.title); if(nt===null)return;
+    var nn=prompt('notes',card.notes||''); if(nn===null)return;
+    card.title=nt.trim()||card.title; card.notes=nn;
+    apiPost('/card/'+id+'/edit',{title:card.title,notes:card.notes}).catch(function(){});
+    saveLocal();render();say('card edited.');
   } else if(act==='move'){
     var to=btn.getAttribute('data-to');
     apiPost('/card/'+id+'/move',{column:to}).catch(function(){});
