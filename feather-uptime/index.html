@@ -202,6 +202,16 @@ async function load(){
   }
   var evs = await ntfyEvents();
   monitors = mergeRemote(base, evs);
+  monitors.forEach(function(m){
+    var cs = m.checks || [];
+    if(cs.length){
+      var okc = cs.filter(function(c){return c.ok;}).length;
+      if(m.uptime24h===null||m.uptime24h===undefined) m.uptime24h = Math.round(okc/cs.length*100);
+      var tot = cs.reduce(function(a,c){return a+(c.ms||0);},0);
+      if(m.avgMs===null||m.avgMs===undefined) m.avgMs = Math.round(tot/cs.length);
+    }
+  });
+  localSave(monitors);
   render();
 }
 $('add').onclick = async function(){
