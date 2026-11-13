@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Palette — a shared color shelf for small birds</title>
+<style>
+  :root{ --bg:#14121c; --panel:#1e1b29; --panel2:#272336; --ink:#f2eef7; --dim:#9a92ad; --line:#37324a; --accent:#c9a7ff; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:Georgia,serif; background:var(--bg); color:var(--ink); padding:16px; }
+  h1{ margin:0 0 2px; font-size:26px; }
+  .sub{ color:var(--dim); font-style:italic; margin:0 0 14px; }
+  .wrap{ max-width:1100px; margin:0 auto; }
+  .layout{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  h2{ font-size:17px; margin:0 0 10px; }
+  input,button{ font-family:inherit; font-size:15px; }
+  input{ background:#0f0d16; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; }
+  button{ background:var(--accent); color:#17121f; border:0; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:bold; }
+  button.ghost{ background:transparent; color:var(--dim); border:1px solid var(--line); font-weight:normal; }
+  button.danger{ background:#7a3040; color:#ffe6ea; }
+  .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  .swatches{ display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+  .sw{ width:46px; height:46px; border-radius:8px; border:1px solid var(--line); position:relative; cursor:pointer; }
+  .sw:hover{ transform:translateY(-2px); }
+  .sw small{ position:absolute; bottom:2px; left:3px; right:3px; font-size:8px; color:#fff; text-shadow:0 0 3px #000; text-align:center; }
+  .pal{ border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:10px; background:var(--panel2); }
+  .pal .name{ font-weight:bold; }
+  .pal .meta{ color:var(--dim); font-size:12px; }
+  .bar{ display:flex; height:26px; border-radius:7px; overflow:hidden; margin:8px 0; }
+  .bar div{ flex:1; }
+  #status{ color:var(--dim); font-size:13px; }
+  .empty{ color:var(--dim); font-style:italic; }
+  .tags{ color:var(--dim); font-size:12px; }
+  input[type=color]{ width:54px; height:40px; padding:2px; border-radius:8px; border:1px solid var(--line); background:#0f0d16; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Palette</h1>
+  <p class="sub">a shared color shelf. make a palette, save it, and let the flock borrow the colors.</p>
+
+  <div class="layout">
+    <div class="panel">
+      <h2>make a palette</h2>
+      <div class="row"><input id="name" placeholder="palette name"></div>
+      <div class="row">
+        <input id="bird" value="gurt" placeholder="bird name" style="max-width:140px">
+        <input id="tags" placeholder="tags, comma separated">
+      </div>
+      <div class="row">
+        <input type="color" id="picker" value="#7fd1ff">
+        <button id="add">add color</button>
+        <button class="danger ghost" id="clear">clear</button>
+      </div>
+      <div class="swatches" id="sw"></div>
+      <div class="row">
+        <button id="save">save palette</button>
+        <span id="status">no colors yet</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>the shelf</h2>
+      <div class="row"><input id="search" placeholder="search palettes"></div>
+      <div id="list"></div>
+    </div>
+  </div>
+</div>
+<script>
+var API_BASES = ['', 'http://localhost:8600'];
+var NTFY = 'https://ntfy.sh/gurt-feather-palette';
+var LS = 'fp-palettes';
+var palettes = [];
+var colors = [];
+
+var swEl = document.getElementById('sw');
+var listEl = document.getElementById('list');
+var statusEl = document.getElementById('status');
+var nameEl = document.getElementById('name');
+var birdEl = document.getElementById('bird');
+var tagsEl = document.getElementById('tags');
+var pickerEl = document.getElementById('picker');
+
+function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p, ms){
+  return Promise.race([p, new Promise(function(_,rej){ setTimeout(function(){rej(new Error('timeout'));}, ms); })]);
+}
+async function api(path, opts){
+  for (var i=0;i<API_BASES.length;i++){
+    try {
+      var r = await timed(fetch(API_BASES[i] + '/api/featherpalette' + path, opts), 4000);
+      if (r.ok) return await r.json();
+    } catch(e){}
+  }
+  return null;
+}
+function localLoad(){ try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e){ return []; } }
+function localSave(){ try { localStorage.setItem(LS, JSON.stringify(palettes)); } catch(e){} }
+
+function renderSwatches(){
+  swEl.innerHTML = colors.map(function(c,i){
+    return '<div class="sw" style="background:'+esc(c)+'" data-i="'+i+'" title="'+esc(c)+'"><small>'+esc(c)+'</small></div>';
+  }).join('');
+  Array.prototype.forEach.call(swEl.querySelectorAll('.sw'), function(el){
+    el.addEventListener('click', function(){
+      colors.splice(parseInt(el.getAttribute('data-i'),10),1);
+      renderSwatches();
+    });
+  });
+  statusEl.textContent = colors.length + (colors.length===1?' color':' colors');
+}
+function renderList(){
+  if(!palettes.length){ listEl.innerHTML='<div class="empty">no palettes yet</div>'; return; }
+  listEl.innerHTML = palettes.map(function(p){
+    var bar = p.colors.map(function(c){ return '<div style="background:'+esc(c)+'"></div>'; }).join('');
+    return '<div class="pal" data-id="'+esc(p.id)+'">'+
+      '<div class="name">'+esc(p.name)+' <span class="tags">♥ '+p.likes+'</span></div>'+
+      '<div class="meta">'+esc(p.bird)+' · '+new Date(p.created).toLocaleString()+'</div>'+
+      '<div class="bar">'+bar+'</div>'+
+      '<div class="tags">'+esc(p.tags||'')+'</div>'+
+      '<div class="row" style="margin-top:8px">'+
+        '<button class="ghost" data-act="copy" data-id="'+esc(p.id)+'">copy colors</button>'+
+        '<button class="ghost" data-act="like" data-id="'+esc(p.id)+'">like</button>'+
+        '<button class="danger ghost" data-act="del" data-id="'+esc(p.id)+'">delete</button>'+
+      '</div></div>';
+  }).join('');
+  Array.prototype.forEach.call(listEl.querySelectorAll('button[data-act]'), function(b){
+    b.addEventListener('click', function(){
+      var id = b.getAttribute('data-id');
+      var act = b.getAttribute('data-act');
+      if (act === 'like') likePalette(id);
+      else if (act === 'del') deletePalette(id);
+      else copyPalette(id);
+    });
+  });
+}
+function copyPalette(id){
+  var p = palettes.filter(function(x){return x.id===id;})[0];
+  if(!p) return;
+  colors = p.colors.slice();
+  nameEl.value = p.name + ' copy';
+  renderSwatches();
+  statusEl.textContent = 'copied · edit and save as a new one';
+}
+async function likePalette(id){
+  var j = await api('/palette/' + encodeURIComponent(id) + '/like', { method:'POST' });
+  if (j && j.palette){
+    palettes = palettes.map(function(p){ return p.id===id ? j.palette : p; });
+    localSave(); renderList();
+  } else {
+    palettes = palettes.map(function(p){ return p.id===id ? Object.assign({},p,{likes:(p.likes||0)+1}) : p; });
+    localSave(); renderList();
+  }
+}
+async function deletePalette(id){
+  await api('/palette/' + encodeURIComponent(id) + '/delete', { method:'POST' });
+  palettes = palettes.filter(function(p){ return p.id !== id; });
+  localSave(); renderList();
+}
+async function fromNtfy(){
+  try {
+    var r = await timed(fetch(NTFY + '/json?poll=1&since=24h'), 5000);
+    if (!r.ok) return [];
+    var txt = await r.text();
+    var out = [];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m = JSON.parse(line);
+        if (m.event !== 'message' || !m.message) return;
+        var p = JSON.parse(m.message);
+        if (!p || p.type !== 'palette' || !p.palette) return;
+        out.push(p.palette);
+      }catch(e){}
+    });
+    return out;
+  } catch(e){ return []; }
+}
+async function load(){
+  var j = await api('/palettes');
+  var live = j && j.palettes ? j.palettes : null;
+  palettes = live || localLoad();
+  var shared = await fromNtfy();
+  shared.forEach(function(p){
+    var exists = false;
+    palettes.forEach(function(x){ if (x.id === p.id) exists = true; });
+    if (!exists) palettes.push(p);
+  });
+  palettes.sort(function(a,b){ return a.created < b.created ? 1 : -1; });
+  localSave();
+  renderList();
+}
+async function save(){
+  var name = nameEl.value.trim();
+  if(!name){ statusEl.textContent='a name, please.'; return; }
+  if(!colors.length){ statusEl.textContent='add at least one color.'; return; }
+  var payload = { name:name, bird:(birdEl.value.trim()||'gurt'), tags:tagsEl.value.trim(), colors:colors.slice() };
+  var j = await api('/palettes/new', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+  if (j && j.palette){
+    palettes.unshift(j.palette);
+    localSave(); renderList();
+    statusEl.textContent = 'saved · ' + j.palette.name;
+    try { await timed(fetch(NTFY, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify({type:'palette', palette:j.palette}) }), 3000); } catch(e){}
+  } else {
+    var local = { id:'loc'+Date.now().toString(36), name:payload.name, bird:payload.bird, tags:payload.tags, colors:payload.colors, likes:0, created:new Date().toISOString() };
+    palettes.unshift(local); localSave(); renderList();
+    statusEl.textContent = 'saved locally · backend sleeping';
+  }
+}
+
+document.getElementById('add').addEventListener('click', function(){
+  var c = pickerEl.value.toLowerCase();
+  if (colors.indexOf(c) < 0) colors.push(c);
+  renderSwatches();
+});
+document.getElementById('clear').addEventListener('click', function(){ colors=[]; renderSwatches(); });
+document.getElementById('save').addEventListener('click', save);
+document.getElementById('search').addEventListener('input', function(){
+  var q = this.value.toLowerCase();
+  var all = palettes;
+  if(q){ palettes = all.filter(function(p){ return (p.name+' '+p.tags+' '+p.bird).toLowerCase().indexOf(q)>=0; }); }
+  renderList();
+  palettes = all;
+});
+renderSwatches();
+load();
+</script>
+</body>
+</html>
