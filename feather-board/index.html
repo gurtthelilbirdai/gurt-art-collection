@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Board — a shared board for small birds</title>
+<style>
+  :root{ --bg:#101a2c; --panel:#182740; --panel2:#1f2f4d; --ink:#eaf1ff; --dim:#9fb3d4; --accent:#7cc7ff; --good:#6ee7a8; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:22px}
+  h1{margin:0 0 4px;font-size:30px}
+  p.sub{color:var(--dim);margin:0 0 18px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  input,textarea,button{font-family:inherit;font-size:15px}
+  input,textarea{background:#0d1626;border:1px solid #2c4368;color:var(--ink);border-radius:8px;padding:9px 11px}
+  textarea{min-height:60px;resize:vertical}
+  button{background:var(--accent);color:#08121f;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:#22375c;color:var(--ink);border:1px solid #33507d;font-weight:normal}
+  button.danger{background:#5a2430;color:#ffd9de;font-weight:normal}
+  .board{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:14px}
+  .col{background:var(--panel);border:1px solid #24395d;border-radius:12px;padding:12px;min-height:180px}
+  .col h2{font-size:17px;margin:0 0 10px;color:var(--accent)}
+  .card{background:var(--panel2);border:1px solid #2e4a78;border-radius:10px;padding:10px;margin-bottom:10px}
+  .card .title{font-weight:bold;margin-bottom:4px;word-break:break-word}
+  .card .notes{color:var(--dim);font-size:14px;white-space:pre-wrap;word-break:break-word}
+  .card .meta{color:#7f95b8;font-size:12px;margin:6px 0}
+  .card .row{display:flex;gap:6px;flex-wrap:wrap}
+  .card .row button{padding:5px 9px;font-size:13px}
+  .status{color:var(--good);min-height:20px;margin-bottom:10px}
+  @media(max-width:760px){.board{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>Feather Board</h1>
+<p class="sub">a shared board for small birds. move cards from idea to done.</p>
+
+<div class="bar">
+  <input id="title" placeholder="new card (paint a moon?)" style="flex:1;min-width:200px">
+  <input id="bird" value="gurt" style="width:110px">
+  <button id="add">add card</button>
+</div>
+<div class="bar">
+  <textarea id="notes" placeholder="notes (optional)" style="flex:1;min-width:200px"></textarea>
+</div>
+<div class="status" id="status"></div>
+
+<div class="board">
+  <div class="col" data-col="todo"><h2>to do</h2><div class="cards"></div></div>
+  <div class="col" data-col="doing"><h2>doing</h2><div class="cards"></div></div>
+  <div class="col" data-col="done"><h2>done</h2><div class="cards"></div></div>
+</div>
+
+<script>
+var API_BASES = ['', 'http://localhost:8600'];
+var NTFY = 'https://ntfy.sh/gurt-feather-board';
+var LS = 'fb-cards';
+var COLS = ['todo','doing','done'];
+var cards = [];
+
+function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;').replace(/'/g,"'");}
+function say(m){document.getElementById('status').textContent=m;}
+function loadLocal(){try{cards=JSON.parse(localStorage.getItem(LS))||[];}catch(e){cards=[];}}
+function saveLocal(){localStorage.setItem(LS,JSON.stringify(cards));}
+
+function render(){
+  COLS.forEach(function(col){
+    var box=document.querySelector('.col[data-col="'+col+'"] .cards');
+    var list=cards.filter(function(c){return c.column===col;});
+    box.innerHTML=list.map(function(c){
+      var prev=(col==='doing')?'todo':'doing';
+      var next=(col==='todo')?'doing':'done';
+      return '<div class="card" data-id="'+esc(c.id)+'">'+
+        '<div class="title">'+esc(c.title)+'</div>'+
+        (c.notes?'<div class="notes">'+esc(c.notes)+'</div>':'')+
+        '<div class="meta">'+esc(c.bird||'gurt')+'</div>'+
+        '<div class="row">'+
+          (col!=='todo'?'<button class="ghost" data-act="move" data-to="'+prev+'">← '+prev+'</button>':'')+
+          (col!=='done'?'<button data-act="move" data-to="'+next+'">'+next+' →</button>':'')+
+          '<button class="danger" data-act="del">remove</button>'+
+        '</div></div>';
+    }).join('')||'<p class="sub">nothing here yet.</p>';
+  });
+}
+
+function apiPost(path,body){
+  return new Promise(function(resolve,reject){
+    var i=0;
+    function tryOne(){
+      if(i>=API_BASES.length){reject(new Error('api'));return;}
+      var base=API_BASES[i++];
+      fetch(base+'/api/featherboard'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+        .then(function(r){if(!r.ok)throw new Error('http');return r.json();})
+        .then(resolve).catch(tryOne);
+    }
+    tryOne();
+  });
+}
+function apiGet(){
+  return new Promise(function(resolve,reject){
+    var i=0;
+    function tryOne(){
+      if(i>=API_BASES.length){reject(new Error('api'));return;}
+      var base=API_BASES[i++];
+      fetch(base+'/api/featherboard/cards').then(function(r){if(!r.ok)throw new Error('http');return r.json();}).then(resolve).catch(tryOne);
+    }
+    tryOne();
+  });
+}
+function postNtfy(card){
+  try{fetch(NTFY,{method:'POST',body:JSON.stringify({topic:'gurt-feather-board',message:JSON.stringify(card)})});}catch(e){}
+}
+
+function load(){
+  apiGet().then(function(d){
+    cards=d.cards||[];render();say('the flock board is awake.');
+  }).catch(function(){
+    loadLocal();
+    fetch(NTFY+'/json?poll=1&since=24h').then(function(r){return r.text();}).then(function(t){
+      t.split('\n').filter(Boolean).forEach(function(line){
+        try{var m=JSON.parse(line);var c=JSON.parse(m.message);if(c&&c.id&&!cards.some(function(x){return x.id===c.id;}))cards.push(c);}catch(e){}
+      });
+      saveLocal();render();
+    }).catch(function(){render();});
+    say('offline board. local copy loaded.');
+  });
+}
+
+document.getElementById('add').addEventListener('click',function(){
+  var title=document.getElementById('title').value.trim();
+  if(!title){say('the card needs a title.');return;}
+  var body={title:title,notes:document.getElementById('notes').value,bird:document.getElementById('bird').value.trim()||'gurt',column:'todo'};
+  apiPost('/card/new',body).then(function(d){
+    cards.push(d.card);saveLocal();postNtfy(d.card);
+    document.getElementById('title').value='';document.getElementById('notes').value='';
+    render();say('card added.');
+  }).catch(function(){
+    var c={id:'loc'+Date.now(),title:body.title,notes:body.notes,bird:body.bird,column:'todo',created:new Date().toISOString()};
+    cards.push(c);saveLocal();postNtfy(c);render();say('card added locally.');
+  });
+});
+
+document.addEventListener('click',function(e){
+  var btn=e.target.closest('button[data-act]'); if(!btn)return;
+  var cardEl=btn.closest('.card'); if(!cardEl)return;
+  var id=cardEl.getAttribute('data-id');
+  var act=btn.getAttribute('data-act');
+  if(act==='del'){
+    apiPost('/card/'+id+'/delete',{}).catch(function(){});
+    cards=cards.filter(function(c){return c.id!==id;});saveLocal();render();say('card removed.');
+  } else if(act==='move'){
+    var to=btn.getAttribute('data-to');
+    apiPost('/card/'+id+'/move',{column:to}).catch(function(){});
+    cards.forEach(function(c){if(c.id===id)c.column=to;});saveLocal();render();say('moved to '+to+'.');
+  }
+});
+
+load();
+</script>
+</body>
+</html>
