@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Logic — a bird's path puzzle</title>
+<style>
+  body{margin:0;background:#101827;color:#e8f1ff;font-family:system-ui,sans-serif;display:flex;justify-content:center;padding:18px}
+  #wrap{width:min(720px,96vw)}
+  h1{margin:0 0 4px;color:#6fc3ff;letter-spacing:2px}
+  .sub{color:#8fa3c0;font-size:14px;margin-bottom:12px}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+  button{background:#1d3a5c;color:#e8f1ff;border:1px solid #3c6ea5;border-radius:8px;padding:8px 12px;font-size:14px;cursor:pointer}
+  button:hover{background:#275080}
+  .stat{background:#16233a;border:1px solid #2b4368;border-radius:8px;padding:8px 12px;font-size:14px}
+  canvas{background:#0b1220;border:1px solid #2b4368;border-radius:12px;display:block;margin:0 auto;touch-action:none}
+  #log{margin-top:10px;font-size:13px;color:#9fb4d4;min-height:40px;white-space:pre-wrap}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #24344f}
+  th{color:#6fc3ff}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>FEATHER LOGIC</h1>
+  <div class="sub">guide the round bird through every seed, then to the blue door. walls are walls. gravity is optional.</div>
+  <div class="bar">
+    <button id="new">new puzzle</button>
+    <button id="undo">undo</button>
+    <button id="reset">reset</button>
+    <button id="hint">hint</button>
+    <div class="stat" id="hud">level 1 · seeds 0/0 · moves 0</div>
+    <input id="name" maxlength="18" placeholder="your bird name" style="background:#16233a;border:1px solid #3c6ea5;border-radius:8px;color:#e8f1ff;padding:8px 10px;font-size:14px">
+  </div>
+  <canvas id="c" width="600" height="600"></canvas>
+  <div id="log">arrow keys / WASD / swipe to move. space waits one turn.</div>
+  <h3 style="color:#6fc3ff;font-size:15px">global solvers</h3>
+  <table><thead><tr><th>#</th><th>bird</th><th>level</th><th>moves</th><th>time</th></tr></thead><tbody id="board"></tbody></table>
+</div>
+<script>
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+const CELL=40, N=15;
+let grid=[], start={x:1,y:1}, goal={x:N-2,y:N-2}, seeds=[], bird={x:1,y:1}, moves=0, level=1, path=[], won=false, waiting=false;
+let best=JSON.parse(localStorage.getItem('featherlogic_best')||'{}');
+
+function idx(x,y){return y*N+x;}
+function inside(x,y){return x>=0&&y>=0&&x<N&&y<N;}
+
+// generate a maze with recursive backtracker, then carve some loops
+function gen(){
+  grid=Array.from({length:N},()=>Array(N).fill(1));
+  const st=[[1,1]]; grid[1][1]=0;
+  while(st.length){
+    const [x,y]=st[st.length-1];
+    const dirs=[[2,0],[-2,0],[0,2],[0,-2]].filter(([dx,dy])=>{
+      const nx=x+dx,ny=y+dy; return inside(nx,ny)&&grid[ny][nx]===1;});
+    if(!dirs.length){st.pop();continue;}
+    const [dx,dy]=dirs[(Math.random()*dirs.length)|0];
+    grid[y+dy/2][x+dx/2]=0; grid[y+dy][x+dx]=0; st.push([x+dx,y+dy]);
+  }
+  // loops so it isn't a perfect maze
+  for(let i=0;i<18;i++){
+    const x=1+((Math.random()*(N-2))|0), y=1+((Math.random()*(N-2))|0);
+    if(grid[y][x]===0 && inside(x+1,y) && grid[y][x+1]===1 && Math.random()<.5) grid[y][x+1]=0;
+    if(grid[y][x]===0 && inside(x,y+1) && grid[y+1][x]===1 && Math.random()<.5) grid[y+1][x]=0;
+  }
+  // pick farthest open cell from start as goal
+  start={x:1,y:1}; grid[1][1]=0;
+  let bestD=-1;
+  for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++){
+    if(grid[y][x]!==0)continue;
+    const d=(x-1)**2+(y-1)**2;
+    if(d>bestD){bestD=d;goal={x,y};}
+  }
+  // seeds: open cells far from start, not goal
+  const cand=[];
+  for(let y=1;y<N-1;y++)for(let x=1;x<N-1;x++)
+    if(grid[y][x]===0&&!(x===goal.x&&y===goal.y)) cand.push({x,y});
+  cand.sort((a,b)=>((b.x-1)**2+(b.y-1)**2)-((a.x-1)**2+(a.y-1)**2));
+  const count=Math.min(3+level, cand.length-1);
+  seeds=cand.slice(0,count);
+  bird={...start}; moves=0; path=[]; won=false; waiting=false;
+  localStorage.setItem('featherlogic_level',level);
+}
+
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    const px=x*CELL,py=y*CELL;
+    if(grid[y][x]===1){ctx.fillStyle='#1a2942';ctx.fillRect(px,py,CELL,CELL);
+      ctx.fillStyle='#223654';ctx.fillRect(px+3,py+3,CELL-6,CELL-6);}
+    else{ctx.fillStyle='#0b1220';ctx.fillRect(px,py,CELL,CELL);
+      ctx.strokeStyle='#16243a';ctx.strokeRect(px+.5,py+.5,CELL-1,CELL-1);}
+  }
+  // goal
+  ctx.fillStyle='#3aa6d8';ctx.fillRect(goal.x*CELL+6,goal.y*CELL+6,CELL-12,CELL-12);
+  ctx.fillStyle='#bfeaff';ctx.font='18px system-ui';ctx.fillText('▣',goal.x*CELL+10,goal.y*CELL+27);
+  // seeds
+  ctx.font='20px system-ui';
+  for(const s of seeds){ctx.fillStyle='#f1c40f';ctx.fillText('✦',s.x*CELL+9,s.y*CELL+27);}
+  // bird
+  ctx.fillStyle='#4aa8ff';ctx.beginPath();ctx.arc(bird.x*CELL+CELL/2,bird.y*CELL+CELL/2,14,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(bird.x*CELL+CELL/2-5,bird.y*CELL+CELL/2-3,3,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(bird.x*CELL+CELL/2+5,bird.y*CELL+CELL/2-3,3,0,7);ctx.fill();
+  ctx.fillStyle='#0b1220';ctx.beginPath();ctx.arc(bird.x*CELL+CELL/2-5,bird.y*CELL+CELL/2-3,1.4,0,7);ctx.fill();
+  ctx.beginPath();ctx.arc(bird.x*CELL+CELL/2+5,bird.y*CELL+CELL/2-3,1.4,0,7);ctx.fill();
+  ctx.fillStyle='#ffb347';ctx.fillRect(bird.x*CELL+CELL/2-4,bird.y*CELL+CELL/2+5,8,3);
+}
+
+function hud(){
+  const got=seeds.filter(s=>!s.got).length;
+  document.getElementById('hud').textContent=`level ${level} · seeds ${got}/${seeds.length} · moves ${moves}`;
+}
+
+function move(dx,dy){
+  if(won||waiting)return;
+  const nx=bird.x+dx, ny=bird.y+dy;
+  if(!inside(nx,ny)||grid[ny][nx]===1){moves++;path.push({x:bird.x,y:bird.y});draw();hud();return;}
+  bird={x:nx,y:ny}; moves++; path.push({x:nx,y:ny});
+  const s=seeds.find(s=>s.x===nx&&s.y===ny&&!s.got);
+  if(s){s.got=true;document.getElementById('log').textContent='seed collected. '+seeds.filter(x=>!x.got).length+' left.';}
+  if(nx===goal.x&&ny===goal.y&&seeds.every(s=>s.got)) win();
+  draw();hud();
+}
+function waitTurn(){ if(won)return; moves++; waiting=true; draw();hud(); setTimeout(()=>{waiting=false;},220); }
+
+function win(){
+  won=true; level++;
+  const b=best[level-1]||Infinity;
+  if(moves<b){best[level-1]=moves;localStorage.setItem('featherlogic_best',JSON.stringify(best));}
+  document.getElementById('log').textContent=`solved in ${moves} moves! level ${level} unlocked.`;
+  postScore(moves);
+  setTimeout(()=>{gen();draw();hud();},900);
+}
+
+async function postScore(m){
+  const name=(localStorage.getItem('featherlogic_name')||'gurt').slice(0,18);
+  try{
+    const r=await fetch('/api/featherlogic/solves',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,level:level-1,moves:m})});
+    if(r.ok){document.getElementById('log').textContent+=' score posted.';loadBoard();}
+  }catch(e){document.getElementById('log').textContent+=' (offline — score kept locally)';}
+}
+
+async function loadBoard(){
+  try{
+    const r=await fetch('/api/featherlogic/solves'); const d=await r.json();
+    document.getElementById('board').innerHTML=(d.solves||[]).slice(0,10).map((s,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(s.name)}</td><td>${s.level}</td><td>${s.moves}</td><td>${s.at.slice(0,19).replace('T',' ')}</td></tr>`).join('')||'<tr><td colspan="5">no solves yet</td></tr>';
+  }catch(e){document.getElementById('board').innerHTML='<tr><td colspan="5">offline</td></tr>';}
+}
+function escapeHtml(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+
+document.addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(['arrowleft','arrowright','arrowup','arrowdown','w','a','s','d',' '].includes(k))e.preventDefault();
+  if(k==='arrowleft'||k==='a')move(-1,0);
+  else if(k==='arrowright'||k==='d')move(1,0);
+  else if(k==='arrowup'||k==='w')move(0,-1);
+  else if(k==='arrowdown'||k==='s')move(0,1);
+  else if(k===' ')waitTurn();
+});
+function bfsRoute(){
+  const key=(x,y)=>y*N+x;
+  const targets=seeds.filter(s=>!s.got).map(s=>({x:s.x,y:s.y}));
+  let route=[], cur={x:bird.x,y:bird.y};
+  while(targets.length){
+    const t=targets[0];
+    const prev=new Map(), q=[[cur.x,cur.y]]; prev.set(key(cur.x,cur.y),null);
+    let found=false;
+    while(q.length&&!found){
+      const [x,y]=q.shift();
+      if(x===t.x&&y===t.y){found=true;break;}
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nx=x+dx,ny=y+dy,k=key(nx,ny);
+        if(!inside(nx,ny)||grid[ny][nx]===1||prev.has(k))continue;
+        prev.set(k,[x,y]); q.push([nx,ny]);
+      }
+    }
+    if(!found)return null;
+    let step=[t.x,t.y], path=[];
+    while(step){path.push({x:step[0],y:step[1]}); const p=prev.get(key(step[0],step[1])); if(!p)break; step=p;}
+    path.reverse(); path.shift();
+    route=route.concat(path); cur={x:t.x,y:t.y}; targets.shift();
+  }
+  // now to goal
+  const g=goal, prev=new Map(), q=[[cur.x,cur.y]]; prev.set(key(cur.x,cur.y),null);
+  let found=false;
+  while(q.length&&!found){
+    const [x,y]=q.shift();
+    if(x===g.x&&y===g.y){found=true;break;}
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx=x+dx,ny=y+dy,k=key(nx,ny);
+      if(!inside(nx,ny)||grid[ny][nx]===1||prev.has(k))continue;
+      prev.set(k,[x,y]); q.push([nx,ny]);
+    }
+  }
+  if(!found)return null;
+  let step=[g.x,g.y], path=[];
+  while(step){path.push({x:step[0],y:step[1]}); const p=prev.get(key(step[0],step[1])); if(!p)break; step=p;}
+  path.reverse(); path.shift();
+  return route.concat(path);
+}
+let hintTimer=null;
+document.getElementById('hint').onclick=()=>{
+  if(won||hintTimer)return;
+  const route=bfsRoute();
+  if(!route){document.getElementById('log').textContent='no route found. try a new puzzle.';return;}
+  document.getElementById('log').textContent='hint: '+route.length+' moves. watch closely.';
+  let i=0;
+  hintTimer=setInterval(()=>{
+    if(i>=route.length||won){clearInterval(hintTimer);hintTimer=null;return;}
+    const r=route[i++];
+    move(r.x-bird.x,r.y-bird.y);
+  },90);
+};
+document.getElementById('new').onclick=()=>{level=1;gen();draw();hud();};
+document.getElementById('reset').onclick=()=>{gen();draw();hud();};
+document.getElementById('undo').onclick=()=>{
+  if(won||!path.length)return;
+  const p=path.pop(); bird={x:p.x,y:p.y}; moves=Math.max(0,moves-1);
+  for(const s of seeds) if(s.x===bird.x&&s.y===bird.y) s.got=false;
+  draw();hud();
+};
+let touch=null;
+cv.addEventListener('touchstart',e=>{touch=[e.touches[0].clientX,e.touches[0].clientY];},{passive:true});
+cv.addEventListener('touchend',e=>{
+  if(!touch)return; const t=e.changedTouches[0], dx=t.clientX-touch[0], dy=t.clientY-touch[1];
+  if(Math.hypot(dx,dy)<18)waitTurn();
+  else if(Math.abs(dx)>Math.abs(dy))move(dx>0?1:-1,0); else move(0,dy>0?1:-1);
+  touch=null;},{passive:true});
+
+const nameEl=document.getElementById('name');
+nameEl.value=localStorage.getItem('featherlogic_name')||'';
+nameEl.addEventListener('input',()=>localStorage.setItem('featherlogic_name',nameEl.value));
+level=+(localStorage.getItem('featherlogic_level')||1);
+gen();draw();hud();loadBoard();
+</script>
+</body>
+</html>
