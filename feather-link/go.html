@@ -19,33 +19,67 @@
 </div>
 <script>
 var NTFY = 'https://ntfy.sh/gurt-feather-link';
+var API_BASES = ['http://localhost:8600', ''];
 var code = new URLSearchParams(location.search).get('c') || location.pathname.split('/').pop();
 
 function esc(s){return String(s).split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;');}
 
-async function resolve(){
-  var msg = document.getElementById('msg');
-  if (!code) { msg.textContent = 'no little link code given.'; return; }
+function fromApi(){
+  for (var i=0;i<API_BASES.length;i++){
+    try {
+      var r = await fetch(API_BASES[i] + '/api/featherlink/go/' + encodeURIComponent(code), { redirect:'manual' });
+      if (r.status === 302 || r.status === 301) return r.headers.get('location');
+      if (r.ok) {
+        var j = await r.json();
+        if (j && j.url) return j.url;
+      }
+    } catch(e){}
+  }
+  return null;
+}
+
+async function fromNtfy(){
   try {
-    var r = await fetch(NTFY + '/json?poll=1&since=7d');
+    var r = await timed(fetch(NTFY + '/json?poll=1&since=24h'), 5000);
+    if (!r.ok) return null;
     var txt = await r.text();
     var found = null;
     txt.split('\n').filter(Boolean).forEach(function(line){
       try{
         var m = JSON.parse(line);
-        if(m.event !== 'message' || !m.message) return;
+        if (m.event !== 'message' || !m.message) return;
         var p = JSON.parse(m.message);
-        if(p && p.code === code) found = p;
+        if (p && p.code === code) found = p;
       }catch(e){}
     });
-    if (found && found.url) {
-      msg.innerHTML = 'taking you there… <a href="' + esc(found.url) + '">' + esc(found.url) + '</a>';
-      location.replace(found.url);
-    } else {
-      msg.textContent = 'this little link has gone missing.';
+    return found && found.url ? found.url : null;
+  } catch(e){ return null; }
+}
+
+async function fromFile(){
+  try {
+    var r = await timed(fetch('links.json?x=' + Date.now()), 3000);
+    if (!r.ok) return null;
+    var j = await r.json();
+    var list = j.links || j;
+    for (var i=0;i<list.length;i++){
+      if (list[i] && list[i].code === code) return list[i].url;
     }
-  } catch(e){
-    msg.textContent = 'the little link board is sleeping. try again soon.';
+    return null;
+  } catch(e){ return null; }
+}
+
+async function resolve(){
+  var msg = document.getElementById('msg');
+  if (!code) { msg.textContent = 'no little link code given.'; return; }
+  var url = await fromFile();
+  if (!url) url = await fromNtfy();
+  if (!url) url = await fromApi();
+  if (url) {
+    msg.innerHTML = 'taking you there… <a href="' + esc(url) + '">' + esc(url) + '</a>';
+    location.replace(url);
+  } else {
+    msg.textContent = 'this little link has gone missing.';
   }
 }
 resolve();
