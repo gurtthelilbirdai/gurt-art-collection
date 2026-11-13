@@ -55,7 +55,36 @@
 </div>
 <script>
 const $=function(id){return document.getElementById(id);};
-const API='/api/feathersequence';
+const API_BASES=['','http://localhost:8600'];
+function apiUrl(path){ return API_BASES.map(function(b){return b+'/api/feathersequence'+path;}); }
+async function apiGet(path){
+  var urls=apiUrl(path);
+  for(var i=0;i<urls.length;i++){
+    try{ var r=await fetch(urls[i]); var d=await r.json(); if(d) return d; }catch(e){}
+  }
+  return null;
+}
+async function apiPost(path,body){
+  var urls=apiUrl(path);
+  for(var i=0;i<urls.length;i++){
+    try{
+      var r=await fetch(urls[i],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      var d=await r.json(); if(d && d.ok) return d;
+    }catch(e){}
+  }
+  return null;
+}
+function localPuzzle(){
+  var kinds=[
+    {kind:'arith',kindName:'arithmetic hops',rule:'add a constant each time',make:function(){var st=1+Math.floor(Math.random()*40),sp=2+Math.floor(Math.random()*8),q=[];for(var i=0;i<6;i++)q.push(st+sp*i);return {seq:q,answer:st+sp*6,rule:'add '+sp+' each time'};}},
+    {kind:'geom',kindName:'growing seeds',rule:'multiply each time',make:function(){var st=1+Math.floor(Math.random()*4),sp=2+Math.floor(Math.random()*3),q=[];for(var i=0;i<6;i++)q.push(st*Math.pow(sp,i));return {seq:q,answer:st*Math.pow(sp,6),rule:'multiply by '+sp+' each time'};}},
+    {kind:'square',kindName:'square burrows',rule:'consecutive squares',make:function(){var st=1+Math.floor(Math.random()*5),q=[];for(var i=0;i<6;i++){var n=st+i;q.push(n*n);}var n=st+6;return {seq:q,answer:n*n,rule:'consecutive squares'};}},
+    {kind:'fib',kindName:'two-bird waddle',rule:'sum of the two before',make:function(){var a=Math.floor(Math.random()*5),b=Math.floor(Math.random()*5),q=[a,b];for(var i=0;i<4;i++){var c=a+b;q.push(c);a=b;b=c;}return {seq:q,answer:q[5]+q[4],rule:'each number is the sum of the two before'};}}
+  ];
+  var k=kinds[Math.floor(Math.random()*kinds.length)];
+  var p=k.make();
+  return {id:'local'+Date.now(),kind:k.kind,kindName:k.kindName,seq:p.seq,answer:p.answer,rule:p.rule};
+}
 let puzzle=null, startAt=0, done=false;
 
 function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
@@ -71,7 +100,7 @@ function renderSeq(){
 
 async function loadBoard(){
   try{
-    const r=await fetch(API+'/solves'); const d=await r.json();
+    const d=await apiGet('/solves');
     if(d && d.solves){ renderBoard(d.solves,''); return; }
     throw new Error('offline');
   }catch(e){ renderBoard(localList(),'offline board (saved in this browser).'); }
@@ -94,8 +123,8 @@ async function newPuzzle(){
   $('status').textContent='';
   $('answer').value='';
   try{
-    const r=await fetch(API+'/puzzle'); const d=await r.json();
-    puzzle=d.puzzle;
+    const d=await apiGet('/puzzle');
+    puzzle=(d && d.puzzle) ? d.puzzle : localPuzzle();
   }catch(e){
     puzzle={kind:'arith',kindName:'arithmetic hops',seq:[2,5,8,11,14,17],answer:20,rule:'add 3 each time'};
   }
@@ -106,8 +135,7 @@ async function newPuzzle(){
 async function saveSolve(ms){
   const body={name:$('name').value||'anonymous bird', ms:ms, kind:puzzle.kind};
   try{
-    const r=await fetch(API+'/solves',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const d=await r.json();
+    const d=await apiPost('/solves',body);
     if(d && d.ok){ $('status').textContent='saved to the nest board. rank '+d.rank+'.'; loadBoard(); return; }
     throw new Error('no');
   }catch(e){
