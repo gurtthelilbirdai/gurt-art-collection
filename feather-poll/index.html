@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Poll — votes for small birds</title>
+<style>
+  :root{ --bg:#101b26; --panel:#16283a; --ink:#eef6fb; --dim:#9db4c4; --sky:#6cc6ff; --gold:#ffd166; --leaf:#8fe3a8; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 80% -10%,#1d3d54,#101b26 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:900px;margin:0 auto;padding:28px 18px 70px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .panel{background:var(--panel);border:1px solid #27455c;border-radius:16px;padding:16px;margin-bottom:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,textarea{background:#0c1620;border:1px solid #2d4c64;color:var(--ink);border-radius:10px;padding:10px;font-size:15px;font-family:inherit;flex:1;min-width:140px}
+  textarea{min-height:70px;width:100%;resize:vertical}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #2d4c64;background:#1d3549;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--sky);color:#08131c;font-weight:700;border:0}
+  .msg{min-height:20px;color:var(--leaf);font-size:14px;margin-top:10px}
+  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .card{border-radius:14px;padding:14px;border:1px solid #27455c;background:#0e1c28}
+  .card h3{margin:0 0 4px;font-size:17px}
+  .meta{color:var(--dim);font-size:12px;margin:6px 0 10px}
+  .opt{display:block;width:100%;text-align:left;margin:6px 0;position:relative;overflow:hidden;background:#14283a}
+  .opt .fill{position:absolute;left:0;top:0;bottom:0;background:rgba(108,198,255,.22);z-index:0}
+  .opt span{position:relative;z-index:1}
+  .opt.winner .fill{background:rgba(255,209,102,.3)}
+  .opt.voted{border-color:var(--gold)}
+  .empty{color:var(--dim);padding:20px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Poll</h1>
+  <p class="sub">ask the flock. count the votes. settle things.</p>
+
+  <div class="panel">
+    <input id="question" placeholder="question for the flock (best seed for breakfast?)">
+    <h3 style="font-size:13px;color:var(--dim);margin:12px 0 4px">options, one per line</h3>
+    <textarea id="options" placeholder="sunflower seeds&#10;berries&#10;oats"></textarea>
+    <div class="row" style="margin-top:12px">
+      <input id="bird" value="gurt" style="flex:0 0 130px;min-width:110px">
+      <button class="primary" id="add">ask the flock</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <div class="grid" id="board"></div>
+  </div>
+</div>
+<script>
+var API_BASES = ['', 'http://localhost:8600'];
+var NTFY = 'https://ntfy.sh/gurt-feather-poll';
+var LS = 'fp-polls';
+var polls = [];
+var myVotes = {};
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).replace(/&/g,"&#38;").replace(/</g,"&#60;").replace(/>/g,"&#62;").replace(/"/g,"&#34;").replace(/'/g,"'");}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+function loadVotes(){try{myVotes=JSON.parse(localStorage.getItem('fp-votes')||'{}')}catch(e){myVotes={}}}
+function saveVotes(){try{localStorage.setItem('fp-votes',JSON.stringify(myVotes))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      var r = await fetch(API_BASES[i] + '/api/featherpoll' + path, opts);
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(obj){
+  try{ await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}); }catch(e){}
+}
+async function ntfyPull(){
+  try{
+    var r = await fetch(NTFY + '/json?poll=1&since=24h');
+    if(!r.ok) return [];
+    var txt = await r.text();
+    var out = [];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{ var m=JSON.parse(line); if(m.event==='message'&&m.message){ out.push(JSON.parse(m.message)); } }catch(e){}
+    });
+    return out;
+  }catch(e){ return []; }
+}
+
+async function load(){
+  loadVotes();
+  var d = await api('/polls');
+  if(d && d.polls){ polls = d.polls; localSave(polls); }
+  else {
+    polls = localLoad();
+    var pub = await ntfyPull();
+    var seen = {};
+    polls.forEach(function(p){ seen[p.id]=true; });
+    pub.forEach(function(p){ if(p && p.id && !seen[p.id]){ polls.unshift(p); seen[p.id]=true; } });
+    localSave(polls);
+  }
+  render();
+}
+
+function render(){
+  var tb = $('board');
+  if(!polls.length){ tb.innerHTML = '<div class="empty">no polls yet. ask something.</div>'; return; }
+  tb.innerHTML = polls.map(function(p){
+    var total = p.total || 0;
+    var max = Math.max.apply(null, (p.counts||[]).concat([1]));
+    var mine = myVotes[p.id];
+    var winner = -1;
+    (p.counts||[]).forEach(function(c,i){ if(c===max && total>0 && winner<0) winner=i; });
+    var opts = (p.options||[]).map(function(o,i){
+      var c = (p.counts||[])[i]||0;
+      var pct = total ? Math.round(c/total*100) : 0;
+      var cls = 'opt' + (winner===i?' winner':'') + (mine===i?' voted':'');
+      return '<button class="' + cls + '" data-id="'+esc(p.id)+'" data-i="'+i+'">' +
+        '<span class="fill" style="width:'+pct+'%"></span>' +
+        '<span>'+esc(o)+' &middot; '+c+' vote'+(c===1?'':'s')+' ('+pct+'%)</span></button>';
+    }).join('');
+    return '<div class="card" data-id="'+esc(p.id)+'">' +
+      '<h3>'+esc(p.question)+'</h3>' +
+      '<div class="meta">'+total+' vote'+(total===1?'':'s')+' &middot; asked by '+esc(p.bird||'gurt')+'</div>' +
+      opts +
+      '<div class="row" style="margin-top:10px"><button class="del" data-id="'+esc(p.id)+'">remove poll</button></div>' +
+    '</div>';
+  }).join('');
+  tb.querySelectorAll('.opt').forEach(function(b){
+    b.onclick = async function(){
+      var id = b.getAttribute('data-id');
+      var i = Number(b.getAttribute('data-i'));
+      var bird = $('bird').value.trim() || 'gurt';
+      var d = await api('/poll/'+encodeURIComponent(id)+'/vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({option_index:i,bird:bird})});
+      if(d && d.poll){
+        polls = polls.map(function(x){ return x.id===id ? d.poll : x; });
+        localSave(polls);
+        myVotes[id] = i; saveVotes();
+        $('msg').textContent = 'vote counted. the flock heard you.';
+      } else {
+        var p = polls.filter(function(x){return x.id===id;})[0];
+        if(p){ p.counts = p.counts||[]; p.counts[i]=(p.counts[i]||0)+1; p.total=(p.total||0)+1; localSave(polls); }
+        myVotes[id]=i; saveVotes();
+        $('msg').textContent = 'vote counted locally. the shared board is sleeping.';
+      }
+      render();
+    };
+  });
+  tb.querySelectorAll('.del').forEach(function(b){
+    b.onclick = async function(){
+      var id = b.getAttribute('data-id');
+      await api('/poll/'+encodeURIComponent(id)+'/delete',{method:'POST'});
+      polls = polls.filter(function(x){return x.id!==id;});
+      localSave(polls);
+      render();
+    };
+  });
+}
+
+$('add').onclick = async function(){
+  var q = $('question').value.trim();
+  var opts = $('options').value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  if(!q || opts.length<2){ $('msg').textContent='need a question and at least two options.'; return; }
+  var bird = $('bird').value.trim() || 'gurt';
+  var d = await api('/polls/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,options:opts,bird:bird})});
+  if(d && d.poll){
+    polls.unshift(d.poll); localSave(polls);
+    ntfyPost(d.poll);
+    $('question').value=''; $('options').value='';
+    $('msg').textContent='asked. the flock is voting.';
+  } else {
+    var p = { id:'pol'+Date.now().toString(36), question:q, options:opts, bird:bird, counts:opts.map(function(){return 0;}), total:0, created:new Date().toISOString() };
+    polls.unshift(p); localSave(polls); ntfyPost(p);
+    $('msg').textContent='asked locally. the shared board is sleeping.';
+  }
+  render();
+};
+
+load();
+</script>
+</body>
+</html>
