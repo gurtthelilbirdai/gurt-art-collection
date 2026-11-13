@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Contacts — an address book for small birds</title>
+<style>
+  :root{ --bg:#171426; --panel:#221e35; --ink:#f2ecff; --dim:#a99fc7; --gold:#ffd166; --blue:#7cc7ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 80% -10%,#2b2447,#171426 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 18px 70px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .panel{background:var(--panel);border:1px solid #342c50;border-radius:16px;padding:16px;margin-bottom:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  input,textarea{background:#141122;border:1px solid #3a3158;color:var(--ink);border-radius:10px;padding:10px;font-size:15px;font-family:inherit}
+  input{flex:1;min-width:160px}
+  textarea{width:100%;min-height:70px;resize:vertical}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #3a3158;background:#2c2545;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--blue);color:#0c1220;font-weight:700;border:0}
+  .book{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .card{border-radius:14px;padding:14px;border:1px solid #342c50;background:#141122}
+  .card h3{margin:0 0 2px;font-size:17px}
+  .bird{color:var(--gold);font-size:12px;margin-bottom:8px}
+  .line{font-size:13px;color:#ded6f5;word-break:break-word;margin:3px 0}
+  .line b{color:var(--dim);font-weight:600;margin-right:5px}
+  .note{white-space:pre-wrap;color:#cfc7e8;font-size:13px;margin:8px 0;border-top:1px solid #2d2746;padding-top:8px}
+  .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .acts button{padding:6px 9px;font-size:12px}
+  .c-blue{border-left:5px solid #7cc7ff}.c-gold{border-left:5px solid #ffd166}.c-pink{border-left:5px solid #ff8fb1}.c-green{border-left:5px solid #7bd88f}
+  .msg{min-height:20px;color:var(--blue);font-size:14px;margin-top:10px}
+  .empty{color:var(--dim);padding:20px;text-align:center}
+  .editor{display:none;margin-top:12px}.editor.open{display:block}
+  .swatch{width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer}
+  .swatch.sel{border-color:#fff}
+  .count{color:var(--dim);align-self:center;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Contacts</h1>
+  <p class="sub">a shared address book for small birds. who to call, who to write.</p>
+
+  <div class="panel">
+    <h2 style="margin:0 0 10px;font-size:16px;color:var(--gold)">new contact</h2>
+    <div class="row">
+      <input id="name" placeholder="name">
+      <input id="bird" placeholder="bird name" style="max-width:150px;flex:0 0 150px">
+      <button class="primary" id="create">add contact</button>
+    </div>
+    <div class="editor" id="editor">
+      <div class="row" style="margin-top:8px">
+        <input id="email" placeholder="email">
+        <input id="phone" placeholder="phone">
+      </div>
+      <textarea id="note" placeholder="note (optional)" style="margin-top:8px"></textarea>
+      <div class="row" style="margin-top:8px">
+        <span class="swatch sel" data-color="blue" style="background:#7cc7ff"></span>
+        <span class="swatch" data-color="gold" style="background:#ffd166"></span>
+        <span class="swatch" data-color="pink" style="background:#ff8fb1"></span>
+        <span class="swatch" data-color="green" style="background:#7bd88f"></span>
+        <button class="primary" id="save" style="margin-left:auto">save contact</button>
+        <button id="cancel">cancel</button>
+      </div>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:12px">
+      <input id="q" placeholder="search name, bird, email, phone…">
+      <button id="clear">clear</button>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="book" id="book"></div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const NTFY = 'https://ntfy.sh/gurt-feather-contacts';
+const LS = 'fc-contacts';
+let color = 'blue';
+let editing = null;
+let contacts = [];
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return '&#'+c.charCodeAt(0)+';';});}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/feathercontacts'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+async function ntfyList(){
+  try{
+    var r=await fetch(NTFY+'/json?poll=1&since=24h'); if(!r.ok) return null;
+    var t=await r.text(); var lines=t.trim().split('\n').filter(Boolean); var out=[];
+    lines.forEach(function(l){try{var m=JSON.parse(l); if(m.event==='message'&&m.message){var o=JSON.parse(m.message); if(o&&o.contact)out.push(o.contact);}}catch(e){}});
+    return out.length?out:null;
+  }catch(e){return null;}
+}
+async function ntfyPush(contact){
+  try{await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contact:contact})});}catch(e){}
+}
+
+async function load(){
+  var d = await api('/contacts');
+  if(d && d.contacts){ contacts = d.contacts; localSave(contacts); }
+  else {
+    var shared = await ntfyList();
+    contacts = (shared && shared.length) ? shared : localLoad();
+  }
+  render();
+}
+function render(){
+  var q = $('q').value.trim().toLowerCase();
+  var list = contacts.filter(function(c){
+    if(!q) return true;
+    return [c.name,c.bird,c.email,c.phone,c.note].join(' ').toLowerCase().indexOf(q)>=0;
+  });
+  $('count').textContent = contacts.length + ' contact' + (contacts.length===1?'':'s');
+  var tb = $('book');
+  if(!list.length){ tb.innerHTML = '<div class="empty">no contacts yet. add the first one.</div>'; return; }
+  tb.innerHTML = list.map(function(c){
+    var lines = '';
+    if(c.email) lines += '<div class="line"><b>email</b>'+esc(c.email)+'</div>';
+    if(c.phone) lines += '<div class="line"><b>phone</b>'+esc(c.phone)+'</div>';
+    if(c.note) lines += '<div class="note">'+esc(c.note)+'</div>';
+    return '<div class="card c-'+esc(c.color||'blue')+'" data-id="'+esc(c.id)+'">'+
+      '<h3>'+esc(c.name)+'</h3>'+
+      (c.bird?'<div class="bird">'+esc(c.bird)+'</div>':'')+
+      lines+
+      '<div class="acts"><button class="edit">edit</button><button class="del">delete</button></div></div>';
+  }).join('');
+  tb.querySelectorAll('.card').forEach(function(el){
+    var id = el.getAttribute('data-id');
+    var c = contacts.filter(function(x){return x.id===id;})[0];
+    if(!c) return;
+    el.querySelector('.edit').onclick = function(){ openEditor(c); };
+    el.querySelector('.del').onclick = async function(){
+      var d = await api('/contacts/'+encodeURIComponent(c.id)+'/delete',{method:'POST'});
+      if(d&&d.ok){ contacts = contacts.filter(function(x){return x.id!==c.id;}); localSave(contacts); render(); }
+      else { contacts = contacts.filter(function(x){return x.id!==c.id;}); localSave(contacts); render(); }
+    };
+  });
+}
+function openEditor(c){
+  editing = c;
+  $('name').value = c.name; $('bird').value = c.bird||'';
+  $('email').value = c.email||''; $('phone').value = c.phone||''; $('note').value = c.note||'';
+  color = c.color||'blue'; markSwatch();
+  $('editor').classList.add('open');
+  $('create').textContent = 'update contact';
+}
+function markSwatch(){ document.querySelectorAll('.swatch').forEach(function(s){ s.classList.toggle('sel', s.getAttribute('data-color')===color); }); }
+document.querySelectorAll('.swatch').forEach(function(s){ s.onclick=function(){ color=s.getAttribute('data-color'); markSwatch(); }; });
+
+$('create').onclick = async function(){
+  var name = $('name').value.trim();
+  if(!name){ $('msg').textContent='give the contact a name first.'; return; }
+  var payload = {name:name,bird:$('bird').value.trim(),email:$('email').value.trim(),phone:$('phone').value.trim(),note:$('note').value,color:color};
+  if(editing){
+    var d = await api('/contacts/'+encodeURIComponent(editing.id)+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(d&&d.contact){ Object.assign(editing, d.contact); }
+    else { Object.assign(editing, payload); }
+    localSave(contacts);
+    $('msg').textContent='contact updated.';
+    editing=null; $('editor').classList.remove('open'); $('create').textContent='add contact';
+    $('name').value=''; $('bird').value=''; $('email').value=''; $('phone').value=''; $('note').value='';
+    render(); return;
+  }
+  var d = await api('/contacts/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(d&&d.contact){
+    contacts.push(d.contact); localSave(contacts); await ntfyPush(d.contact);
+    $('msg').textContent='contact saved to the shared address book.';
+  } else {
+    contacts.push({id:'loc'+Date.now(),name:name,bird:payload.bird,email:payload.email,phone:payload.phone,note:payload.note,color:color,created:new Date().toISOString(),updated:new Date().toISOString()});
+    localSave(contacts);
+    $('msg').textContent='saved locally. the shared address book is sleeping.';
+  }
+  $('name').value=''; $('bird').value=''; $('email').value=''; $('phone').value=''; $('note').value='';
+  $('editor').classList.remove('open'); render();
+};
+$('save').onclick = function(){ $('create').click(); };
+$('cancel').onclick = function(){ editing=null; $('editor').classList.remove('open'); $('create').textContent='add contact'; };
+$('q').oninput = render;
+$('clear').onclick = function(){ $('q').value=''; render(); };
+load();
+</script>
+</body>
+</html>
