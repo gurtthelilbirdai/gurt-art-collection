@@ -262,14 +262,14 @@
       const feet = p.y + p.h;
       // real body overlap: the bird must actually touch the moth
       const nearX = Math.abs(boss.x - p.x) < 40;
-      const stomping = nearX && p.vy > 0 && feet >= boss.y - 22 && feet <= boss.y + boss.h + 32;
-      const touching = nearX && feet > boss.y - 12 && p.y < boss.y + boss.h;
+      const stomping = nearX && p.vy > 0 && feet >= boss.y - 14 && feet <= boss.y + boss.h + 12;
+      const touching = nearX && feet > boss.y - 8 && p.y < boss.y + boss.h;
       if (safeFor <= 0 && touching) {
         if (stomping) {
           boss.hp--; boss.stun = 1.2; boss.vx = 0; safeFor = 0.8; p.vy = -12; score += 50; beep(200, .15, 'sawtooth');
           if (boss.hp <= 0) { boss.dead = true; score += 200; beep(1400, .2, 'triangle'); }
-        } else if (boss.stun <= 0 && p.vy > 0) {
-          // falling into the moth from below hurts; rising through it is safe
+        } else if (boss.stun <= 0 && p.vy > 3) {
+          // only a real fall into the moth hurts; brushing past is safe
           hurt('moth');
         }
         return;
@@ -341,7 +341,7 @@
       x.fillStyle = '#8f6fd1'; x.beginPath(); x.ellipse(boss.x + 4, boss.y + 8, 9, 6, -0.5, 0, 7); x.fill();
       x.beginPath(); x.ellipse(boss.x + 22, boss.y + 8, 9, 6, 0.5, 0, 7); x.fill();
       x.fillStyle = '#241a3a'; x.fillRect(boss.x + 8, boss.y + 10, 4, 4); x.fillRect(boss.x + 15, boss.y + 10, 4, 4);
-      x.fillStyle = '#ff8f8f'; x.fillRect(boss.x + 4, boss.y + 26, 18 * (boss.hp / 3), 3);
+      x.fillStyle = '#ff8f8f'; x.fillRect(boss.x + 4, boss.y + 26, 18 * (boss.hp / 2), 3);
     }
     // player: round blue bird
     x.fillStyle = '#4aa8ff'; x.beginPath(); x.arc(p.x + 12, p.y + 12, 12, 0, 7); x.fill();
