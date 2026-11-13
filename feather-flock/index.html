@@ -62,11 +62,11 @@ button.ghost{background:#334155;color:var(--ink)}
 </section>
 </main>
 <script>
-const API = location.protocol.startsWith('http') && location.hostname === 'localhost' ? 'http://localhost:8600/api/featherflock' : '/api/featherflock';
+const API = '/api/featherflock';
 let me = localStorage.getItem('flock_bird') || '';
 let data = {birds:[],posts:[]};
 const $ = id => document.getElementById(id);
-const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&','<':'<','>':'>','"':'"',"'":'''}[c]));
+const esc = s => String(s||'').replace(/[&<>"']/g, c => ({"&":"&","<":"<",">":">","\"":"\"","'":"'"}[c]));
 const COLORS = {blue:'#60a5fa',green:'#4ade80',orange:'#fb923c',pink:'#f472b6',yellow:'#facc15',purple:'#a78bfa'};
 function color(c){return COLORS[c]||COLORS.blue}
 const NTFY='https://ntfy.nerdvpn.de/gurt-feather-flock';
