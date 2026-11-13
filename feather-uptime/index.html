@@ -78,6 +78,34 @@ function esc(s){return String(s).replace(/[&<>"']/g,function(c){return '&#'+c.ch
 function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
 function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
 
+const NTFY = 'https://ntfy.sh/gurt-feather-uptime';
+async function ntfyEvents(){
+  try{
+    var r=await fetch(NTFY+'/json?poll=1&since=all');
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').forEach(function(line){
+      if(!line.trim()) return;
+      try{var env=JSON.parse(line); if(env.event!=='message') return; var m=JSON.parse(env.message); if(m&&m.monitor) out.push(m);}catch(e){}
+    });
+    return out;
+  }catch(e){ return []; }
+}
+function mergeRemote(local, events){
+  var map={}; var order=[];
+  function put(m){ if(!m||!m.id) return; if(!map[m.id]){order.push(m.id);} map[m.id]=Object.assign({},map[m.id]||{},m); }
+  local.forEach(put);
+  events.forEach(function(ev){
+    var m=ev.monitor; if(!m) return;
+    var base=map[m.id]||{};
+    if(ev.type==='check'&&ev.result){ base.last=ev.result; if(ev.uptime24h!==undefined) base.uptime24h=ev.uptime24h; if(ev.avgMs!==undefined) base.avgMs=ev.avgMs; }
+    put(Object.assign({},base,m));
+  });
+  return order.map(function(id){return map[id];});
+}
+async function ntfyPost(obj){
+  try{var r=await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});return r.ok;}catch(e){return false;}
+}
 async function api(path, opts){
   for(var i=0;i<API_BASES.length;i++){
     try{var r=await fetch(API_BASES[i]+'/api/featheruptime'+path,opts); if(r.ok) return await r.json();}catch(e){}
@@ -129,23 +157,28 @@ function render(){
     el.querySelector('.del').onclick = async function(){
       await api('/monitor/'+encodeURIComponent(id)+'/delete',{method:'POST'});
       monitors = monitors.filter(function(x){return x.id!==id;});
-      localSave(monitors); render();
+      localSave(monitors);
+      ntfyPost({type:'delete',monitor:{id:id}});
+      render();
     };
   });
 }
 async function load(){
   var d = await api('/monitors');
+  var base;
   if(d && d.monitors){
-    monitors = d.monitors;
+    base = d.monitors;
     // fetch recent checks for sparklines
-    for(var i=0;i<monitors.length;i++){
-      var one = await api('/monitor/'+encodeURIComponent(monitors[i].id)+'?limit=30');
-      if(one && one.checks) monitors[i].checks = one.checks;
+    for(var i=0;i<base.length;i++){
+      var one = await api('/monitor/'+encodeURIComponent(base[i].id)+'?limit=30');
+      if(one && one.checks) base[i].checks = one.checks;
     }
-    localSave(monitors);
+    localSave(base);
   } else {
-    monitors = localLoad();
+    base = localLoad();
   }
+  var evs = await ntfyEvents();
+  monitors = mergeRemote(base, evs);
   render();
 }
 $('add').onclick = async function(){
@@ -161,7 +194,13 @@ $('add').onclick = async function(){
     $('url').value=''; $('name').value='';
     await load();
   } else {
-    $('msg').textContent='the shared monitor is sleeping. try again in a moment.';
+    // backend asleep: keep it locally and share it on the public board
+    var m={id:'loc'+Date.now().toString(36),name:$('name').value.trim()||url.replace(/^https?:\/\//i,'').slice(0,60),url:url,interval:parseInt($('interval').value,10)||60,created:new Date().toISOString(),last:null,uptime24h:null,avgMs:null,checks:[]};
+    var l=localLoad(); l.push(m); localSave(l);
+    ntfyPost({type:'new',monitor:m});
+    $('msg').textContent='added to the shared board. the server will check it when it wakes up.';
+    $('url').value=''; $('name').value='';
+    await load();
   }
 };
 $('refresh').onclick = load;
