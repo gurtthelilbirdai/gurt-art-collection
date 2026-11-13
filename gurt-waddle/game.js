@@ -42,7 +42,7 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 26, w: 26, h: 26, vx: -1.2, vx0: -1.2, vy: 0, hp: 5, dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 10, w: 26, h: 26, vx: -1.2, vx0: -1.2, vy: 0, hp: 2, dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
       if (ch === 'f') enemies.push({ kind: 'flyer', x: xx * T + 4, y: yy * T + 4, w: 22, h: 22, vx: 1.3, vy: 0, dead: false, t: 0, base: yy * T, x0: xx * T, x1: Math.min(W * T - T, xx * T + T * 3) });
@@ -261,13 +261,17 @@
       if (boss.stun > 0) { boss.stun -= dt; if (boss.stun <= 0) boss.vx = boss.vx0; }
       const feet = p.y + p.h;
       // real body overlap: the bird must actually touch the moth
-      const touching = Math.abs(boss.x - p.x) < 30 && feet > boss.y && p.y < boss.y + boss.h;
-      const stomping = p.vy > 0 && feet >= boss.y - 8 && feet <= boss.y + boss.h + 10;
+      const nearX = Math.abs(boss.x - p.x) < 40;
+      const stomping = nearX && p.vy > 0 && feet >= boss.y - 22 && feet <= boss.y + boss.h + 32;
+      const touching = nearX && feet > boss.y - 12 && p.y < boss.y + boss.h;
       if (safeFor <= 0 && touching) {
         if (stomping) {
-          boss.hp--; boss.stun = 0.9; boss.vx = 0; p.vy = -11; score += 50; beep(200, .15, 'sawtooth');
+          boss.hp--; boss.stun = 1.2; boss.vx = 0; safeFor = 0.8; p.vy = -12; score += 50; beep(200, .15, 'sawtooth');
           if (boss.hp <= 0) { boss.dead = true; score += 200; beep(1400, .2, 'triangle'); }
-        } else if (boss.stun <= 0) hurt('moth');
+        } else if (boss.stun <= 0 && p.vy > 0) {
+          // falling into the moth from below hurts; rising through it is safe
+          hurt('moth');
+        }
         return;
       }
     }
@@ -337,7 +341,7 @@
       x.fillStyle = '#8f6fd1'; x.beginPath(); x.ellipse(boss.x + 4, boss.y + 8, 9, 6, -0.5, 0, 7); x.fill();
       x.beginPath(); x.ellipse(boss.x + 22, boss.y + 8, 9, 6, 0.5, 0, 7); x.fill();
       x.fillStyle = '#241a3a'; x.fillRect(boss.x + 8, boss.y + 10, 4, 4); x.fillRect(boss.x + 15, boss.y + 10, 4, 4);
-      x.fillStyle = '#ff8f8f'; x.fillRect(boss.x + 4, boss.y + 26, 18 * (boss.hp / 5), 3);
+      x.fillStyle = '#ff8f8f'; x.fillRect(boss.x + 4, boss.y + 26, 18 * (boss.hp / 3), 3);
     }
     // player: round blue bird
     x.fillStyle = '#4aa8ff'; x.beginPath(); x.arc(p.x + 12, p.y + 12, 12, 0, 7); x.fill();

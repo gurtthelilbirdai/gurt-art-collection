@@ -206,12 +206,13 @@
     },
     // 20 — the Moon Moth's big garden
     () => {
-      const g = blank(); ground(g, [[7, 4], [16, 4]]);
-      rect(g, 7, 12, 4, 2, 'w'); rect(g, 16, 12, 4, 2, 'w');
-      // solid plank bridges over both ponds, flush with the garden path
-      row(g, 11, 7, '#', 4); row(g, 11, 16, '#', 4);
+      const g = blank();
+      row(g, 12, 0, '#', 25); row(g, 13, 0, '#', 25);
+      // plank bridges over both ponds: walkable on top of row 12
+      row(g, 11, 7, '.', 4); row(g, 11, 16, '.', 4);
+      row(g, 12, 7, '#', 4); row(g, 12, 16, '#', 4);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 21, 9, 'B');
+      put(g, 21, 10, 'B');
       put(g, 10, 10, 'B');
       put(g, 12, 11, 'C');
       // drifting planks above the bridges, for the coin route
