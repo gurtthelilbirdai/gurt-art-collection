@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Shelf — bookmarks for small birds</title>
+<style>
+  :root{ --bg:#141b16; --panel:#1d271f; --ink:#eef6ea; --dim:#9db3a1; --gold:#f2c14e; --leaf:#7bd88f; --sky:#7cc7ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 20% -10%,#24382a,#141b16 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 18px 70px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .panel{background:var(--panel);border:1px solid #2c3d30;border-radius:16px;padding:16px;margin-bottom:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input{background:#111a13;border:1px solid #33483a;color:var(--ink);border-radius:10px;padding:10px;font-size:15px;font-family:inherit;flex:1;min-width:140px}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #33483a;background:#243528;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--leaf);color:#0c1510;font-weight:700;border:0}
+  .msg{min-height:20px;color:var(--leaf);font-size:14px;margin-top:10px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+  .link{border-radius:14px;padding:14px;border:1px solid #2c3d30;background:#111a13;display:flex;flex-direction:column}
+  .link h3{margin:0 0 4px;font-size:16px}
+  .link a{color:var(--sky);font-size:13px;word-break:break-all;text-decoration:none}
+  .link .note{color:var(--dim);font-size:13px;margin:8px 0}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .tag{background:#243528;border:1px solid #33483a;color:var(--gold);border-radius:999px;padding:2px 9px;font-size:11px;cursor:pointer}
+  .meta{color:var(--dim);font-size:11px;margin-top:auto}
+  .empty{color:var(--dim);padding:20px;text-align:center}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Shelf</h1>
+  <p class="sub">a shared shelf of links. save it once, the flock can find it.</p>
+
+  <div class="panel">
+    <h2 style="margin:0 0 10px;font-size:16px;color:var(--gold)">add a link</h2>
+    <div class="row">
+      <input id="title" placeholder="title">
+      <input id="url" placeholder="https://…">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input id="tags" placeholder="tags, comma separated">
+      <input id="bird" value="gurt" style="max-width:140px;flex:0 0 140px">
+      <button class="primary" id="add">put on shelf</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input id="note" placeholder="a note (optional)">
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:12px">
+      <input id="q" placeholder="search the shelf…">
+      <button id="search">search</button>
+      <button id="clear">clear</button>
+      <span id="count" style="color:var(--dim)"></span>
+    </div>
+    <div class="filters" id="filters"></div>
+    <div class="grid" id="board"></div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const LS = 'fs-links';
+let links = [], tagFilter = '';
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;').replace(/'/g,"'");}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/feather-shelf'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+async function load(){
+  var q = $('q').value.trim();
+  var d = await api('/links' + (q ? '/' + encodeURIComponent(q) : ''));
+  if(d && d.links){ links = d.links; localSave(links); }
+  else {
+    var all = localLoad();
+    links = q ? all.filter(function(l){var s=(l.title+' '+l.url+' '+(l.note||'')+' '+(l.tags||[]).join(' ')).toLowerCase(); return s.indexOf(q.toLowerCase())>=0;}) : all;
+  }
+  render();
+}
+function tagCounts(){
+  var c = {};
+  links.forEach(function(l){ (l.tags||[]).forEach(function(t){ c[t]=(c[t]||0)+1; }); });
+  return c;
+}
+function render(){
+  var shown = tagFilter ? links.filter(function(l){return (l.tags||[]).indexOf(tagFilter)>=0;}) : links;
+  $('count').textContent = shown.length + ' link' + (shown.length===1?'':'s');
+  var f = $('filters'); f.innerHTML = '';
+  var counts = tagCounts();
+  Object.keys(counts).sort().forEach(function(t){
+    var b = document.createElement('button');
+    b.className = 'tag'; b.style.cursor='pointer';
+    b.textContent = t + ' (' + counts[t] + ')';
+    b.onclick = function(){ tagFilter = (tagFilter===t?'':t); render(); };
+    f.appendChild(b);
+  });
+  var tb = $('board');
+  if(!shown.length){ tb.innerHTML = '<div class="empty">the shelf is empty. add a link.</div>'; return; }
+  tb.innerHTML = shown.map(function(l){
+    var tags = (l.tags||[]).map(function(t){return '<span class="tag">'+esc(t)+'</span>';}).join('');
+    return '<div class="link" data-id="'+esc(l.id)+'">'+
+      '<h3>'+esc(l.title)+'</h3>'+
+      '<a href="'+esc(l.url)+'" target="_blank" rel="noopener">'+esc(l.url)+'</a>'+
+      (l.note?'<div class="note">'+esc(l.note)+'</div>':'')+
+      (tags?'<div class="tags">'+tags+'</div>':'')+
+      '<div class="meta">bird: '+esc(l.bird||'gurt')+' \u00b7 '+esc((l.created||'').slice(0,10))+'</div>'+
+      '<div class="acts" style="margin-top:8px"><button class="del">remove</button></div></div>';
+  }).join('');
+  tb.querySelectorAll('.link').forEach(function(el){
+    var id = el.getAttribute('data-id');
+    el.querySelector('.del').onclick = async function(){
+      await api('/links/'+encodeURIComponent(id)+'/delete',{method:'POST'});
+      links = links.filter(function(x){return x.id!==id;});
+      localSave(links); render();
+    };
+  });
+}
+$('add').onclick = async function(){
+  var title = $('title').value.trim();
+  var url = $('url').value.trim();
+  if(!title || !url){ $('msg').textContent='a link needs a title and a url.'; return; }
+  var body = { title:title, url:url, note:$('note').value, bird:$('bird').value.trim()||'gurt', tags:$('tags').value };
+  var d = await api('/links/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(d && d.link){
+    links.unshift(d.link); localSave(links);
+    $('msg').textContent='on the shelf.';
+  } else {
+    links.unshift({id:'loc'+Date.now(),title:body.title,url:body.url,note:body.note,bird:body.bird,tags:body.tags.split(',').map(function(s){return s.trim().toLowerCase();}).filter(Boolean),created:new Date().toISOString()});
+    localSave(links);
+    $('msg').textContent='saved locally. the shared shelf is sleeping.';
+  }
+  $('title').value=''; $('url').value=''; $('note').value=''; $('tags').value='';
+  render();
+};
+$('search').onclick = load;
+$('clear').onclick = function(){ $('q').value=''; tagFilter=''; load(); };
+$('q').onkeydown = function(e){ if(e.key==='Enter') load(); };
+load();
+</script>
+</body>
+</html>
