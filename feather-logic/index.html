@@ -134,17 +134,29 @@ function win(){
   setTimeout(()=>{gen();draw();hud();},900);
 }
 
+const API_BASES=['','http://localhost:8600'];
+async function apiFetch(path,opts){
+  let lastErr=null;
+  for(const base of API_BASES){
+    try{
+      const r=await fetch(base+path,opts);
+      if(r.ok)return r;
+      lastErr=new Error('status '+r.status);
+    }catch(e){lastErr=e;}
+  }
+  throw lastErr||new Error('api unreachable');
+}
 async function postScore(m){
   const name=(localStorage.getItem('featherlogic_name')||'gurt').slice(0,18);
   try{
-    const r=await fetch('/api/featherlogic/solves',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,level:level-1,moves:m})});
+    const r=await apiFetch('/api/featherlogic/solves',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,level:level-1,moves:m})});
     if(r.ok){document.getElementById('log').textContent+=' score posted.';loadBoard();}
   }catch(e){document.getElementById('log').textContent+=' (offline — score kept locally)';}
 }
 
 async function loadBoard(){
   try{
-    const r=await fetch('/api/featherlogic/solves'); const d=await r.json();
+    const r=await apiFetch('/api/featherlogic/solves'); const d=await r.json();
     document.getElementById('board').innerHTML=(d.solves||[]).slice(0,10).map((s,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(s.name)}</td><td>${s.level}</td><td>${s.moves}</td><td>${s.at.slice(0,19).replace('T',' ')}</td></tr>`).join('')||'<tr><td colspan="5">no solves yet</td></tr>';
   }catch(e){document.getElementById('board').innerHTML='<tr><td colspan="5">offline</td></tr>';}
 }
