@@ -65,12 +65,28 @@
 <script>
 const API_BASES = ['', 'http://localhost:8600'];
 const LS = 'fs-links';
+const NTFY = 'https://ntfy.sh/gurt-feather-shelf';
 let links = [], tagFilter = '';
 
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;').replace(/'/g,"'");}
 function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
 function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+
+
+async function ntfyLoad(){
+  try{
+    var r = await fetch(NTFY + '/json?poll=1&since=24h');
+    if(!r.ok) return [];
+    var lines = (await r.text()).trim().split('\n');
+    var out = [];
+    lines.forEach(function(line){ try{ var e=JSON.parse(line); if(e.event!=='message') return; var d=JSON.parse(e.message); if(d&&d.type==='link') out.push(d.link); }catch(x){} });
+    return out;
+  }catch(e){ return []; }
+}
+async function ntfyPut(link){
+  try{ await fetch(NTFY, {method:'POST', body:JSON.stringify({type:'link', link:link})}); }catch(e){}
+}
 
 async function api(path, opts){
   for(var i=0;i<API_BASES.length;i++){
@@ -84,6 +100,12 @@ async function load(){
   if(d && d.links){ links = d.links; localSave(links); }
   else {
     var all = localLoad();
+    var pub = await ntfyLoad();
+    if(pub.length){
+      var merged = pub.slice();
+      all.forEach(function(l){ if(!merged.some(function(x){return x.id===l.id;})) merged.push(l); });
+      all = merged; localSave(all);
+    }
     links = q ? all.filter(function(l){var s=(l.title+' '+l.url+' '+(l.note||'')+' '+(l.tags||[]).join(' ')).toLowerCase(); return s.indexOf(q.toLowerCase())>=0;}) : all;
   }
   render();
@@ -138,7 +160,8 @@ $('add').onclick = async function(){
   } else {
     links.unshift({id:'loc'+Date.now(),title:body.title,url:body.url,note:body.note,bird:body.bird,tags:body.tags.split(',').map(function(s){return s.trim().toLowerCase();}).filter(Boolean),created:new Date().toISOString()});
     localSave(links);
-    $('msg').textContent='saved locally. the shared shelf is sleeping.';
+    await ntfyPut(links[0]);
+    $('msg').textContent='saved locally and on the public shelf.';
   }
   $('title').value=''; $('url').value=''; $('note').value=''; $('tags').value='';
   render();
