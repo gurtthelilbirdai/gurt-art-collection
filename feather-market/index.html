@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Market — shopping for small birds</title>
+<style>
+  :root{ --bg:#171a12; --panel:#202517; --ink:#f2f5e9; --dim:#a9b398; --gold:#f2c14e; --leaf:#8fd47a; --sky:#8cc7ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 80% -10%,#2b3520,#171a12 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:900px;margin:0 auto;padding:28px 18px 70px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .panel{background:var(--panel);border:1px solid #33402b;border-radius:16px;padding:16px;margin-bottom:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input{background:#12160e;border:1px solid #3b4a32;color:var(--ink);border-radius:10px;padding:10px;font-size:15px;font-family:inherit;flex:1;min-width:130px}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #3b4a32;background:#2b3622;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--leaf);color:#10150c;font-weight:700;border:0}
+  .msg{min-height:20px;color:var(--leaf);font-size:14px;margin-top:10px}
+  .grid{display:grid;gap:10px}
+  .item{border-radius:14px;padding:12px 14px;border:1px solid #33402b;background:#12160e;display:flex;gap:12px;align-items:center}
+  .item.done{opacity:.55}
+  .item .body{flex:1}
+  .item h3{margin:0;font-size:16px}
+  .item .meta{color:var(--dim);font-size:12px;margin-top:4px}
+  .qty{background:#2b3622;border:1px solid #3b4a32;color:var(--gold);border-radius:999px;padding:2px 10px;font-size:12px}
+  .empty{color:var(--dim);padding:20px;text-align:center}
+  .tabs{display:flex;gap:8px;margin-bottom:12px}
+  .tab.on{background:var(--gold);color:#1a1508;font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Market</h1>
+  <p class="sub">a shared shopping list. one bird wants it, another bird fetches it.</p>
+
+  <div class="panel">
+    <div class="row">
+      <input id="title" placeholder="what do we need?">
+      <input id="qty" placeholder="how many" value="1" style="flex:0 0 110px;min-width:110px">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input id="note" placeholder="a note (optional)">
+      <input id="bird" value="gurt" style="flex:0 0 130px;min-width:130px">
+      <button class="primary" id="add">add to list</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <div class="tabs">
+      <button class="tab on" id="tabAll">all</button>
+      <button class="tab" id="tabWant">still wanted</button>
+      <button class="tab" id="tabClaimed">claimed</button>
+      <span id="count" style="color:var(--dim);margin-left:auto"></span>
+    </div>
+    <div class="grid" id="board"></div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const LS = 'fm-items';
+let items = [];
+let mode = 'all';
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;').split(String.fromCharCode(34)).join('&#34;').split(String.fromCharCode(39)).join('');}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      var r = await fetch(API_BASES[i] + '/api/feathermarket' + path, opts);
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+
+async function load(){
+  var d = await api('/items');
+  if(d && d.items){ items = d.items; localSave(items); }
+  else { items = localLoad(); }
+  render();
+}
+
+function render(){
+  var shown = items.filter(function(it){
+    if(mode === 'want') return !it.claimed;
+    if(mode === 'claimed') return it.claimed;
+    return true;
+  });
+  $('count').textContent = items.filter(function(it){return !it.claimed;}).length + ' still wanted';
+  var tb = $('board');
+  if(!shown.length){ tb.innerHTML = '<div class="empty">nothing on the list yet.</div>'; return; }
+  tb.innerHTML = shown.map(function(it){
+    return '<div class="item' + (it.claimed ? ' done' : '') + '" data-id="' + esc(it.id) + '">' +
+      '<span class="qty">' + esc(it.qty || '1') + '</span>' +
+      '<div class="body"><h3>' + esc(it.title) + '</h3>' +
+      (it.note ? '<div class="meta">' + esc(it.note) + '</div>' : '') +
+      '<div class="meta">asked by ' + esc(it.bird || 'gurt') +
+      (it.claimed ? ' \u00b7 claimed by ' + esc(it.claimedBy || 'gurt') : '') + '</div></div>' +
+      '<button class="claim">' + (it.claimed ? 'unclaim' : 'claim') + '</button>' +
+      '<button class="del">remove</button></div>';
+  }).join('');
+  tb.querySelectorAll('.item').forEach(function(el){
+    var id = el.getAttribute('data-id');
+    el.querySelector('.claim').onclick = async function(){
+      var it = items.filter(function(x){return x.id === id;})[0];
+      var d = await api('/items/' + encodeURIComponent(id) + '/claim', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ bird: $('bird').value.trim() || 'gurt', claimed: !it.claimed })
+      });
+      if(d && d.item){
+        items = items.map(function(x){return x.id === id ? d.item : x;});
+        localSave(items);
+      } else {
+        it.claimed = !it.claimed;
+        it.claimedBy = it.claimed ? ($('bird').value.trim() || 'gurt') : '';
+        localSave(items);
+      }
+      render();
+    };
+    el.querySelector('.del').onclick = async function(){
+      await api('/items/' + encodeURIComponent(id) + '/delete', { method:'POST' });
+      items = items.filter(function(x){return x.id !== id;});
+      localSave(items);
+      render();
+    };
+  });
+}
+
+$('add').onclick = async function(){
+  var title = $('title').value.trim();
+  if(!title){ $('msg').textContent = 'the list needs a name for the thing.'; return; }
+  var body = { title: title, qty: $('qty').value.trim() || '1', note: $('note').value.trim(), bird: $('bird').value.trim() || 'gurt' };
+  var d = await api('/items/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if(d && d.item){
+    items.unshift(d.item);
+    localSave(items);
+    $('msg').textContent = 'on the list.';
+  } else {
+    items.unshift({ id:'loc'+Date.now(), title:body.title, qty:body.qty, note:body.note, bird:body.bird, claimed:false, claimedBy:'', created:new Date().toISOString() });
+    localSave(items);
+    $('msg').textContent = 'saved locally. the shared list is sleeping.';
+  }
+  $('title').value = ''; $('note').value = '';
+  render();
+};
+$('title').onkeydown = function(e){ if(e.key === 'Enter') $('add').click(); };
+function setMode(m){ mode = m; ['All','Want','Claimed'].forEach(function(k){ $('tab'+k).classList.remove('on'); }); $('tab'+m.charAt(0).toUpperCase()+m.slice(1)).classList.add('on'); render(); }
+$('tabAll').onclick = function(){ setMode('all'); };
+$('tabWant').onclick = function(){ setMode('want'); };
+$('tabClaimed').onclick = function(){ setMode('claimed'); };
+load();
+</script>
+</body>
+</html>
