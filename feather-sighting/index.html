@@ -78,7 +78,8 @@
 <script>
 const API_BASES = ['', 'http://localhost:8600'];
 const LS = 'fs-sightings';
-const NTFY = 'https://ntfy.sh/gurt-feather-sighting';
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const NTFY_TOPIC = '/gurt-feather-sighting';
 let sightings = [];
 
 function $(id){return document.getElementById(id);}
@@ -93,10 +94,10 @@ async function api(path, opts){
   }
   return null;
 }
-async function ntfyEvents(){
+async function ntfyEventsOne(host){
   try{
-    var r=await fetch(NTFY+'/json?poll=1&since=all');
-    if(!r.ok) return [];
+    var r=await fetch(host+NTFY_TOPIC+'/json?poll=1&since=all');
+    if(!r.ok) return {list:[], dels:[]};
     var txt=await r.text(); var out=[]; var dels=[];
     txt.split('\n').forEach(function(line){
       if(!line.trim()) return;
@@ -111,8 +112,23 @@ async function ntfyEvents(){
     return {list:out, dels:dels};
   }catch(e){ return {list:[], dels:[]}; }
 }
+async function ntfyEvents(){
+  var all={list:[],dels:[]};
+  for(var i=0;i<NTFY_HOSTS.length;i++){
+    var e=await ntfyEventsOne(NTFY_HOSTS[i]);
+    all.list=all.list.concat(e.list||[]);
+    all.dels=all.dels.concat(e.dels||[]);
+  }
+  return all;
+}
 async function ntfyPost(obj){
-  try{var r=await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});return r.ok;}catch(e){return false;}
+  for(var i=0;i<NTFY_HOSTS.length;i++){
+    try{
+      var r=await fetch(NTFY_HOSTS[i]+NTFY_TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+      if(r.ok) return true;
+    }catch(e){}
+  }
+  return false;
 }
 function merge(local, remote){
   var map={}; var order=[];
