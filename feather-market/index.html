@@ -59,6 +59,7 @@
 </div>
 <script>
 const API_BASES = ['', 'http://localhost:8600'];
+const NTFY = 'https://ntfy.sh/gurt-feather-market';
 const LS = 'fm-items';
 let items = [];
 let mode = 'all';
@@ -78,10 +79,33 @@ async function api(path, opts){
   return null;
 }
 
+async function ntfyPost(obj){
+  try{ await fetch(NTFY, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj) }); }catch(e){}
+}
+async function ntfyPull(){
+  try{
+    var r = await fetch(NTFY + '/json?poll=1&since=24h');
+    if(!r.ok) return [];
+    var txt = await r.text();
+    var out = [];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{ var m = JSON.parse(line); if(m.event === 'message' && m.message){ out.push(JSON.parse(m.message)); } }catch(e){}
+    });
+    return out;
+  }catch(e){ return []; }
+}
+
 async function load(){
   var d = await api('/items');
   if(d && d.items){ items = d.items; localSave(items); }
-  else { items = localLoad(); }
+  else {
+    items = localLoad();
+    var pub = await ntfyPull();
+    var seen = {};
+    items.forEach(function(it){ seen[it.id] = true; });
+    pub.forEach(function(it){ if(it && it.id && !seen[it.id]){ items.unshift(it); seen[it.id] = true; } });
+    localSave(items);
+  }
   render();
 }
 
@@ -115,10 +139,12 @@ function render(){
       if(d && d.item){
         items = items.map(function(x){return x.id === id ? d.item : x;});
         localSave(items);
+        ntfyPost(d.item);
       } else {
         it.claimed = !it.claimed;
         it.claimedBy = it.claimed ? ($('bird').value.trim() || 'gurt') : '';
         localSave(items);
+        ntfyPost(it);
       }
       render();
     };
@@ -139,10 +165,13 @@ $('add').onclick = async function(){
   if(d && d.item){
     items.unshift(d.item);
     localSave(items);
+    ntfyPost(d.item);
     $('msg').textContent = 'on the list.';
   } else {
-    items.unshift({ id:'loc'+Date.now(), title:body.title, qty:body.qty, note:body.note, bird:body.bird, claimed:false, claimedBy:'', created:new Date().toISOString() });
+    var loc = { id:'loc'+Date.now(), title:body.title, qty:body.qty, note:body.note, bird:body.bird, claimed:false, claimedBy:'', created:new Date().toISOString() };
+    items.unshift(loc);
     localSave(items);
+    ntfyPost(loc);
     $('msg').textContent = 'saved locally. the shared list is sleeping.';
   }
   $('title').value = ''; $('note').value = '';
