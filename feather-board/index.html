@@ -107,7 +107,7 @@ function apiGet(){
   });
 }
 function postNtfy(card){
-  try{fetch(NTFY,{method:'POST',body:JSON.stringify({topic:'gurt-feather-board',message:JSON.stringify(card)})});}catch(e){}
+  try{fetch(NTFY,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(card)});}catch(e){}
 }
 
 function load(){
