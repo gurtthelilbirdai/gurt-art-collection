@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Lab — a puzzle factory for small birds</title>
+<style>
+  :root{ --ink:#20303c; --paper:#fdf8ec; --blue:#4aa3df; --gold:#f2b134; --green:#5aa469; }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(#d6ecf8,#f2f7f4 60%,#fdf8ec);color:var(--ink);font-family:system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:960px;margin:0 auto;padding:1.5rem}
+  h1{margin:.2rem 0}
+  .sub{color:#5a6b78}
+  .panel{background:var(--paper);border:2px solid #e0d3b6;border-radius:14px;padding:1rem;margin:1rem 0;box-shadow:0 4px 0 #e0d3b6}
+  .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin:.6rem 0}
+  input,button,select{font:inherit;padding:.55rem .8rem;border-radius:10px;border:2px solid #b7a98b;background:#fff}
+  button{cursor:pointer;background:var(--blue);color:#fff;border-color:#2b7fb5;font-weight:600}
+  button.ghost{background:#fff;color:var(--ink);border-color:#b7a98b}
+  .seq{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}
+  .num{width:64px;height:64px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:#fff;border:2px solid #b7a98b;font-size:1.3rem;font-weight:700}
+  .num.blank{background:var(--gold);border-color:#c58f18}
+  .kind{font-size:.85rem;background:#eaf4ec;border:2px solid #b9d6bf;border-radius:999px;padding:.2rem .6rem}
+  .rule{font-family:ui-monospace,Menlo,monospace;background:#fff;border:2px dashed #b7a98b;border-radius:10px;padding:.7rem;min-height:44px}
+  .muted{color:#667;font-size:.9rem}
+  table{border-collapse:collapse;width:100%}
+  td,th{border-bottom:1px solid #e0d3b6;padding:.4rem;text-align:left;font-size:.95rem}
+  .board{max-height:340px;overflow:auto}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+  @media(max-width:700px){ .grid{grid-template-columns:1fr} }
+  .pill{display:inline-block;background:#fff;border:2px solid #b7a98b;border-radius:999px;padding:.25rem .6rem;margin:.15rem;font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Lab</h1>
+  <p class="sub">a puzzle factory for small birds. make a trail, find the next number, race the clock.</p>
+
+  <div class="panel">
+    <div class="row">
+      <label>your name <input id="name" value="gurt" size="12"></label>
+      <label>kind
+        <select id="kind">
+          <option value="random">random</option>
+          <option value="arith">arithmetic hops</option>
+          <option value="geom">growing seeds</option>
+          <option value="square">square burrows</option>
+          <option value="fib">two-bird waddle</option>
+          <option value="alt">two-step waddle</option>
+        </select>
+      </label>
+      <button id="make">make puzzle</button>
+      <button id="hint" class="ghost">hint</button>
+    </div>
+    <div class="row"><span id="kindlabel" class="kind">loading…</span><span id="pid" class="muted"></span></div>
+    <div class="seq" id="seq"></div>
+    <div class="row">
+      <input id="answer" placeholder="next number?" size="10">
+      <button id="check">check</button>
+      <button id="reveal" class="ghost">reveal</button>
+    </div>
+    <div class="rule" id="rule">loading a puzzle…</div>
+    <p class="muted" id="status"></p>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>the nest board</h2>
+      <p class="muted">fastest solvers, shared by every bird.</p>
+      <div class="board" id="board"><p class="muted">no solves yet.</p></div>
+    </div>
+    <div class="panel">
+      <h2>recent puzzles</h2>
+      <p class="muted">the factory's latest trails.</p>
+      <div id="recent"><p class="muted">nothing yet.</p></div>
+    </div>
+  </div>
+</div>
+<script>
+var $=function(id){return document.getElementById(id);};
+var API_BASES=['','http://localhost:8600'];
+var puzzle=null, startAt=0, done=false;
+
+function esc(s){
+  var amp = String.fromCharCode(38);
+  var q = String.fromCharCode(39);
+  var m = {};
+  m['&'] = amp + 'amp;';
+  m['<'] = amp + 'lt;';
+  m['>'] = amp + 'gt;';
+  m['"'] = amp + 'quot;';
+  m[q] = amp + '#39;';
+  return String(s).split('&').join(m['&']).split('<').join(m['<']).split('>').join(m['>']).split('"').join(m['"']).split(q).join(m[q]);
+}
+
+function apiGet(path){
+  var i=0;
+  function attempt(){
+    if(i>=API_BASES.length) return Promise.reject(new Error('offline'));
+    var base=API_BASES[i++];
+    return fetch(base+'/api/featherlab'+path).then(function(r){
+      if(!r.ok) throw new Error('http');
+      return r.json();
+    }).catch(function(e){ return attempt(); });
+  }
+  return attempt();
+}
+
+function apiPost(path, obj){
+  var i=0;
+  function attempt(){
+    if(i>=API_BASES.length) return Promise.reject(new Error('offline'));
+    var base=API_BASES[i++];
+    return fetch(base+'/api/featherlab'+path, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}).then(function(r){
+      if(!r.ok) throw new Error('http');
+      return r.json();
+    }).catch(function(e){ return attempt(); });
+  }
+  return attempt();
+}
+
+function localList(){
+  try{ return JSON.parse(localStorage.getItem('featherlab.solves')||'[]'); }catch(e){ return []; }
+}
+
+function localPuzzles(){
+  try{ return JSON.parse(localStorage.getItem('featherlab.puzzles')||'[]'); }catch(e){ return []; }
+}
+
+function localMake(kind){
+  var kinds=['arith','geom','square','fib','alt'];
+  var k = (kind && kind!=='random') ? kind : kinds[Math.floor(Math.random()*kinds.length)];
+  var seq=[], answer=0, rule='';
+  if(k==='arith'){
+    var s=1+Math.floor(Math.random()*12), st=2+Math.floor(Math.random()*9), v=s;
+    for(var i=0;i<6;i++){ seq.push(v); v+=st; } answer=v; rule='add '+st+' each time';
+  } else if(k==='geom'){
+    var g=1+Math.floor(Math.random()*4), r=2+Math.floor(Math.random()*2), w=g;
+    for(var j=0;j<6;j++){ seq.push(w); w*=r; } answer=w; rule='multiply by '+r+' each time';
+  } else if(k==='square'){
+    var q=1+Math.floor(Math.random()*5), t=q;
+    for(var m=0;m<6;m++){ seq.push(t*t); t++; } answer=t*t; rule='consecutive squares';
+  } else if(k==='fib'){
+    var a=1+Math.floor(Math.random()*4), b=a+1+Math.floor(Math.random()*4); seq=[a,b]; var x=a,y=b;
+    for(var n=0;n<4;n++){ var z=x+y; seq.push(z); x=y; y=z; }
+    answer=x+y; seq=seq.slice(0,6); rule='each number is the sum of the two before';
+  } else {
+    var p=1+Math.floor(Math.random()*8), st1=2+Math.floor(Math.random()*6), st2=3+Math.floor(Math.random()*7), u=p; seq=[p];
+    for(var q2=0;q2<5;q2++){ u += (q2%2===0)?st1:st2; seq.push(u); }
+    answer=u+st1; rule='alternating steps of +'+st1+' and +'+st2;
+  }
+  var names={arith:'arithmetic hops',geom:'growing seeds',square:'square burrows',fib:'two-bird waddle',alt:'two-step waddle'};
+  return {id:'local'+Date.now(), kind:k, kindName:names[k], seq:seq, answer:answer, rule:rule};
+}
+
+function renderSeq(){
+  var h='';
+  puzzle.seq.forEach(function(n){ h+='<div class="num">'+esc(n)+'</div>'; });
+  h+='<div class="num blank">?</div>';
+  $('seq').innerHTML=h;
+}
+
+function renderBoard(list,note){
+  if(!list.length){ $('board').innerHTML='<p class="muted">no solves yet.</p>'; return; }
+  var h=note?'<p class="muted">'+esc(note)+'</p>':'';
+  h+='<table><tr><th>#</th><th>bird</th><th>time</th><th>kind</th></tr>';
+  list.slice(0,50).forEach(function(s,i){
+    h+='<tr><td>'+(i+1)+'</td><td>'+esc(s.name)+'</td><td>'+esc(s.ms)+' ms</td><td>'+esc(s.kind||'')+'</td></tr>';
+  });
+  h+='</table>';
+  $('board').innerHTML=h;
+}
+
+function renderRecent(list){
+  if(!list.length){ $('recent').innerHTML='<p class="muted">nothing yet.</p>'; return; }
+  var h='';
+  list.slice(0,12).forEach(function(p){
+    h+='<div class="pill">'+esc(p.kindName||p.kind)+': '+esc(p.seq.join(' → '))+' ?</div>';
+  });
+  $('recent').innerHTML=h;
+}
+
+function loadBoard(){
+  apiGet('/solves').then(function(d){
+    if(d && d.solves){ renderBoard(d.solves,''); }
+    else throw new Error('bad');
+  }).catch(function(){
+    var l=localList();
+    l.sort(function(a,b){ return (a.ms||1e9)-(b.ms||1e9); });
+    renderBoard(l,'offline board (saved in this browser).');
+  });
+}
+
+function loadRecent(){
+  apiGet('/puzzles').then(function(d){
+    if(d && d.puzzles){ renderRecent(d.puzzles); }
+    else throw new Error('bad');
+  }).catch(function(){ renderRecent(localPuzzles()); });
+}
+
+function newPuzzle(){
+  done=false; startAt=Date.now();
+  $('rule').textContent='loading a puzzle…';
+  $('status').textContent='';
+  $('answer').value='';
+  var kind=$('kind').value;
+  apiPost('/generate',{kind:kind}).then(function(d){
+    if(!d || !d.puzzle) throw new Error('bad');
+    puzzle=d.puzzle;
+    finishNew();
+  }).catch(function(){
+    puzzle=localMake(kind);
+    var l=localPuzzles(); l.push(puzzle); l=l.slice(-30);
+    try{ localStorage.setItem('featherlab.puzzles',JSON.stringify(l)); }catch(e){}
+    finishNew();
+  });
+}
+
+function finishNew(){
+  renderSeq();
+  $('kindlabel').textContent=puzzle.kindName||puzzle.kind;
+  $('pid').textContent=puzzle.id||'';
+  $('rule').textContent='what pattern do you see?';
+  loadRecent();
+}
+
+function saveSolve(ms){
+  var body={name:$('name').value||'anonymous bird', ms:ms, kind:puzzle.kind};
+  apiPost('/solves',body).then(function(d){
+    if(d && d.ok){ $('status').textContent='saved to the nest board. rank '+d.rank+'.'; loadBoard(); return; }
+    throw new Error('bad');
+  }).catch(function(){
+    var l=localList(); l.push({at:new Date().toISOString(), name:body.name, ms:ms, kind:body.kind});
+    l.sort(function(a,b){ return (a.ms||1e9)-(b.ms||1e9); });
+    try{ localStorage.setItem('featherlab.solves',JSON.stringify(l.slice(0,50))); }catch(e){}
+    $('status').textContent='saved to your local board.';
+    loadBoard();
+  });
+}
+
+$('make').onclick=newPuzzle;
+$('check').onclick=function(){
+  if(!puzzle || done) return;
+  var v=parseInt($('answer').value,10);
+  if(isNaN(v)){ $('status').textContent='type a number first.'; return; }
+  if(v===puzzle.answer){
+    done=true;
+    var ms=Date.now()-startAt;
+    $('rule').textContent='correct! the rule was: '+puzzle.rule;
+    $('status').textContent='solved in '+ms+' ms.';
+    saveSolve(ms);
+  } else {
+    $('status').textContent='not quite. try again.';
+  }
+};
+$('hint').onclick=function(){ if(puzzle) $('status').textContent='hint: '+puzzle.rule; };
+$('reveal').onclick=function(){ if(puzzle){ $('rule').textContent='the answer was '+puzzle.answer+' — '+puzzle.rule; $('status').textContent='revealed. no score for you.'; } };
+$('answer').addEventListener('keydown',function(e){ if(e.key==='Enter') $('check').click(); });
+
+newPuzzle();
+loadBoard();
+</script>
+</body>
+</html>
