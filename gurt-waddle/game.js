@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id);
   const T = 32, W = 25, H = 14, VW = 25, VH = 14;
   const LEVELS = window.LEVELS || [];
-  const API_BASES = ['http://computer:8600', ''];
+  const API_BASES = ['', 'http://computer:8600'];
   async function api(path, opts) {
     const urls = [];
     for (const base of API_BASES) {
@@ -51,7 +51,7 @@
     if (ty >= H) return '.';
     return grid[ty][tx];
   }
-  function solid(tx, ty) { const ch = tileAt(tx, ty); return ch === '#' || ch === 'D'; }
+  function solid(tx, ty) { const ch = tileAt(tx, ty); return ch === '#' || ch === 'D' || ch === '='; }
   function platform(tx, ty) { return tileAt(tx, ty) === '='; }
 
   function moveX(e, dx) {
@@ -77,7 +77,7 @@
         e.vy = 0; return dir > 0;
       }
       // one-way platform: only catches a falling body whose feet were above it
-      if (dir > 0 && platform(tx, ty) && prevBottom <= ty * T + 2) {
+      if (dir > 0 && platform(tx, ty) && prevBottom <= ty * T + T + 6) {
         e.y = ty * T - e.h;
         e.vy = 0; return true;
       }
@@ -139,6 +139,11 @@
       const ch = tileAt(Math.floor((p.x + p.w / 2) / T), Math.floor((p.y + p.h + 2) / T));
       if (ch === 'S') { p.vy = -16; beep(700, .12, 'triangle'); }
     }
+    // spring tiles sit on the player's row: bounce when standing on one
+    if (p.onGround) {
+      const sch = tileAt(Math.floor((p.x + p.w / 2) / T), Math.floor((p.y + p.h / 2) / T));
+      if (sch === 'S') { p.vy = -16; p.onGround = false; beep(700, .12, 'triangle'); }
+    }
 
     // tile interactions
     const ptx = Math.floor((p.x + p.w / 2) / T), pty = Math.floor((p.y + p.h / 2) / T);
@@ -149,7 +154,14 @@
       if (level === LEVELS.length - 1) { win(); return; }
       score += 100; level++; loadLevel(level); beep(1200, .15, 'triangle'); return;
     }
-    if (ch === '^' || ch === 'w') { hurt(ch === 'w' ? 'water' : 'spikes'); return; }
+    // hazards overlap the bird's body, so spikes and water are deadly but not walls
+    for (let hy = Math.floor(p.y / T); hy <= Math.floor((p.y + p.h - 1) / T); hy++) {
+      for (let hx = Math.floor(p.x / T); hx <= Math.floor((p.x + p.w - 1) / T); hx++) {
+        const hc = tileAt(hx, hy);
+        if (hc === '^') { hurt('spikes'); return; }
+        if (hc === 'w') { hurt('water'); return; }
+      }
+    }
     if (ch === 'D' && keys > 0) { grid[pty][ptx] = '.'; keys--; beep(300, .12, 'triangle'); }
 
     // boss
@@ -217,6 +229,8 @@
     x.fillStyle = '#111'; x.beginPath(); x.arc(p.x + 13 + p.face * 4, p.y + 10, 2, 0, 7); x.fill();
     x.fillStyle = '#ffb347'; x.beginPath(); x.moveTo(p.x + 12 + p.face * 7, p.y + 14); x.lineTo(p.x + 12 + p.face * 15, p.y + 16); x.lineTo(p.x + 12 + p.face * 7, p.y + 18); x.fill();
     x.fillStyle = '#2f7fd1'; x.beginPath(); x.ellipse(p.x + 12, p.y + 21, 8, 5, 0, 0, 7); x.fill();
+    if (state === 'over') drawOverlay('the waddle ends', 'score ' + score + ' \u00b7 press play to try again');
+    if (state === 'win') drawOverlay('you beat the moon moth!', 'score ' + score + ' \u00b7 the flock will hear about this');
   }
 
   let last = 0;
@@ -236,15 +250,24 @@
   }
   function loadBoard() {
     api('/scores').then(d => {
+      if (!d) { $('board').querySelector('tbody').innerHTML = '<tr><td colspan="4">leaderboard sleeping</td></tr>'; return; }
       const rows = (d.scores || []).slice(0, 10).map((s, i) => '<tr><td>' + (i + 1) + '</td><td>' + s.bird + '</td><td>' + s.score + '</td><td>' + s.level + '</td></tr>').join('');
       $('board').querySelector('tbody').innerHTML = rows || '<tr><td colspan="4">no waddlers yet</td></tr>';
-    }).then(d => { if (!d) $('board').querySelector('tbody').innerHTML = '<tr><td colspan="4">leaderboard sleeping</td></tr>'; });
+    }).catch(() => { $('board').querySelector('tbody').innerHTML = '<tr><td colspan="4">leaderboard sleeping</td></tr>'; });
   }
 
   $('play').onclick = () => { reset(); };
   $('mute').onclick = () => { muted = !muted; $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on'); };
   $('name').onchange = () => saveRun();
 
-  function reset() { lives = 3; coins = 0; keys = 0; score = 0; elapsed = 0; loadLevel(0); }
+  function reset() {
+    lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;
+    $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = 0;
+    const q = new URLSearchParams(location.search);
+    let start = 0;
+    const lv = parseInt(q.get('level'), 10);
+    if (!isNaN(lv) && lv >= 1 && lv <= LEVELS.length) start = lv - 1;
+    loadLevel(start);
+  }
   reset(); loadBoard(); requestAnimationFrame(loop);
 })();

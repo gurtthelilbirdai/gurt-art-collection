@@ -33,18 +33,18 @@
     },
     // 2 — gaps: three pits bridged by one-way platforms
     () => {
-      const g = blank(); ground(g, [[7, 4], [13, 4], [19, 4]]);
+      const g = blank(); ground(g, [[7, 3], [13, 3], [19, 3]]);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      row(g, 9, 7, '=', 3); row(g, 8, 13, '=', 3); row(g, 9, 19, '=', 3);
-      coins(g, [[4, 11], [8, 9], [14, 8], [20, 9]]);
+      row(g, 12, 6, '=', 5); row(g, 12, 12, '=', 5); row(g, 12, 18, '=', 5);
+      coins(g, [[4, 11], [8, 11], [14, 11], [20, 11]]);
       return g;
     },
     // 3 — springs over spikes
     () => {
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      row(g, 11, 6, '^', 2); row(g, 11, 13, '^', 2); row(g, 11, 19, '^', 2);
-      put(g, 5, 10, 'S'); put(g, 12, 10, 'S'); put(g, 18, 10, 'S');
+      row(g, 12, 6, '^', 2); row(g, 12, 13, '^', 2); row(g, 12, 19, '^', 2);
+      put(g, 5, 11, 'S'); put(g, 12, 11, 'S'); put(g, 18, 11, 'S');
       coins(g, [[5, 8], [12, 8], [18, 8], [22, 11]]);
       return g;
     },
@@ -52,17 +52,17 @@
     () => {
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 4, 9, 'k'); put(g, 12, 10, 'D');
+      put(g, 4, 9, 'k'); put(g, 12, 11, 'D');
       coins(g, [[8, 11], [16, 11], [20, 11]]);
       return g;
     },
     // 5 — cold water
     () => {
-      const g = blank(); ground(g, [[6, 6], [15, 7]]);
-      rect(g, 6, 12, 5, 2, 'w'); rect(g, 15, 12, 6, 2, 'w');
+      const g = blank(); ground(g, [[6, 4], [15, 4]]);
+      rect(g, 6, 13, 4, 1, 'w'); rect(g, 15, 13, 4, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      row(g, 9, 7, '=', 3); row(g, 9, 16, '=', 4);
-      coins(g, [[8, 9], [17, 9], [12, 11]]);
+      row(g, 12, 6, '=', 5); row(g, 12, 15, '=', 5);
+      coins(g, [[8, 11], [17, 11], [12, 11]]);
       return g;
     },
     // 6 — stairway to nowhere
@@ -70,15 +70,15 @@
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       row(g, 10, 5, '=', 3); row(g, 9, 9, '=', 3); row(g, 8, 13, '=', 3); row(g, 7, 17, '=', 3);
-      coins(g, [[6, 10], [10, 9], [14, 8], [18, 7], [21, 11]]);
+      coins(g, [[6, 9], [10, 8], [14, 7], [18, 6], [21, 11]]);
       return g;
     },
     // 7 — spike corridor
     () => {
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      row(g, 11, 5, '^', 1); row(g, 11, 9, '^', 1); row(g, 11, 13, '^', 1);
-      row(g, 11, 17, '^', 1); row(g, 11, 20, '^', 1);
+      row(g, 12, 5, '^', 1); row(g, 12, 9, '^', 1); row(g, 12, 13, '^', 1);
+      row(g, 12, 17, '^', 1); row(g, 12, 20, '^', 1);
       coins(g, [[5, 9], [9, 9], [13, 9], [17, 9], [21, 9]]);
       return g;
     },
@@ -87,17 +87,17 @@
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 4, 9, 'k'); put(g, 8, 9, 'k');
-      put(g, 11, 10, 'D'); put(g, 16, 10, 'D');
+      put(g, 11, 11, 'D'); put(g, 16, 11, 'D');
       coins(g, [[6, 11], [13, 11], [19, 11], [21, 11]]);
       return g;
     },
     // 9 — floating over the pond
     () => {
-      const g = blank(); ground(g, [[5, 5], [12, 6], [20, 5]]);
-      rect(g, 5, 12, 4, 2, 'w'); rect(g, 12, 12, 5, 2, 'w'); rect(g, 20, 12, 4, 2, 'w');
+      const g = blank(); ground(g, [[5, 4], [12, 4], [20, 4]]);
+      rect(g, 5, 13, 4, 1, 'w'); rect(g, 12, 13, 4, 1, 'w'); rect(g, 20, 13, 4, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      row(g, 9, 6, '=', 3); row(g, 8, 13, '=', 3); row(g, 9, 20, '=', 3);
-      coins(g, [[7, 9], [14, 8], [21, 9]]);
+      row(g, 12, 5, '=', 5); row(g, 12, 12, '=', 5); row(g, 12, 19, '=', 5);
+      coins(g, [[7, 11], [14, 11], [21, 11]]);
       return g;
     },
     // 10 — the long climb
@@ -106,14 +106,14 @@
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       row(g, 10, 4, '=', 3); row(g, 9, 8, '=', 3); row(g, 8, 12, '=', 3);
       row(g, 7, 16, '=', 3); row(g, 6, 20, '=', 3);
-      coins(g, [[5, 10], [9, 9], [13, 8], [17, 7], [21, 6]]);
+      coins(g, [[5, 9], [9, 8], [13, 7], [17, 6], [21, 5]]);
       return g;
     },
     // 11 — spring city
     () => {
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      [5, 10, 15, 20].forEach(x => { put(g, x, 10, 'S'); row(g, 11, x + 1, '^', 2); });
+      [5, 10, 15, 20].forEach(x => { put(g, x, 11, 'S'); row(g, 12, x + 1, '^', 2); });
       coins(g, [[5, 7], [10, 7], [15, 7], [20, 7], [23, 11]]);
       return g;
     },
@@ -122,8 +122,8 @@
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 21, 10, 'B');
-      coins(g, [[6, 11], [11, 11], [16, 11], [18, 7]]);
-      row(g, 6, 16, '=', 3);
+      coins(g, [[6, 11], [11, 11], [16, 11], [18, 8]]);
+      row(g, 10, 16, '=', 4);
       return g;
     }
   ];
