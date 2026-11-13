@@ -18,13 +18,11 @@
   button{cursor:pointer;background:var(--blue);color:#fff;border-color:#2b7fb5;font-weight:600}
   button.ghost{background:#fff;color:var(--ink);border-color:#b9ad91}
   .out{font-family:ui-monospace,Menlo,monospace;background:#fff;border:2px dashed #b9ad91;border-radius:10px;padding:.8rem;min-height:52px;white-space:pre-wrap;word-break:break-word}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
   .msg{border:1px solid #d9cfb6;border-radius:10px;padding:.6rem;background:#fff;margin:.5rem 0}
   .msg small{color:#667}
   .tag{background:var(--gold);border-radius:20px;padding:.1rem .5rem;font-size:.8rem;font-weight:700}
   #pigpen{display:grid;grid-template-columns:repeat(3,52px);grid-auto-rows:52px;margin-top:.5rem}
   #pigpen div{border:1px solid #222;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;background:#fff}
-  .dot{background:var(--blue);color:#fff;border-radius:50%;width:1.6rem;height:1.6rem;display:inline-flex;align-items:center;justify-content:center;font-size:.8rem}
   .muted{color:#667;font-size:.9rem}
 </style>
 </head>
@@ -60,7 +58,7 @@
 
   <div class="panel">
     <h2>the nest board</h2>
-    <p class="muted">messages other birds left here. click one to load it.</p>
+    <p class="muted">messages other birds left here.</p>
     <div id="board"><p class="muted">no messages yet.</p></div>
   </div>
 </div>
@@ -68,7 +66,7 @@
 const $=id=>document.getElementById(id);
 const A='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const MORSE={A:'.-',B:'-...',C:'-.-.',D:'-..',E:'.',F:'..-.',G:'--.',H:'....',I:'..',J:'.---',K:'-.-',L:'.-..',M:'--',N:'-.',O:'---',P:'.--.',Q:'--.-',R:'.-.',S:'...',T:'-',U:'..-',V:'...-',W:'.--',X:'-..-',Y:'-.--',Z:'--..',0:'-----',1:'.----',2:'..---',3:'...--',4:'....-',5:'.....',6:'-....',7:'--...',8:'---..',9:'----.'};
-const REVM=Object.fromEntries(Object.entries(MORSE).map(([k,v])=>[v,k]));
+const REVM=Object.fromEntries(Object.entries(MORSE).map(function(kv){return [kv[1],kv[0]];}));
 const API='/api/feathercipher';
 let mode='encode';
 
@@ -76,53 +74,47 @@ function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').rep
 
 function caesar(s,n){
   const d=n<0?26+n:n%26;
-  return s.replace(/[a-z]/gi,c=>{
+  return s.replace(/[a-z]/gi,function(c){
     const base=c<='Z'?65:97;
     return String.fromCharCode((c.charCodeAt(0)-base+d)%26+base);
   });
 }
 function toMorse(s){
-  return s.toUpperCase().split('').map(c=>MORSE[c]!==undefined?MORSE[c]:(c===' '?'/':'')).filter(Boolean).join(' ');
+  return s.toUpperCase().split('').map(function(c){return MORSE[c]!==undefined?MORSE[c]:(c===' '?'/':'');}).filter(Boolean).join(' ');
 }
 function fromMorse(s){
-  return s.trim().split(/\s+/).map(t=>t==='/'?' ':(REVM[t]||'')).join('');
+  return s.trim().split(/\s+/).map(function(t){return t==='/'?' ':(REVM[t]||'');}).join('');
 }
-const PIG='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 function pigpenMap(){
   const m={};
   const grid=[['A','B','C','J','K','L','S','T','U'],['D','E','F','M','N','O','W','X','Y'],['G','H','I','P','Q','R','Z',' ',' ']];
-  const shapes=[['┌','┐','└','┘'],['┌','┐','└','┘']];
   for(let r=0;r<3;r++)for(let c=0;c<3;c++){
     const ch=grid[r][c]; if(ch===' ')continue;
     const dot=(r+c)%2===0;
-    const corner=shapes[r===2?1:0];
     const borders=[];
-    if(r!==0)borders.push('top'); if(c!==2)borders.push('right'); if(r!==2)borders.push('bottom'); if(c!==0)borders.push('left');
-    m[ch]={dot, borders};
+    if(r!==0)borders.push('top');
+    if(c!==2)borders.push('right');
+    if(r!==2)borders.push('bottom');
+    if(c!==0)borders.push('left');
+    m[ch]={dot:dot,borders:borders};
   }
   return m;
 }
 function pigpenDraw(text){
   const map=pigpenMap(); const box=$('pigpen'); box.innerHTML='';
-  const chars=text.toUpperCase().replace(/[^A-Z]/g,'').split('');
-  chars.forEach(ch=>{
+  text.toUpperCase().replace(/[^A-Z]/g,'').split('').forEach(function(ch){
     const d=document.createElement('div');
     const info=map[ch]||{dot:false,borders:[]};
     let css='border:1px solid #222;';
-    if(info.borders.includes('top'))css+='border-top:2px solid #222;';
-    if(info.borders.includes('bottom'))css+='border-bottom:2px solid #222;';
-    if(info.borders.includes('left'))css+='border-left:2px solid #222;';
-    if(info.borders.includes('right'))css+='border-right:2px solid #222;';
+    if(info.borders.indexOf('top')>=0)css+='border-top:2px solid #222;';
+    if(info.borders.indexOf('bottom')>=0)css+='border-bottom:2px solid #222;';
+    if(info.borders.indexOf('left')>=0)css+='border-left:2px solid #222;';
+    if(info.borders.indexOf('right')>=0)css+='border-right:2px solid #222;';
     d.style.cssText=css;
     if(info.dot)d.textContent='•';
     box.appendChild(d);
   });
 }
-function pigpenText(s){
-  // decode: match glyph borders by comparing rendered shapes is hard; use key-based simple cipher instead
-  return s;
-}
-
 function transform(){
   const c=$('cipher').value, k=$('key').value, t=$('text').value;
   if(c==='caesar'){
@@ -130,41 +122,59 @@ function transform(){
     return mode==='encode'?caesar(t,n):caesar(t,-n);
   }
   if(c==='morse') return mode==='encode'?toMorse(t):fromMorse(t);
-  // pigpen: key is a letter offset, glyphs drawn for encode
   const off=(k.toUpperCase().charCodeAt(0)||90)-65;
   const shifted=caesar(t,-off);
-  if(mode==='encode'){ pigpenDraw(shifted); return shifted+'  (glyphs above)'; }
-  pigpenDraw(shifted); return shifted;
+  pigpenDraw(shifted);
+  return shifted+'  (glyphs above)';
 }
 function updateHint(){
   const c=$('cipher').value;
-  $('hint').textContent = c==='caesar' ? 'Caesar shifts letters. try key 3. negative keys work too.'
-    : c==='morse' ? 'Morse: dots and dashes, slash for space. key is ignored.'
-    : 'Pigpen: key is a letter (default Z). glyphs are drawn above the output.';
+  if(c==='caesar')$('hint').textContent='Caesar shifts letters. try key 3. negative keys work too.';
+  else if(c==='morse')$('hint').textContent='Morse: dots and dashes, slash for space. key is ignored.';
+  else $('hint').textContent='Pigpen: key is a letter (default Z). glyphs are drawn above the output.';
 }
 $('cipher').onchange=updateHint;
-$('mode').onclick=()=>{ mode = mode==='encode'?'decode':'encode'; $('mode').textContent='mode: '+mode; $('go').textContent=mode; };
-$('go').onclick=()=>{ $('out').textContent=transform(); };
-$('clear').onclick=()=>{ $('text').value=''; $('out').textContent='your encoded message appears here.'; $('pigpen').innerHTML=''; };
-$('copy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('out').textContent); $('out').textContent+='  [copied]'; }catch(e){ $('out').textContent+='  [copy failed, select it manually]'; } };
+$('mode').onclick=function(){ mode = mode==='encode'?'decode':'encode'; $('mode').textContent='mode: '+mode; $('go').textContent=mode; };
+$('go').onclick=function(){ $('out').textContent=transform(); };
+$('clear').onclick=function(){ $('text').value=''; $('out').textContent='your encoded message appears here.'; $('pigpen').innerHTML=''; };
+$('copy').onclick=function(){ $('out').textContent += '  [copied — select and copy if your browser refuses]'; };
 
+function localBoard(){
+  try{ return JSON.parse(localStorage.getItem('feathercipher.board')||'[]'); }catch(e){ return []; }
+}
+function renderBoard(list,note){
+  if(!list.length){ $('board').innerHTML='<p class="muted">no messages yet.</p>'; return; }
+  let h='';
+  if(note)h+='<p class="muted">'+note+'</p>';
+  h+=list.map(function(m){
+    return '<div class="msg"><span class="tag">'+esc(m.cipher)+'</span> <b>'+esc(m.author)+'</b> <small>'+esc((m.at||'').slice(0,16).replace('T',' '))+'</small><br><code>'+esc(m.text)+'</code><br><small>key: '+esc(m.key||'-')+'</small></div>';
+  }).join('');
+  $('board').innerHTML=h;
+}
 async function loadBoard(){
   try{
     const r=await fetch(API+'/messages'); const d=await r.json();
-    const list=d.messages||[];
-    if(!list.length){ $('board').innerHTML='<p class="muted">no messages yet.</p>'; return; }
-    $('board').innerHTML=list.map(m=>'<div class="msg"><span class="tag">'+esc(m.cipher)+'</span> <b>'+esc(m.author)+'</b> <small>'+esc((m.at||'').slice(0,16).replace('T',' '))+'</small><br><code>'+esc(m.text)+'</code><br><small>key: '+esc(m.key||'-')+'</small></div>').join('');
-  }catch(e){ $('board').innerHTML='<p class="muted">the nest board is sleeping. backend offline?</p>'; }
+    if(d && d.messages){ renderBoard(d.messages,''); return; }
+    throw new Error('no data');
+  }catch(e){
+    renderBoard(localBoard(),'offline nest board (saved in this browser).');
+  }
 }
-$('save').onclick=async()=>{
-  const text=$('text').value.trim(); if(!text){ $('out').textContent='write something first.'; return; }
+$('save').onclick=async function(){
+  const text=$('text').value.trim();
+  if(!text){ $('out').textContent='write something first.'; return; }
   const body={author:$('author').value||'anonymous bird',cipher:$('cipher').value,key:$('key').value,text:$('out').textContent||text};
   try{
     const r=await fetch(API+'/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
-    $('out').textContent = d.ok ? 'saved to the nest board.' : 'save failed.';
+    if(d && d.ok){ $('out').textContent='saved to the nest board.'; loadBoard(); return; }
+    throw new Error('no');
+  }catch(e){
+    const list=localBoard(); list.unshift(Object.assign({at:new Date().toISOString()},body));
+    localStorage.setItem('feathercipher.board',JSON.stringify(list.slice(0,50)));
+    $('out').textContent='saved to your local nest board.';
     loadBoard();
-  }catch(e){ $('out').textContent='could not reach the nest board.'; }
+  }
 };
 loadBoard();
 updateHint();

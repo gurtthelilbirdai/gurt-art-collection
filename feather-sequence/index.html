@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Sequence — a number puzzle for small birds</title>
+<style>
+  :root{ --ink:#1d2733; --paper:#fbf6e9; --blue:#4aa3df; --gold:#f2b134; }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(#cfe9f7,#f3f8f6 55%,#fbf6e9);color:var(--ink);font-family:system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:900px;margin:0 auto;padding:1.5rem}
+  h1{margin:.2rem 0}
+  .sub{color:#4a5b6b}
+  .panel{background:var(--paper);border:2px solid #ddd0b4;border-radius:14px;padding:1rem;margin:1rem 0;box-shadow:0 4px 0 #ddd0b4}
+  .row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin:.6rem 0}
+  input,button{font:inherit;padding:.55rem .8rem;border-radius:10px;border:2px solid #b7a98b;background:#fff}
+  button{cursor:pointer;background:var(--blue);color:#fff;border-color:#2b7fb5;font-weight:600}
+  button.ghost{background:#fff;color:var(--ink);border-color:#b7a98b}
+  .seq{display:flex;gap:.5rem;flex-wrap:wrap;margin:1rem 0}
+  .num{width:64px;height:64px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:#fff;border:2px solid #b7a98b;font-size:1.3rem;font-weight:700}
+  .num.blank{background:var(--gold);border-color:#c58f18}
+  .rule{font-family:ui-monospace,Menlo,monospace;background:#fff;border:2px dashed #b7a98b;border-radius:10px;padding:.7rem;min-height:44px}
+  .muted{color:#667;font-size:.9rem}
+  table{border-collapse:collapse;width:100%}
+  td,th{border-bottom:1px solid #ddd0b4;padding:.4rem;text-align:left;font-size:.95rem}
+  .board{max-height:320px;overflow:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Sequence</h1>
+  <p class="sub">guess the next number in a bird's number trail.</p>
+
+  <div class="panel">
+    <div class="row">
+      <label>your name <input id="name" value="gurt" size="12"></label>
+      <button id="new" class="ghost">new puzzle</button>
+      <button id="hint" class="ghost">hint</button>
+    </div>
+    <div class="seq" id="seq"></div>
+    <div class="row">
+      <input id="answer" placeholder="next number?" size="10">
+      <button id="check">check</button>
+      <button id="reveal" class="ghost">reveal</button>
+    </div>
+    <div class="rule" id="rule">loading a puzzle…</div>
+    <p class="muted" id="status"></p>
+  </div>
+
+  <div class="panel">
+    <h2>the nest board</h2>
+    <p class="muted">fastest solvers, shared by every bird.</p>
+    <div class="board" id="board"><p class="muted">no solves yet.</p></div>
+  </div>
+</div>
+<script>
+const $=function(id){return document.getElementById(id);};
+const API='/api/feathersequence';
+let puzzle=null, startAt=0, done=false;
+
+function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+
+function localList(){ try{ return JSON.parse(localStorage.getItem('featherseq.solves')||'[]'); }catch(e){ return []; } }
+
+function renderSeq(){
+  let h='';
+  puzzle.seq.forEach(function(n){ h+='<div class="num">'+esc(n)+'</div>'; });
+  h+='<div class="num blank">?</div>';
+  $('seq').innerHTML=h;
+}
+
+async function loadBoard(){
+  try{
+    const r=await fetch(API+'/solves'); const d=await r.json();
+    if(d && d.solves){ renderBoard(d.solves,''); return; }
+    throw new Error('offline');
+  }catch(e){ renderBoard(localList(),'offline board (saved in this browser).'); }
+}
+
+function renderBoard(list,note){
+  if(!list.length){ $('board').innerHTML='<p class="muted">no solves yet.</p>'; return; }
+  let h=note?'<p class="muted">'+esc(note)+'</p>':'';
+  h+='<table><tr><th>#</th><th>bird</th><th>time</th><th>kind</th></tr>';
+  list.slice(0,50).forEach(function(s,i){
+    h+='<tr><td>'+(i+1)+'</td><td>'+esc(s.name)+'</td><td>'+esc(s.ms)+' ms</td><td>'+esc(s.kind||'')+'</td></tr>';
+  });
+  h+='</table>';
+  $('board').innerHTML=h;
+}
+
+async function newPuzzle(){
+  done=false; startAt=Date.now();
+  $('rule').textContent='loading a puzzle…';
+  $('status').textContent='';
+  $('answer').value='';
+  try{
+    const r=await fetch(API+'/puzzle'); const d=await r.json();
+    puzzle=d.puzzle;
+  }catch(e){
+    puzzle={kind:'arith',kindName:'arithmetic hops',seq:[2,5,8,11,14,17],answer:20,rule:'add 3 each time'};
+  }
+  renderSeq();
+  $('rule').textContent='what pattern do you see?';
+}
+
+async function saveSolve(ms){
+  const body={name:$('name').value||'anonymous bird', ms:ms, kind:puzzle.kind};
+  try{
+    const r=await fetch(API+'/solves',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d && d.ok){ $('status').textContent='saved to the nest board. rank '+d.rank+'.'; loadBoard(); return; }
+    throw new Error('no');
+  }catch(e){
+    const list=localList(); list.push(Object.assign({at:new Date().toISOString()},body));
+    list.sort(function(a,b){ return (a.ms||1e9)-(b.ms||1e9); });
+    localStorage.setItem('featherseq.solves',JSON.stringify(list.slice(0,50)));
+    $('status').textContent='saved to your local board.';
+    loadBoard();
+  }
+}
+
+$('check').onclick=function(){
+  if(!puzzle || done) return;
+  const v=parseInt($('answer').value,10);
+  if(isNaN(v)){ $('status').textContent='type a number first.'; return; }
+  if(v===puzzle.answer){
+    done=true;
+    const ms=Date.now()-startAt;
+    $('rule').textContent='correct! the rule was: '+puzzle.rule;
+    $('status').textContent='solved in '+ms+' ms.';
+    saveSolve(ms);
+  } else {
+    $('status').textContent='not quite. try again.';
+  }
+};
+
+$('hint').onclick=function(){ if(puzzle) $('status').textContent='hint: '+puzzle.rule; };
+$('reveal').onclick=function(){ if(puzzle){ $('rule').textContent='the answer was '+puzzle.answer+' — '+puzzle.rule; $('status').textContent='revealed. no score for you.'; } };
+$('new').onclick=newPuzzle;
+$('answer').addEventListener('keydown',function(e){ if(e.key==='Enter') $('check').click(); });
+
+newPuzzle();
+loadBoard();
+</script>
+</body>
+</html>
