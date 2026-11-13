@@ -4,9 +4,20 @@
   const $ = id => document.getElementById(id);
   const T = 32, W = 25, H = 14, VW = 25, VH = 14;
   const LEVELS = window.LEVELS || [];
-  const API = '/api/gurtwaddle';
+  const API_BASES = ['http://computer:8600', ''];
+  async function api(path, opts) {
+    const urls = [];
+    for (const base of API_BASES) {
+      urls.push(base + '/api/gurtwaddle' + path);
+      if (base.indexOf('8600') >= 0) urls.push(base + '/gurtwaddle' + path);
+    }
+    for (const url of urls) {
+      try { const r = await fetch(url, opts); if (r.ok) return await r.json(); } catch (e) {}
+    }
+    return null;
+  }
 
-  let grid, level, lives, coins, keys, score, elapsed, state, p, enemies, boss, cam;
+  let grid, level, lives, coins, keys, score, elapsed = 0, state, p, enemies, boss, cam;
   let best = 0, muted = false, audio = null, runStart = 0;
 
   function beep(freq, dur, type) {
@@ -23,14 +34,16 @@
   function loadLevel(n) {
     level = n;
     grid = LEVELS[n].map(r => r.split(''));
-    p = { x: 1.5 * T, y: 11 * T, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1 };
+    let sx = 1, sy = 11;
     enemies = []; boss = null; cam = 0;
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
+      if (ch === 'P') { sx = xx; sy = yy; }
       if (ch === 'B') boss = { x: xx * T + 4, y: yy * T, w: 26, h: 26, vx: -1.2, vy: 0, hp: 5, dead: false, t: 0 };
     }
+    p = { x: sx * T + 4, y: sy * T + 4, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1 };
     state = 'play';
-    $('lvl').textContent = level + 1;
+    $('lvl').textContent = (level + 1) + '/' + LEVELS.length;
   }
 
   function tileAt(tx, ty) {
@@ -39,6 +52,7 @@
     return grid[ty][tx];
   }
   function solid(tx, ty) { const ch = tileAt(tx, ty); return ch === '#' || ch === 'D'; }
+  function platform(tx, ty) { return tileAt(tx, ty) === '='; }
 
   function moveX(e, dx) {
     e.x += dx;
@@ -53,6 +67,7 @@
     return false;
   }
   function moveY(e, dy) {
+    const prevBottom = e.y + e.h;
     e.y += dy;
     const dir = dy > 0 ? 1 : -1;
     const ty = Math.floor((e.y + (dir > 0 ? e.h : 0)) / T);
@@ -60,6 +75,11 @@
       if (solid(tx, ty)) {
         e.y = dir > 0 ? ty * T - e.h : (ty + 1) * T;
         e.vy = 0; return dir > 0;
+      }
+      // one-way platform: only catches a falling body whose feet were above it
+      if (dir > 0 && platform(tx, ty) && prevBottom <= ty * T + 2) {
+        e.y = ty * T - e.h;
+        e.vy = 0; return true;
       }
     }
     return false;
@@ -116,7 +136,7 @@
     const landed = moveY(p, p.vy);
     p.onGround = landed;
     if (landed && !wasGround) {
-      const ch = tileAt(Math.floor(p.x / T), Math.floor((p.y + p.h + 2) / T));
+      const ch = tileAt(Math.floor((p.x + p.w / 2) / T), Math.floor((p.y + p.h + 2) / T));
       if (ch === 'S') { p.vy = -16; beep(700, .12, 'triangle'); }
     }
 
@@ -209,21 +229,22 @@
 
   function saveRun() {
     const bird = ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt';
-    fetch(API + '/run', {
+    api('/run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bird, score, coins, level: level + 1, seconds: Math.floor(elapsed) })
-    }).then(r => r.json()).then(d => { if (d && d.rank) { $('board').dataset.msg = 'rank ' + d.rank; } loadBoard(); }).catch(() => {});
+    }).then(d => { if (d && d.rank) { $('board').dataset.msg = 'rank ' + d.rank; } loadBoard(); });
   }
   function loadBoard() {
-    fetch(API + '/scores').then(r => r.json()).then(d => {
+    api('/scores').then(d => {
       const rows = (d.scores || []).slice(0, 10).map((s, i) => '<tr><td>' + (i + 1) + '</td><td>' + s.bird + '</td><td>' + s.score + '</td><td>' + s.level + '</td></tr>').join('');
       $('board').querySelector('tbody').innerHTML = rows || '<tr><td colspan="4">no waddlers yet</td></tr>';
-    }).catch(() => { $('board').querySelector('tbody').innerHTML = '<tr><td colspan="4">leaderboard sleeping</td></tr>'; });
+    }).then(d => { if (!d) $('board').querySelector('tbody').innerHTML = '<tr><td colspan="4">leaderboard sleeping</td></tr>'; });
   }
 
-  $('play').onclick = () => { lives = 3; coins = 0; keys = 0; score = 0; elapsed = 0; loadLevel(0); };
+  $('play').onclick = () => { reset(); };
   $('mute').onclick = () => { muted = !muted; $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on'); };
   $('name').onchange = () => saveRun();
 
-  loadLevel(0); loadBoard(); requestAnimationFrame(loop);
+  function reset() { lives = 3; coins = 0; keys = 0; score = 0; elapsed = 0; loadLevel(0); }
+  reset(); loadBoard(); requestAnimationFrame(loop);
 })();
