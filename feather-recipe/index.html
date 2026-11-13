@@ -70,7 +70,7 @@ var activeTag = '';
 var openId = '';
 
 function $(id){return document.getElementById(id);}
-function esc(s){return String(s).split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;').split(String.fromCharCode(34)).join('&#34;').split(String.fromCharCode(39)).join('');}
+function esc(s){return String(s).split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;').split(String.fromCharCode(34)).join('&#34;').split(String.fromCharCode(39)).join("'");}
 function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
 function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
 
