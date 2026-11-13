@@ -122,10 +122,50 @@ async function api(path, opts){
   return null;
 }
 
+async function fromNtfy(){
+  try {
+    var r = await timed(fetch(NTFY + '/json?poll=1&since=24h'), 5000);
+    if (!r.ok) return [];
+    var txt = await r.text();
+    var out = [];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m = JSON.parse(line);
+        if (m.event !== 'message' || !m.message) return;
+        var p = JSON.parse(m.message);
+        if (!p || p.type !== 'event') return;
+        if (p.action === 'delete') out.push({ id:p.id, deleted:true });
+        else if (p.event) out.push({ event:p.event });
+      }catch(e){}
+    });
+    return out;
+  } catch(e){ return []; }
+}
+
 async function load(){
   var j = await api('/events');
-  if (j && j.events){ events = j.events; statusEl.textContent = 'live · ' + events.length + ' events'; }
-  else { events = localLoad(); statusEl.textContent = 'offline copy · ' + events.length + ' events'; }
+  var live = j && j.events ? j.events : null;
+  if (live){
+    events = live;
+    statusEl.textContent = 'live · ' + events.length + ' events';
+  } else {
+    events = localLoad();
+    statusEl.textContent = 'offline copy · ' + events.length + ' events';
+  }
+  var posts = await fromNtfy();
+  if (posts.length){
+    posts.forEach(function(p){
+      if (p.deleted){
+        events = events.filter(function(e){ return e.id !== p.id; });
+      } else {
+        var exists = false;
+        events.forEach(function(e){ if (e.id === p.event.id) exists = true; });
+        if (!exists) events.push(p.event);
+      }
+    });
+    localSave();
+    statusEl.textContent = (live ? 'live + shared board · ' : 'shared board · ') + events.length + ' events';
+  }
   render();
 }
 
