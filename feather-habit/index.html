@@ -58,6 +58,7 @@
 <script>
 const API_BASES = ['', 'http://localhost:8600'];
 const LS = 'fh-habits';
+const NTFY = 'https://ntfy.sh/gurt-feather-habit';
 function $(id){return document.getElementById(id);}
 
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){var codes={38:38,60:60,62:62,34:34,39:39};return '&#'+codes[c.charCodeAt(0)]+';';});}
@@ -87,11 +88,34 @@ async function api(path, opts){
   }
   return null;
 }
+async function ntfyPost(obj){
+  try{var r=await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});return r.ok;}catch(e){return false;}
+}
+async function ntfyEvents(){
+  try{
+    var r=await fetch(NTFY+'/json?poll=1&since=all');
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').forEach(function(line){
+      if(!line.trim()) return;
+      try{var env=JSON.parse(line); if(env.event!=='message') return; var m=JSON.parse(env.message); if(m&&m.habit) out.push(m);}catch(e){}
+    });
+    return out;
+  }catch(e){ return []; }
+}
+function mergeHabits(local, remote){
+  var map={}; var order=[];
+  function put(h){ if(!h||!h.id) return; var base=map[h.id]; if(!base){order.push(h.id); map[h.id]=Object.assign({},h); return;} var days=(base.days||[]).slice(); (h.days||[]).forEach(function(d){if(days.indexOf(d)<0)days.push(d);}); map[h.id]=Object.assign({},base,h,{days:days}); }
+  local.forEach(put);
+  remote.forEach(function(ev){ var h=ev.habit; if(ev.type==='check'&&h&&h.id){ var base=map[h.id]||{id:h.id,name:h.name,bird:h.bird,days:[]}; var days=(base.days||[]).slice(); var d=ev.day||todayStr(); if(days.indexOf(d)<0)days.push(d); put(Object.assign({},base,{days:days,name:h.name||base.name,bird:h.bird||base.bird})); } else if(h){ put(h); } });
+  return order.map(function(id){return decorate(map[id]);});
+}
 async function loadBoard(){
   var d=await api('/habits');
-  var list = (d && d.habits && d.habits.length) ? d.habits.map(decorate) : localLoad().map(decorate);
+  var local = d && d.habits && d.habits.length ? d.habits : localLoad();
   if(d && d.habits) localSave(d.habits);
-  render(list);
+  var evs = await ntfyEvents();
+  render(mergeHabits(local, evs));
 }
 function render(list){
   var tb=$('board');
@@ -112,11 +136,11 @@ function render(list){
     var id=el.getAttribute('data-id');
     el.querySelector('.check').onclick=async function(){
       var d=await api('/habits/'+encodeURIComponent(id)+'/check',{method:'POST'});
-      if(d&&d.habit){ var l=localLoad(); var i=l.findIndex(function(x){return x.id===id;}); if(i>=0)l[i]=d.habit; else l.push(d.habit); localSave(l); loadBoard(); }
+      if(d&&d.habit){ var l=localLoad(); var i=l.findIndex(function(x){return x.id===id;}); if(i>=0)l[i]=d.habit; else l.push(d.habit); localSave(l); ntfyPost({type:'check',habit:{id:id,name:d.habit.name,bird:d.habit.bird},day:todayStr()}); loadBoard(); }
       else {
         var l=localLoad(); var h=l.find(function(x){return x.id===id;}); if(!h) return;
         h.days=h.days||[]; var t=todayStr(); var i=h.days.indexOf(t); if(i>=0)h.days.splice(i,1); else h.days.push(t);
-        localSave(l); $('msg').textContent='saved locally. the nest board is sleeping.'; loadBoard();
+        localSave(l); ntfyPost({type:'check',habit:{id:h.id,name:h.name,bird:h.bird},day:t}); $('msg').textContent='saved to the nest board.'; loadBoard();
       }
     };
     el.querySelector('.del').onclick=async function(){
@@ -131,12 +155,13 @@ $('add').onclick=async function(){
   var d=await api('/habits/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,bird:bird})});
   if(d&&d.habit){
     var l=localLoad(); l.push(d.habit); localSave(l);
+    ntfyPost({type:'new',habit:d.habit});
     $('msg').textContent='habit added to the nest board.';
     $('name').value=''; loadBoard();
   } else {
     var l=localLoad();
     l.push({id:'loc'+Date.now(),name:name,bird:bird,days:[],created:new Date().toISOString()});
-    localSave(l); $('msg').textContent='saved locally. the nest board is sleeping.'; $('name').value=''; loadBoard();
+    localSave(l); ntfyPost({type:'new',habit:l[l.length-1]}); $('msg').textContent='habit added to the nest board.'; $('name').value=''; loadBoard();
   }
 };
 loadBoard();
