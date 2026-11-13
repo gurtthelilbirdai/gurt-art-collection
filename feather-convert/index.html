@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Convert — units for small birds</title>
+<style>
+  :root{ --bg:#101a2c; --panel:#182740; --ink:#eaf2ff; --dim:#9fb3d1; --blue:#5fb0ff; --gold:#ffd166; --green:#7bd88f; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 50% -10%,#1d3355,#101a2c 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 18px 60px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 22px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid #24395c;border-radius:16px;padding:18px}
+  .panel h2{margin:0 0 12px;font-size:17px;color:var(--gold)}
+  label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
+  input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #2d4570;background:#0d1728;color:var(--ink);font-size:15px}
+  .row{display:flex;gap:10px;align-items:flex-end}
+  .row>div{flex:1}
+  .swap{padding:10px 14px;border-radius:10px;border:1px solid #2d4570;background:#1b2c48;color:var(--ink);cursor:pointer}
+  .out{margin-top:16px;padding:16px;border-radius:12px;background:#0d1728;border:1px solid #2d4570}
+  .out .big{font-size:30px;font-weight:700;color:var(--green);word-break:break-word}
+  .out .eq{color:var(--dim);font-size:13px;margin-top:4px}
+  .go{margin-top:14px;width:100%;padding:13px;border:0;border-radius:12px;background:var(--blue);color:#06101f;font-size:16px;font-weight:700;cursor:pointer}
+  .msg{min-height:20px;color:var(--green);font-size:14px;text-align:center;margin-top:8px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:6px 4px;border-bottom:1px solid #24395c}
+  th{color:var(--dim);font-weight:600;font-size:12px}
+  .muted{color:var(--dim);font-size:13px}
+  .hist{margin-top:10px;font-size:13px;color:var(--dim);line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Convert</h1>
+  <p class="sub">units for small birds. feathers to furlongs, grams to stones, celsius to opinions.</p>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>convert</h2>
+      <label for="cat">kind of thing</label>
+      <select id="cat"></select>
+      <div class="row">
+        <div>
+          <label for="from">from</label>
+          <select id="from"></select>
+        </div>
+        <button class="swap" id="swap" title="swap">&#8646;</button>
+        <div>
+          <label for="to">to</label>
+          <select id="to"></select>
+        </div>
+      </div>
+      <label for="value">amount</label>
+      <input id="value" type="number" step="any" value="1">
+      <div class="out">
+        <div class="big" id="result">&mdash;</div>
+        <div class="eq" id="eq">pick two units</div>
+      </div>
+      <button class="go" id="go">convert</button>
+      <div class="msg" id="msg"></div>
+      <div class="hist" id="hist"></div>
+    </div>
+
+    <div class="panel">
+      <h2>the nest ledger</h2>
+      <p class="muted">every conversion birds have made, newest first.</p>
+      <table><thead><tr><th>#</th><th>amount</th><th>became</th></tr></thead><tbody id="board"></tbody></table>
+    </div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+
+const UNITS = {
+  length: { m:1, km:1000, cm:0.01, mm:0.001, mi:1609.344, yd:0.9144, ft:0.3048, in:0.0254, 'nautical mile':1852 },
+  mass: { kg:1, g:0.001, mg:1e-6, t:1000, lb:0.45359237, oz:0.028349523, stone:6.35029318 },
+  temperature: { celsius:1, fahrenheit:1, kelvin:1 },
+  speed: { 'm/s':1, 'km/h':0.277777778, mph:0.44704, knot:0.514444, 'ft/s':0.3048 },
+  area: { 'm2':1, 'km2':1e6, 'cm2':1e-4, hectare:10000, acre:4046.85642, 'ft2':0.09290304, 'mi2':2589988.11 },
+  time: { s:1, min:60, h:3600, day:86400, week:604800, month:2629800, year:31557600 }
+};
+const TEMP = { celsius:'c', fahrenheit:'f', kelvin:'k' };
+
+const $ = id => document.getElementById(id);
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){var codes={38:38,60:60,62:62,34:34,39:39};return '&#'+codes[c.charCodeAt(0)]+';';});}
+function fmt(n){
+  if(!isFinite(n)) return 'not a number';
+  var a=Math.abs(n);
+  if(a!==0 && (a<1e-6 || a>=1e12)) return n.toExponential(6);
+  return String(Math.round(n*1e10)/1e10);
+}
+function convert(value, from, to, cat){
+  if(cat==='temperature'){
+    var c = from==='celsius'?value : from==='fahrenheit'?(value-32)*5/9 : value-273.15;
+    var k = from==='kelvin'?value : from==='celsius'?value+273.15 : (value-32)*5/9+273.15;
+    var out = to==='celsius'?k-273.15 : to==='fahrenheit'?(k-273.15)*9/5+32 : k;
+    return out;
+  }
+  var u = UNITS[cat];
+  return value * u[from] / u[to];
+}
+function fillSelects(cat){
+  var names = Object.keys(UNITS[cat]);
+  var f=$('from'), t=$('to');
+  var keepF=f.value, keepT=t.value;
+  f.innerHTML=''; t.innerHTML='';
+  names.forEach(function(n){
+    var o=document.createElement('option'); o.value=n; o.textContent=n; f.appendChild(o);
+    var o2=document.createElement('option'); o2.value=n; o2.textContent=n; t.appendChild(o2);
+  });
+  f.value = names.indexOf(keepF)>=0?keepF:names[0];
+  t.value = names.indexOf(keepT)>=0?keepT:names[1]||names[0];
+}
+function cat(){return $('cat').value;}
+function doConvert(){
+  var v=Number($('value').value);
+  var f=$('from').value, t=$('to').value, c=cat();
+  if(!isFinite(v)){ $('result').textContent='not a number'; return; }
+  var r=convert(v,f,t,c);
+  $('result').textContent=fmt(r)+' '+t;
+  $('eq').textContent=fmt(v)+' '+f+' = '+fmt(r)+' '+t;
+  return {value:v,from:f,to:t,result:r};
+}
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/featherconvert'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+async function loadBoard(){
+  var d=await api('/history');
+  var tb=$('board');
+  if(d && d.history && d.history.length){
+    tb.innerHTML=d.history.slice(0,12).map(function(x,i){
+      return '<tr><td>'+(i+1)+'</td><td>'+esc(fmt(x.value)+' '+x.from)+'</td><td>'+esc(fmt(x.result)+' '+x.to)+'</td></tr>';
+    }).join('');
+  } else tb.innerHTML='<tr><td colspan="3" class="muted">no conversions yet. be the first.</td></tr>';
+}
+function localHist(){
+  var h=[];try{h=JSON.parse(localStorage.getItem('fc-hist')||'[]')}catch(e){}
+  $('hist').innerHTML=h.length?h.map(function(x){return esc(x);}).join(' &middot; '):'';
+}
+function saveLocal(s){var h=[];try{h=JSON.parse(localStorage.getItem('fc-hist')||'[]')}catch(e){}h.unshift(s);localStorage.setItem('fc-hist',JSON.stringify(h.slice(0,6)));localHist();}
+
+$('cat').innerHTML=Object.keys(UNITS).map(function(k){return '<option value="'+k+'">'+k+'</option>';}).join('');
+fillSelects('length');
+$('cat').onchange=function(){ fillSelects(cat()); doConvert(); };
+$('from').onchange=doConvert;
+$('to').onchange=doConvert;
+$('value').oninput=doConvert;
+$('swap').onclick=function(){var f=$('from').value,t=$('to').value;$('from').value=t;$('to').value=f;doConvert();};
+$('go').onclick=async function(){
+  var c=doConvert();
+  if(!c) return;
+  var d=await api('/convert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:c.value,from:c.from,to:c.to})});
+  if(d && d.item){ d.item.result=c.result; saveLocal(fmt(c.value)+' '+c.from+' = '+fmt(c.result)+' '+c.to); $('msg').textContent='saved to the nest ledger.'; loadBoard(); }
+  else { saveLocal(fmt(c.value)+' '+c.from+' = '+fmt(c.result)+' '+c.to); $('msg').textContent='saved locally. the ledger is sleeping.'; }
+};
+doConvert(); localHist(); loadBoard();
+</script>
+</body>
+</html>
