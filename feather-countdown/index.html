@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Countdown — count things down for small birds</title>
+<style>
+  :root{ --bg:#101a2c; --panel:#182740; --ink:#eef5ff; --dim:#9fb4cf; --gold:#ffd166; --blue:#7cc7ff; --pink:#ff8fb1; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 80% -10%,#22355c,#101a2c 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 18px 70px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .panel{background:var(--panel);border:1px solid #2b3d5e;border-radius:16px;padding:16px;margin-bottom:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,select{background:#0e1728;border:1px solid #33486b;color:var(--ink);border-radius:10px;padding:10px;font-size:15px;font-family:inherit}
+  input{flex:1;min-width:150px}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #33486b;background:#22355a;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--blue);color:#0c1220;font-weight:700;border:0}
+  .msg{min-height:20px;color:var(--blue);font-size:14px;margin-top:10px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+  .ev{border-radius:14px;padding:14px;border:1px solid #2b3d5e;background:#0e1728;position:relative}
+  .ev h3{margin:0 0 6px;font-size:16px}
+  .ev .note{color:var(--dim);font-size:13px;margin-bottom:8px}
+  .clock{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:1px;margin:6px 0}
+  .clock.past{color:var(--pink)}
+  .meta{color:var(--dim);font-size:11px;margin-bottom:8px}
+  .acts{display:flex;gap:6px}
+  .acts button{padding:6px 9px;font-size:12px}
+  .c-blue{border-left:5px solid #7cc7ff}.c-gold{border-left:5px solid #ffd166}.c-pink{border-left:5px solid #ff8fb1}.c-green{border-left:5px solid #7bd88f}
+  .empty{color:var(--dim);padding:20px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Countdown</h1>
+  <p class="sub">count down to anything. the whole flock can watch the clock.</p>
+
+  <div class="panel">
+    <h2 style="margin:0 0 10px;font-size:16px;color:var(--gold)">new countdown</h2>
+    <div class="row">
+      <input id="title" placeholder="counting down to…">
+      <input id="bird" value="gurt" style="max-width:150px;flex:0 0 150px">
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label style="color:var(--dim)">when</label>
+      <input id="when" type="datetime-local">
+      <select id="quick">
+        <option value="">quick picks…</option>
+        <option value="10">in 10 minutes</option>
+        <option value="60">in 1 hour</option>
+        <option value="1440">tomorrow</option>
+        <option value="10080">in a week</option>
+      </select>
+      <select id="color">
+        <option value="blue">blue</option>
+        <option value="gold">gold</option>
+        <option value="pink">pink</option>
+        <option value="green">green</option>
+      </select>
+      <button class="primary" id="add">start countdown</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input id="note" placeholder="a note (optional)">
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:12px">
+      <span id="count" style="color:var(--dim)"></span>
+      <button id="refresh" style="margin-left:auto">refresh</button>
+    </div>
+    <div class="grid" id="board"></div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const LS = 'fc-events';
+let events = [];
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return '&#'+c.charCodeAt(0)+';';});}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/feathercountdown'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+function fmt(ms){
+  var s = Math.floor(Math.abs(ms)/1000);
+  var d = Math.floor(s/86400); s-=d*86400;
+  var h = Math.floor(s/3600); s-=h*3600;
+  var m = Math.floor(s/60); s-=m*60;
+  var out = '';
+  if(d) out += d+'d ';
+  if(d||h) out += h+'h ';
+  if(d||h||m) out += m+'m ';
+  out += s+'s';
+  return out;
+}
+function whenIso(){
+  var q = $('quick').value;
+  if(q){ return new Date(Date.now() + Number(q)*60000).toISOString(); }
+  var v = $('when').value;
+  if(v){ return new Date(v).toISOString(); }
+  return new Date(Date.now()+3600000).toISOString();
+}
+async function load(){
+  var d = await api('/events');
+  if(d && d.events){ events = d.events; localSave(events); }
+  else events = localLoad();
+  render();
+}
+function render(){
+  $('count').textContent = events.length + ' countdown' + (events.length===1?'':'s');
+  var tb = $('board');
+  if(!events.length){ tb.innerHTML = '<div class="empty">no countdowns yet. start one.</div>'; return; }
+  tb.innerHTML = events.map(function(e){
+    var ms = new Date(e.when_at).getTime() - Date.now();
+    return '<div class="ev c-'+esc(e.color||'blue')+'" data-id="'+esc(e.id)+'">'+
+      '<h3>'+esc(e.title)+'</h3>'+
+      '<div class="clock'+(ms<0?' past':'')+'">'+(ms<0?('was '+fmt(ms)+' ago'):fmt(ms))+'</div>'+
+      '<div class="meta">bird: '+esc(e.bird||'gurt')+' · '+esc((e.when_at||'').slice(0,16).replace('T',' '))+'</div>'+
+      (e.note?'<div class="note">'+esc(e.note)+'</div>':'')+
+      '<div class="acts"><button class="del">delete</button></div></div>';
+  }).join('');
+  tb.querySelectorAll('.ev').forEach(function(el){
+    var id = el.getAttribute('data-id');
+    el.querySelector('.del').onclick = async function(){
+      var d = await api('/events/'+encodeURIComponent(id)+'/delete',{method:'POST'});
+      if(d&&d.ok){ events = events.filter(function(x){return x.id!==id;}); localSave(events); render(); }
+      else { events = events.filter(function(x){return x.id!==id;}); localSave(events); render(); }
+    };
+  });
+}
+$('add').onclick = async function(){
+  var title = $('title').value.trim();
+  if(!title){ $('msg').textContent='what are we counting down to?'; return; }
+  var body = { title:title, bird:($('bird').value||'gurt').trim(), color:$('color').value, when_at:whenIso(), note:$('note').value };
+  var d = await api('/events/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(d&&d.event){
+    events.push(d.event); localSave(events);
+    $('msg').textContent='countdown started.';
+  } else {
+    events.push({id:'loc'+Date.now(),title:body.title,bird:body.bird,color:body.color,when_at:body.when_at,note:body.note,created:new Date().toISOString()});
+    localSave(events);
+    $('msg').textContent='saved locally. the shared clock is sleeping.';
+  }
+  $('title').value=''; $('note').value=''; $('quick').value=''; $('when').value='';
+  render();
+};
+$('refresh').onclick = load;
+$('quick').onchange = function(){ if(this.value) $('when').value=''; };
+setInterval(render, 1000);
+load();
+</script>
+</body>
+</html>
