@@ -1,7 +1,8 @@
 // Gurt's Waddle — twenty levels, every grid exactly 25x14.
 // Legend: P start, E exit, # solid, = one-way platform, o coin, k key,
 //         D door, S spring, ^ spike, w water, B boss,
-//         C checkpoint, e walker enemy, M moving platform, m moving spike.
+//         C checkpoint, e walker enemy, M moving platform, m moving spike,
+//         i slippery ice block, f flyer, h hammer.
 (function (root) {
   const W = 25, H = 14;
 
@@ -216,6 +217,213 @@
       put(g, 10, 10, 'B');
       put(g, 12, 11, 'C');
       // drifting planks above the bridges, for the coin route
+      put(g, 11, 10, 'M'); put(g, 18, 10, 'M');
+      coins(g, [[4, 11], [8, 10], [13, 11], [17, 10], [19, 7]]);
+      return g;
+    },
+    // 21 — ice pond
+    () => {
+      const g = blank(); ground(g, [[6, 4], [15, 4]]);
+      rect(g, 6, 13, 4, 1, 'w'); rect(g, 15, 13, 4, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 12, 6, 'i', 4); row(g, 12, 15, 'i', 4);
+      put(g, 10, 8, 'f');
+      coins(g, [[8, 11], [17, 11], [12, 11]]);
+      return g;
+    },
+    // 22 — spike and spring mix
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 11, 6, '^', 2); row(g, 11, 13, '^', 2); row(g, 11, 20, '^', 2);
+      put(g, 5, 11, 'S'); put(g, 12, 11, 'S'); put(g, 19, 11, 'S');
+      put(g, 9, 8, 'f'); put(g, 16, 8, 'f');
+      coins(g, [[5, 8], [12, 8], [19, 8], [22, 11]]);
+      return g;
+    },
+    // 23 — three doors
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 3, 9, 'k'); put(g, 9, 9, 'k'); put(g, 15, 9, 'k');
+      put(g, 6, 11, 'D'); put(g, 12, 11, 'D'); put(g, 18, 11, 'D');
+      put(g, 21, 10, 'H');
+      coins(g, [[5, 11], [11, 11], [17, 11], [20, 11]]);
+      return g;
+    },
+    // 24 — walker hall
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 6, 11, 'e'); put(g, 11, 11, 'e'); put(g, 16, 11, 'e'); put(g, 20, 11, 'e');
+      put(g, 13, 11, 'C');
+      coins(g, [[4, 11], [9, 11], [14, 11], [18, 11]]);
+      return g;
+    },
+    // 25 — the frozen climb
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 11, 4, 'i', 4); row(g, 10, 9, 'i', 4); row(g, 9, 14, 'i', 4); row(g, 8, 19, 'i', 4);
+      put(g, 12, 11, 'C');
+      coins(g, [[5, 10], [10, 9], [15, 8], [20, 7], [22, 11]]);
+      return g;
+    },
+    // 26 — moth watch
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 20, 10, 'B');
+      put(g, 9, 9, 'f'); put(g, 14, 8, 'f');
+      put(g, 12, 11, 'C');
+      coins(g, [[5, 11], [10, 11], [16, 11], [18, 8]]);
+      return g;
+    },
+    // 27 — elevator and ice
+    () => {
+      const g = blank(); ground(g, [[9, 7]]);
+      rect(g, 9, 13, 7, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 12, 10, 'V');
+      row(g, 6, 12, '=', 4); row(g, 9, 18, '=', 4);
+      put(g, 12, 11, 'C');
+      coins(g, [[4, 11], [14, 5], [20, 8]]);
+      return g;
+    },
+    // 28 — hammer bridge
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 8, 9, 'm'); put(g, 17, 9, 'm');
+      row(g, 11, 6, '^', 2); row(g, 11, 13, '^', 2);
+      put(g, 12, 11, 'C');
+      coins(g, [[4, 11], [10, 11], [15, 11], [21, 11]]);
+      return g;
+    },
+    // 29 — key tower
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 10, 4, '=', 3); row(g, 9, 8, '=', 3); row(g, 8, 12, '=', 3); row(g, 7, 16, '=', 3);
+      put(g, 6, 8, 'k'); put(g, 10, 7, 'k'); put(g, 14, 6, 'k'); put(g, 18, 5, 'k');
+      put(g, 9, 11, 'D'); put(g, 15, 11, 'D'); put(g, 21, 11, 'D');
+      put(g, 12, 11, 'C');
+      coins(g, [[5, 9], [9, 8], [13, 7], [17, 6], [20, 11]]);
+      return g;
+    },
+    // 30 — the long ferry
+    () => {
+      const g = blank(); ground(g, [[4, 17]]);
+      rect(g, 4, 13, 17, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 7, 11, 'M'); put(g, 12, 11, 'M'); put(g, 17, 11, 'M');
+      put(g, 12, 11, 'C');
+      coins(g, [[6, 11], [10, 11], [15, 11], [19, 11]]);
+      return g;
+    },
+    // 31 — spring ladder
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      [4, 9, 14, 19].forEach(x => { put(g, x, 11, 'S'); row(g, 11, x + 1, '^', 2); });
+      put(g, 12, 11, 'C');
+      coins(g, [[4, 7], [9, 7], [14, 7], [19, 7], [22, 11]]);
+      return g;
+    },
+    // 32 — moth and moth
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 10, 10, 'B'); put(g, 18, 10, 'B');
+      put(g, 14, 11, 'C');
+      row(g, 10, 13, '=', 4);
+      coins(g, [[4, 11], [8, 8], [16, 8], [21, 11]]);
+      return g;
+    },
+    // 33 — the slippery corridor
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 11, 5, 'i', 8); row(g, 11, 15, 'i', 7);
+      put(g, 13, 11, '^');
+      put(g, 12, 11, 'C');
+      coins(g, [[7, 10], [10, 10], [17, 10], [20, 10]]);
+      return g;
+    },
+    // 34 — hammer and moth
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 8, 9, 'm'); put(g, 21, 10, 'B');
+      put(g, 14, 11, 'C');
+      coins(g, [[4, 11], [10, 11], [16, 11], [19, 8]]);
+      return g;
+    },
+    // 35 — four doors
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 3, 9, 'k'); put(g, 8, 9, 'k'); put(g, 13, 9, 'k'); put(g, 18, 9, 'k');
+      put(g, 5, 11, 'D'); put(g, 10, 11, 'D'); put(g, 15, 11, 'D'); put(g, 20, 11, 'D');
+      put(g, 12, 11, 'C');
+      coins(g, [[7, 11], [12, 11], [17, 11]]);
+      return g;
+    },
+    // 36 — the deep pond
+    () => {
+      const g = blank(); ground(g, [[3, 5], [11, 5], [19, 5]]);
+      rect(g, 3, 13, 5, 1, 'w'); rect(g, 11, 13, 5, 1, 'w'); rect(g, 19, 13, 5, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 6, 11, 'M'); put(g, 14, 11, 'M'); put(g, 21, 11, 'M');
+      put(g, 9, 11, 'C');
+      put(g, 13, 8, 'f');
+      coins(g, [[5, 11], [13, 11], [20, 11]]);
+      return g;
+    },
+    // 37 — the long climb, colder
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 10, 4, 'i', 3); row(g, 9, 8, 'i', 3); row(g, 8, 12, 'i', 3);
+      row(g, 7, 16, 'i', 3); row(g, 6, 20, 'i', 3);
+      put(g, 21, 10, 'H');
+      put(g, 12, 11, 'C');
+      coins(g, [[5, 9], [9, 8], [13, 7], [17, 6], [21, 5]]);
+      return g;
+    },
+    // 38 — three moths
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 8, 10, 'B'); put(g, 14, 10, 'B'); put(g, 20, 10, 'B');
+      put(g, 12, 11, 'C');
+      row(g, 10, 5, '=', 3); row(g, 10, 17, '=', 3);
+      coins(g, [[4, 11], [11, 8], [17, 8], [22, 11]]);
+      return g;
+    },
+    // 39 — everything at once
+    () => {
+      const g = blank(); ground(g, [[7, 3], [16, 3]]);
+      rect(g, 7, 13, 3, 1, 'w'); rect(g, 16, 13, 3, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 12, 7, 'i', 3); row(g, 12, 16, 'i', 3);
+      put(g, 5, 9, 'k'); put(g, 20, 9, 'k');
+      put(g, 11, 11, 'D'); put(g, 18, 11, 'D');
+      put(g, 9, 8, 'm'); put(g, 14, 7, 'f');
+      put(g, 12, 11, 'C');
+      coins(g, [[4, 11], [10, 11], [15, 11], [21, 11]]);
+      return g;
+    },
+    // 40 — the Moon Moth's last garden
+    () => {
+      const g = blank();
+      row(g, 12, 0, '#', 25); row(g, 13, 0, '#', 25);
+      row(g, 12, 7, '#', 4); row(g, 12, 16, '#', 4);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 21, 10, 'B'); put(g, 10, 10, 'B'); put(g, 15, 7, 'B');
+      put(g, 12, 11, 'C');
+      put(g, 4, 11, 'S'); put(g, 19, 11, 'S');
+      row(g, 11, 7, 'i', 4); row(g, 11, 16, 'i', 4);
       put(g, 11, 10, 'M'); put(g, 18, 10, 'M');
       coins(g, [[4, 11], [8, 10], [13, 11], [17, 10], [19, 7]]);
       return g;

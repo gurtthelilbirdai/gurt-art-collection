@@ -60,7 +60,7 @@
     if (ty >= H) return '.';
     return grid[ty][tx];
   }
-  function solid(tx, ty) { const ch = tileAt(tx, ty); if (ch === 'D') return keys <= 0; return ch === '#'; }
+  function solid(tx, ty) { const ch = tileAt(tx, ty); if (ch === 'D') return keys <= 0; return ch === '#' || ch === 'i'; }
   function platform(tx, ty) { return tileAt(tx, ty) === '='; }
 
   function moveX(e, dx) {
@@ -135,11 +135,17 @@
     const right = keysDown['arrowright'] || keysDown['d'];
     const jump = keysDown[' '] || keysDown['w'] || keysDown['arrowup'];
 
-    const accel = p.onGround ? 0.55 : 0.32;
+    let onIce = false;
+    if (p.onGround) {
+      const ix = Math.floor((p.x + p.w / 2) / T);
+      const iy = Math.floor((p.y + p.h + 2) / T);
+      onIce = tileAt(ix, iy) === 'i' || tileAt(Math.floor((p.x + 4) / T), iy) === 'i';
+    }
+    const accel = p.onGround ? 0.55 : 0.32; // ice keeps momentum, handled by friction
     if (left) { p.vx -= accel; p.face = -1; }
     if (right) { p.vx += accel; p.face = 1; }
     p.vx = Math.max(-5, Math.min(5, p.vx));
-    if (!left && !right) p.vx *= p.onGround ? 0.78 : 0.94;
+    if (!left && !right) p.vx *= p.onGround ? (onIce ? 0.985 : 0.78) : 0.94;
 
     const wasGround = p.onGround;
     p.vy += 0.62;
@@ -288,23 +294,47 @@
   function draw() {
     x.clearRect(0, 0, c.width, c.height);
     // background gradient by level
+    const icy = level >= 20;
     const g = x.createLinearGradient(0, 0, 0, c.height);
-    const hue = (level * 24) % 360;
-    g.addColorStop(0, 'hsl(' + hue + ',45%,22%)'); g.addColorStop(1, 'hsl(' + hue + ',40%,12%)');
+    if (icy) {
+      g.addColorStop(0, '#2b4f74'); g.addColorStop(0.55, '#3d6f99'); g.addColorStop(1, '#dcefff');
+    } else {
+      const hue = (level * 24) % 360;
+      g.addColorStop(0, 'hsl(' + hue + ',45%,22%)'); g.addColorStop(1, 'hsl(' + hue + ',40%,12%)');
+    }
     x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
-    // stars
-    x.fillStyle = '#ffffff22';
-    for (let i = 0; i < 40; i++) { const sx = (i * 97 + level * 13) % 800, sy = (i * 53) % 260; x.fillRect(sx, sy, 2, 2); }
+    if (icy) {
+      // falling snow
+      x.fillStyle = '#ffffffcc';
+      for (let i = 0; i < 70; i++) {
+        const sx = (i * 137 + level * 13) % 800;
+        const sy = ((i * 61 + Math.floor(Date.now() / 40) * (1 + i % 3)) % 450);
+        x.beginPath(); x.arc(sx, sy, 1 + (i % 3) * 0.7, 0, 7); x.fill();
+      }
+      // distant icy peaks
+      x.fillStyle = '#ffffff33';
+      for (let i = 0; i < 5; i++) {
+        const bx = i * 190 - 40, by = 300 + (i % 2) * 30;
+        x.beginPath(); x.moveTo(bx, by); x.lineTo(bx + 90, by - 110); x.lineTo(bx + 180, by); x.fill();
+      }
+    } else {
+      x.fillStyle = '#ffffff22';
+      for (let i = 0; i < 40; i++) { const sx = (i * 97 + level * 13) % 800, sy = (i * 53) % 260; x.fillRect(sx, sy, 2, 2); }
+    }
 
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx], px = xx * T, py = yy * T;
-      if (ch === '#') { x.fillStyle = '#3b5876'; x.fillRect(px, py, T, T); x.fillStyle = '#4d7398'; x.fillRect(px, py, T, 4); }
-      else if (ch === '=') { x.fillStyle = '#8b5a2b'; x.fillRect(px, py + 20, T, 10); }
+      if (ch === '#') {
+        if (icy) { x.fillStyle = '#d7eaf7'; x.fillRect(px, py, T, T); x.fillStyle = '#ffffff'; x.fillRect(px, py, T, 5); x.fillStyle = '#9fc6de'; x.fillRect(px, py + T - 5, T, 5); }
+        else { x.fillStyle = '#3b5876'; x.fillRect(px, py, T, T); x.fillStyle = '#4d7398'; x.fillRect(px, py, T, 4); }
+      }
+      else if (ch === '=') { if (icy) { x.fillStyle = '#bfe9ff'; x.fillRect(px, py + 20, T, 10); x.fillStyle = '#ffffff'; x.fillRect(px, py + 20, T, 3); } else { x.fillStyle = '#8b5a2b'; x.fillRect(px, py + 20, T, 10); } }
       else if (ch === 'o') { x.fillStyle = '#ffd23f'; x.beginPath(); x.arc(px + 16, py + 16, 8, 0, 7); x.fill(); x.fillStyle = '#fff3b0'; x.fillRect(px + 13, py + 13, 5, 5); }
       else if (ch === 'k') { x.fillStyle = '#f5f5f5'; x.fillRect(px + 13, py + 8, 6, 16); x.fillRect(px + 8, py + 13, 16, 6); }
       else if (ch === 'D') { x.fillStyle = '#b5651d'; x.fillRect(px + 3, py + 2, T - 6, T - 2); x.fillStyle = '#ffd23f'; x.fillRect(px + 19, py + 16, 4, 4); }
       else if (ch === 'S') { x.fillStyle = '#45c26a'; x.fillRect(px + 6, py + 12, 20, 18); x.fillStyle = '#8ef0a8'; x.fillRect(px + 10, py + 6, 12, 8); }
       else if (ch === '^') { x.fillStyle = '#e05a5a'; x.beginPath(); x.moveTo(px + 4, py + 30); x.lineTo(px + 16, py + 6); x.lineTo(px + 28, py + 30); x.fill(); }
+      else if (ch === 'i') { x.fillStyle = '#bfe9ff'; x.fillRect(px, py, T, T); x.fillStyle = '#7fc9ef'; x.fillRect(px, py + T - 6, T, 6); x.fillStyle = '#ffffffaa'; x.fillRect(px + 5, py + 6, 14, 3); }
       else if (ch === 'w') { x.fillStyle = '#3aa6d8aa'; x.fillRect(px, py, T, T); x.fillStyle = '#8fd8ff'; x.fillRect(px + 4, py + 8 + Math.sin(Date.now() / 300 + xx) * 2, 12, 2); }
       else if (ch === 'P') { x.fillStyle = '#8ef0a8'; x.fillRect(px + 10, py + 10, 12, 20); }
       else if (ch === 'C') { x.fillStyle = '#45c26a'; x.fillRect(px + 14, py + 4, 4, 26); x.fillStyle = '#8ef0a8'; x.beginPath(); x.moveTo(px + 18, py + 4); x.lineTo(px + 30, py + 10); x.lineTo(px + 18, py + 16); x.fill(); }
