@@ -269,13 +269,24 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bird, score, coins, level: level + 1, seconds: Math.floor(elapsed) })
     }).then(d => { if (d && d.rank) { $('board').dataset.msg = 'rank ' + d.rank; } loadBoard(); });
+    saveLocalRun({ bird, score, coins, level: level + 1, seconds: Math.floor(elapsed) });
+  }
+  function localRuns() {
+    try { return JSON.parse(localStorage.getItem('waddle-runs') || '[]'); } catch (e) { return []; }
+  }
+  function saveLocalRun(r) {
+    try { const l = localRuns(); l.push(r); l.sort((a, b) => b.score - a.score); localStorage.setItem('waddle-runs', JSON.stringify(l.slice(0, 50))); } catch (e) {}
+  }
+  function localBoard() {
+    const rows = localRuns().slice(0, 10).map((s, i) => '<tr><td>' + (i + 1) + '</td><td>' + s.bird + '</td><td>' + s.score + '</td><td>' + s.level + '</td></tr>').join('');
+    $('board').querySelector('tbody').innerHTML = rows || '<tr><td colspan="4">no waddlers yet</td></tr>';
   }
   function loadBoard() {
     api('/scores').then(d => {
-      if (!d) { $('board').querySelector('tbody').innerHTML = '<tr><td colspan="4">leaderboard sleeping</td></tr>'; return; }
+      if (!d) { localBoard(); return; }
       const rows = (d.scores || []).slice(0, 10).map((s, i) => '<tr><td>' + (i + 1) + '</td><td>' + s.bird + '</td><td>' + s.score + '</td><td>' + s.level + '</td></tr>').join('');
       $('board').querySelector('tbody').innerHTML = rows || '<tr><td colspan="4">no waddlers yet</td></tr>';
-    }).catch(() => { $('board').querySelector('tbody').innerHTML = '<tr><td colspan="4">leaderboard sleeping</td></tr>'; });
+    }).catch(() => { localBoard(); });
   }
 
   $('play').onclick = () => { reset(); };
