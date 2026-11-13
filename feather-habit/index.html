@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Habit — streaks for small birds</title>
+<style>
+  :root{ --bg:#0f1a16; --panel:#16271f; --ink:#eaf6ee; --dim:#9dbca9; --green:#7bd88f; --gold:#ffd166; --blue:#5fb0ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 50% -10%,#1d3a2b,#0f1a16 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:880px;margin:0 auto;padding:28px 18px 60px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 22px}
+  .panel{background:var(--panel);border:1px solid #244034;border-radius:16px;padding:18px;margin-bottom:18px}
+  .panel h2{margin:0 0 12px;font-size:17px;color:var(--gold)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  input{flex:1;min-width:140px;padding:10px;border-radius:10px;border:1px solid #2d4a3c;background:#0b1512;color:var(--ink);font-size:15px}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #2d4a3c;background:#1d3329;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--green);color:#06140d;font-weight:700;border:0}
+  .habits{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+  .habit{background:#0b1512;border:1px solid #244034;border-radius:14px;padding:14px}
+  .habit h3{margin:0 0 2px;font-size:16px}
+  .who{color:var(--dim);font-size:12px}
+  .streak{font-size:30px;font-weight:700;color:var(--gold);margin:8px 0 0}
+  .streak small{font-size:13px;color:var(--dim);font-weight:400}
+  .days{display:flex;gap:4px;margin:10px 0}
+  .dot{width:16px;height:16px;border-radius:50%;background:#1d3329;border:1px solid #2d4a3c}
+  .dot.on{background:var(--green);border-color:var(--green)}
+  .acts{display:flex;gap:8px}
+  .acts button{flex:1}
+  .done{background:#2a5c3d;border-color:var(--green)}
+  .msg{min-height:20px;color:var(--green);font-size:14px;margin-top:10px}
+  .muted{color:var(--dim);font-size:13px}
+  .empty{color:var(--dim);padding:20px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Habit</h1>
+  <p class="sub">streaks for small birds. one day at a time, mostly waddling.</p>
+
+  <div class="panel">
+    <h2>start a habit</h2>
+    <div class="row">
+      <input id="name" placeholder="habit name, e.g. morning song">
+      <input id="bird" placeholder="your bird name" value="gurt">
+      <button class="primary" id="add">add habit</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>the nest board</h2>
+    <p class="muted">every bird's habits, newest streaks first.</p>
+    <div class="habits" id="board"></div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const LS = 'fh-habits';
+
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){var codes={38:38,60:60,62:62,34:34,39:39};return '&#'+codes[c.charCodeAt(0)]+';';});}
+function todayStr(){return new Date().toISOString().slice(0,10);}
+function dayBefore(day){var d=new Date(day+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);}
+function streakOf(days){
+  var set={};days.forEach(function(d){set[d]=1;});
+  var cur=todayStr(); if(!set[cur]) cur=dayBefore(cur);
+  var n=0; while(set[cur]){n++;cur=dayBefore(cur);} return n;
+}
+function bestOf(days){
+  var s=days.slice().sort(), best=0, run=0, prev=null;
+  s.forEach(function(d){ run=(prev&&dayBefore(d)===prev)?run+1:1; if(run>best)best=run; prev=d; });
+  return best;
+}
+function decorate(h){
+  var days=(h.days||[]).slice().sort();
+  return {id:h.id,name:h.name,bird:h.bird||'gurt',days:days,
+    streak:streakOf(days), best:bestOf(days), doneToday:days.indexOf(todayStr())>=0};
+}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/featherhabit'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+async function loadBoard(){
+  var d=await api('/habits');
+  var list = (d && d.habits && d.habits.length) ? d.habits.map(decorate) : localLoad().map(decorate);
+  if(d && d.habits) localSave(d.habits);
+  render(list);
+}
+function render(list){
+  var tb=$('board');
+  if(!list.length){ tb.innerHTML='<div class="empty">no habits yet. be the first bird.</div>'; return; }
+  list.sort(function(a,b){ return b.streak-a.streak || b.days.length-a.days.length; });
+  var last7=[]; var cur=todayStr();
+  for(var i=6;i>=0;i--){var d=new Date(cur+'T00:00:00Z');d.setUTCDate(d.getUTCDate()-i);last7.push(d.toISOString().slice(0,10));}
+  tb.innerHTML=list.map(function(h){
+    var dots=last7.map(function(d){return '<span class="dot'+(h.days.indexOf(d)>=0?' on':'')+'"></span>';}).join('');
+    return '<div class="habit" data-id="'+esc(h.id)+'">'+
+      '<h3>'+esc(h.name)+'</h3><div class="who">bird: '+esc(h.bird)+'</div>'+
+      '<div class="streak">'+h.streak+' <small>day streak &middot; best '+h.best+'</small></div>'+
+      '<div class="days">'+dots+'</div>'+
+      '<div class="acts"><button class="check'+(h.doneToday?' done':'')+'">'+(h.doneToday?'done today ✓':'done today')+'</button>'+
+      '<button class="del">delete</button></div></div>';
+  }).join('');
+  tb.querySelectorAll('.habit').forEach(function(el){
+    var id=el.getAttribute('data-id');
+    el.querySelector('.check').onclick=async function(){
+      var d=await api('/habits/'+encodeURIComponent(id)+'/check',{method:'POST'});
+      if(d&&d.habit){ var l=localLoad(); var i=l.findIndex(function(x){return x.id===id;}); if(i>=0)l[i]=d.habit; else l.push(d.habit); localSave(l); loadBoard(); }
+      else {
+        var l=localLoad(); var h=l.find(function(x){return x.id===id;}); if(!h) return;
+        h.days=h.days||[]; var t=todayStr(); var i=h.days.indexOf(t); if(i>=0)h.days.splice(i,1); else h.days.push(t);
+        localSave(l); $('msg').textContent='saved locally. the nest board is sleeping.'; loadBoard();
+      }
+    };
+    el.querySelector('.del').onclick=async function(){
+      var d=await api('/habits/'+encodeURIComponent(id)+'/delete',{method:'POST'});
+      if(d&&d.ok){ localSave(localLoad().filter(function(x){return x.id!==id;})); loadBoard(); }
+    };
+  });
+}
+$('add').onclick=async function(){
+  var name=$('name').value.trim(), bird=$('bird').value.trim()||'gurt';
+  if(!name){ $('msg').textContent='give the habit a name first.'; return; }
+  var d=await api('/habits/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,bird:bird})});
+  if(d&&d.habit){
+    var l=localLoad(); l.push(d.habit); localSave(l);
+    $('msg').textContent='habit added to the nest board.';
+    $('name').value=''; loadBoard();
+  } else {
+    var l=localLoad();
+    l.push({id:'loc'+Date.now(),name:name,bird:bird,days:[],created:new Date().toISOString()});
+    localSave(l); $('msg').textContent='saved locally. the nest board is sleeping.'; $('name').value=''; loadBoard();
+  }
+};
+loadBoard();
+</script>
+</body>
+</html>
