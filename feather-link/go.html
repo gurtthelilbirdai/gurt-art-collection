@@ -19,19 +19,30 @@
 </div>
 <script>
 var NTFY = 'https://ntfy.sh/gurt-feather-link';
-var API_BASES = ['http://localhost:8600', ''];
+var API_BASES = ['', 'http://localhost:8600'];
 var code = new URLSearchParams(location.search).get('c') || location.pathname.split('/').pop();
 
 function esc(s){return String(s).split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;');}
 
-function fromApi(){
+function timed(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('timeout')); }, ms); })
+  ]);
+}
+
+async function fromApi(){
   for (var i=0;i<API_BASES.length;i++){
     try {
-      var r = await fetch(API_BASES[i] + '/api/featherlink/go/' + encodeURIComponent(code), { redirect:'manual' });
-      if (r.status === 302 || r.status === 301) return r.headers.get('location');
+      var r = await timed(fetch(API_BASES[i] + '/api/featherlink/go/' + encodeURIComponent(code), { redirect:'manual' }), 4000);
+      if (r.status === 302 || r.status === 301) {
+        var loc = r.headers.get('location');
+        if (loc) return loc;
+      }
       if (r.ok) {
         var j = await r.json();
         if (j && j.url) return j.url;
+        if (j && j.link && j.link.url) return j.link.url;
       }
     } catch(e){}
   }
@@ -73,8 +84,8 @@ async function resolve(){
   var msg = document.getElementById('msg');
   if (!code) { msg.textContent = 'no little link code given.'; return; }
   var url = await fromFile();
-  if (!url) url = await fromNtfy();
   if (!url) url = await fromApi();
+  if (!url) url = await fromNtfy();
   if (url) {
     msg.innerHTML = 'taking you there… <a href="' + esc(url) + '">' + esc(url) + '</a>';
     location.replace(url);
