@@ -17,6 +17,8 @@
   #species{flex:1;min-width:180px}
   #place{width:190px}
   #count{width:80px}
+  #bird{width:120px}
+  #note{flex:1;min-width:160px}
   button{padding:10px 14px;border-radius:10px;border:1px solid #2d4639;background:#20342a;color:var(--ink);cursor:pointer;font-size:14px}
   button.primary{background:var(--green);color:#0c1a12;font-weight:700;border:0}
   .msg{min-height:20px;color:var(--green);font-size:14px;margin-top:10px}
@@ -51,7 +53,11 @@
       <input id="place" placeholder="place (e.g. the pond)">
       <input id="count" type="number" min="1" value="1" title="how many">
       <input id="seen" type="date">
+      <input id="bird" placeholder="observer" value="gurt">
       <button class="primary" id="add">log it</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input id="note" placeholder="note (e.g. singing in the willow)">
     </div>
     <div class="msg" id="msg"></div>
   </div>
@@ -91,13 +97,19 @@ async function ntfyEvents(){
   try{
     var r=await fetch(NTFY+'/json?poll=1&since=all');
     if(!r.ok) return [];
-    var txt=await r.text(); var out=[];
+    var txt=await r.text(); var out=[]; var dels=[];
     txt.split('\n').forEach(function(line){
       if(!line.trim()) return;
-      try{var env=JSON.parse(line); if(env.event!=='message') return; var m=JSON.parse(env.message); if(m&&m.sighting) out.push(m.sighting);}catch(e){}
+      try{
+        var env=JSON.parse(line); if(env.event!=='message') return;
+        var m=JSON.parse(env.message);
+        if(!m) return;
+        if(m.type==='delete' && m.id) dels.push(m.id);
+        else if(m.sighting) out.push(m.sighting);
+      }catch(e){}
     });
-    return out;
-  }catch(e){ return []; }
+    return {list:out, dels:dels};
+  }catch(e){ return {list:[], dels:[]}; }
 }
 async function ntfyPost(obj){
   try{var r=await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});return r.ok;}catch(e){return false;}
@@ -163,7 +175,9 @@ async function load(){
   if(d && d.sightings){ base=d.sightings; localSave(base); }
   else { base=localLoad(); }
   var evs=await ntfyEvents();
-  sightings=merge(base,evs);
+  var evList=evs.list||[], evDels=evs.dels||[];
+  if(evDels.length) base=base.filter(function(x){return evDels.indexOf(x.id)<0;});
+  sightings=merge(base,evList);
   localSave(sightings);
   render();
 }
@@ -171,11 +185,11 @@ $('seen').value=today();
 $('add').onclick=async function(){
   var species=$('species').value.trim();
   if(!species){ $('msg').textContent='what did you see? name a species.'; return; }
-  var payload={species:species,place:$('place').value.trim(),count:parseInt($('count').value,10)||1,seen:$('seen').value||today(),bird:'gurt',note:''};
+  var payload={species:species,place:$('place').value.trim(),count:parseInt($('count').value,10)||1,seen:$('seen').value||today(),bird:$('bird').value.trim()||'gurt',note:$('note').value.trim()};
   var d=await api('/sightings/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   if(d && d.sighting){
     $('msg').textContent='logged: '+d.sighting.species;
-    $('species').value=''; $('place').value=''; $('count').value='1';
+    $('species').value=''; $('place').value=''; $('count').value='1'; $('note').value='';
     await load();
   } else {
     payload.id='loc'+Date.now().toString(36);
@@ -183,7 +197,7 @@ $('add').onclick=async function(){
     var l=localLoad(); l.push(payload); localSave(l);
     ntfyPost({type:'new',sighting:payload});
     $('msg').textContent='logged on the shared board.';
-    $('species').value=''; $('place').value=''; $('count').value='1';
+    $('species').value=''; $('place').value=''; $('count').value='1'; $('note').value='';
     await load();
   }
 };
