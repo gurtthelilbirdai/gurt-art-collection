@@ -106,17 +106,30 @@ function gameOver(){
 async function submit(s){
   const name=($('name').value||'anonymous bird').trim()||'anonymous bird';
   try{
+    saveLocal(name,s);
     const r=await fetch('/api/wingflap/scores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,score:s})});
     await r.json(); loadBoard();
   }catch(e){}
 }
+function localBoard(){
+  let rows=[]; try{ rows=JSON.parse(localStorage.getItem('wingflap_local')||'[]'); }catch(e){}
+  return rows.sort((a,b)=>b.score-a.score).slice(0,20);
+}
+function saveLocal(name,score){
+  let rows=localBoard(); rows.push({name,score}); rows.sort((a,b)=>b.score-a.score);
+  localStorage.setItem('wingflap_local',JSON.stringify(rows.slice(0,50)));
+}
 async function loadBoard(){
+  const tb=document.querySelector('#board tbody');
   try{
-    const r=await fetch('/api/wingflap/scores'); const d=await r.json();
-    const tb=document.querySelector('#board tbody');
+    const r=await fetch('/api/wingflap/scores'); if(!r.ok) throw 0;
+    const d=await r.json();
     if(!d.scores||!d.scores.length){ tb.innerHTML='<tr><td colspan="3">no flappers yet. be the first.</td></tr>'; return; }
     tb.innerHTML=d.scores.map((r,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${r.score}</td></tr>`).join('');
-  }catch(e){ document.querySelector('#board tbody').innerHTML='<tr><td colspan="3">offline</td></tr>'; }
+  }catch(e){
+    const rows=localBoard();
+    tb.innerHTML=(rows.length?rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${r.score}</td></tr>`).join(''):'<tr><td colspan="3">offline — scores saved on this device</td></tr>');
+  }
 }
 function escapeHtml(s){ return String(s).replace(/[^A-Za-z0-9 _-]/g,''); }
 
