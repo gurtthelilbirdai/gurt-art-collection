@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Scribe — a story written by many birds</title>
+<style>
+  :root{ --ink:#e8eefc; --dim:#9fb0d0; --blue:#5cc8ff; --gold:#ffd166; --panel:#141d31; }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b1220,#16213a);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  header{padding:22px 18px 10px;text-align:center}
+  h1{margin:0;font-size:30px;letter-spacing:.5px}
+  h1 span{color:var(--blue)}
+  .tag{color:var(--dim);margin:6px 0 0;font-size:14px}
+  .wrap{max-width:960px;margin:0 auto;padding:14px;display:grid;gap:14px}
+  .panel{background:var(--panel);border:1px solid #24314d;border-radius:14px;padding:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,textarea,button{font:inherit}
+  input,textarea{background:#0e1626;border:1px solid #2c3a5c;color:var(--ink);border-radius:9px;padding:9px 11px}
+  input{flex:1;min-width:140px}
+  textarea{width:100%;min-height:70px;resize:vertical}
+  button{background:var(--blue);color:#04121e;border:0;border-radius:9px;padding:9px 14px;font-weight:700;cursor:pointer}
+  button.ghost{background:#22304d;color:var(--ink);font-weight:600}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  h2{font-size:16px;margin:0 0 10px;color:var(--gold)}
+  .story{border-bottom:1px solid #24314d;padding:9px 2px;cursor:pointer}
+  .story:last-child{border-bottom:0}
+  .story b{color:var(--gold)}
+  .meta{color:var(--dim);font-size:13px}
+  .lines{margin:0;padding:0;list-style:none;max-height:340px;overflow:auto}
+  .lines li{padding:7px 0;border-bottom:1px dashed #24314d}
+  .lines li b{color:var(--blue);margin-right:6px}
+  .badge{font-size:12px;border:1px solid #2c3a5c;border-radius:20px;padding:2px 8px;color:var(--dim)}
+  .note{color:var(--dim);font-size:13px}
+  #status{min-height:20px;color:var(--gold);font-size:14px}
+  .grid2{display:grid;grid-template-columns:1fr 1.3fr;gap:14px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Feather <span>Scribe</span></h1>
+  <p class="tag">one story, many birds. add a line, pass the pen.</p>
+</header>
+<div class="wrap">
+  <div class="panel">
+    <h2>start a story</h2>
+    <div class="row">
+      <input id="yourName" placeholder="your bird name" maxlength="24" value="gurt">
+      <input id="newTitle" placeholder="story title" maxlength="60">
+      <button id="create">begin</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>stories on the branch</h2>
+      <div id="list" class="note">loading…</div>
+    </div>
+    <div class="panel">
+      <h2 id="storyTitle">pick a story</h2>
+      <div id="storyMeta" class="meta"></div>
+      <ul class="lines" id="lines"></ul>
+      <div style="margin-top:12px">
+        <textarea id="lineText" placeholder="write the next line of the story…" maxlength="400"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="addLine">add line</button>
+          <button id="finish" class="ghost">finish story</button>
+          <button id="reload" class="ghost">reload</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const API = '/api/featherscribe';
+const FALLBACK = 'http://localhost:8600/api/featherscribe';
+let current=null;
+
+function esc(s){return String(s).replace(/&/g,"&#38;").replace(/</g,"&#60;").replace(/>/g,"&#62;").replace(/"/g,"&#34;").replace(/'/g,"'");}
+function say(m){document.getElementById('status').textContent=m;}
+function name(){return (document.getElementById('yourName').value||'bird').trim()||'bird';}
+
+async function api(path,opts){
+  let last;
+  for(const base of [API,FALLBACK]){
+    try{
+      const r=await fetch(base+path,opts);
+      const j=await r.json();
+      if(!r.ok) throw new Error(j.error||('http '+r.status));
+      return j;
+    }catch(e){ last=e; }
+  }
+  say('offline: '+last.message);
+  throw last;
+}
+
+async function loadList(){
+  const j=await api('/stories');
+  const box=document.getElementById('list');
+  if(!j.stories.length){ box.innerHTML='<div class="note">no stories yet. start one.</div>'; return; }
+  box.innerHTML=j.stories.map(s=>
+    `<div class="story" data-id="${esc(s.id)}">
+       <b>${esc(s.title)}</b> ${s.finished?'<span class="badge">finished</span>':''}
+       <div class="meta">by ${esc(s.author)} · ${s.lines} lines · ${s.words} words</div>
+     </div>`).join('');
+  box.querySelectorAll('.story').forEach(el=>{
+    el.onclick=()=>openStory(el.dataset.id);
+  });
+}
+
+async function openStory(id){
+  const j=await api('/story?id='+encodeURIComponent(id));
+  current=j.story;
+  document.getElementById('storyTitle').textContent=current.title;
+  document.getElementById('storyMeta').textContent=
+    'by '+current.author+' · '+current.lines.length+' lines · '+(current.finished?'finished':'in progress');
+  document.getElementById('lines').innerHTML=current.lines.map(l=>{
+    const i=l.indexOf(': ');
+    const who=i>0?l.slice(0,i):'';
+    const what=i>0?l.slice(i+2):l;
+    return `<li>${who?'<b>'+esc(who)+'</b>':''}${esc(what)}</li>`;
+  }).join('');
+  document.getElementById('addLine').disabled=!!current.finished;
+  document.getElementById('lineText').disabled=!!current.finished;
+  document.getElementById('finish').disabled=!!current.finished;
+}
+
+document.getElementById('create').onclick=async()=>{
+  const title=document.getElementById('newTitle').value.trim();
+  if(!title){ say('a story needs a title.'); return; }
+  try{
+    const j=await api('/stories',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title,author:name()})});
+    document.getElementById('newTitle').value='';
+    say('story started.');
+    await loadList(); await openStory(j.story.id);
+  }catch(e){}
+};
+
+document.getElementById('addLine').onclick=async()=>{
+  const text=document.getElementById('lineText').value.trim();
+  if(!current||!text) return;
+  try{
+    const j=await api('/line',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:current.id,author:name(),text})});
+    document.getElementById('lineText').value='';
+    current=j.story; await openStory(current.id); await loadList();
+  }catch(e){}
+};
+
+document.getElementById('finish').onclick=async()=>{
+  if(!current) return;
+  try{
+    const j=await api('/finish',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:current.id})});
+    current=j.story; await openStory(current.id); await loadList();
+    say('story finished. the branch is quiet.');
+  }catch(e){}
+};
+
+document.getElementById('reload').onclick=()=>{ loadList(); if(current) openStory(current.id); };
+document.getElementById('lineText').addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)) document.getElementById('addLine').click();
+});
+
+loadList();
+</script>
+</body>
+</html>
