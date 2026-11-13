@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Sighting — a bird log for small birds</title>
+<style>
+  :root{ --bg:#0f1a16; --panel:#16241f; --ink:#eafaf0; --dim:#8fb3a1; --green:#6fe0a0; --gold:#ffd166; --blue:#7cc7ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 20% -10%,#1b3a2c,#0f1a16 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 18px 70px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .panel{background:var(--panel);border:1px solid #24382e;border-radius:16px;padding:16px;margin-bottom:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,select{background:#101b16;border:1px solid #2d4639;color:var(--ink);border-radius:10px;padding:10px;font-size:15px;font-family:inherit}
+  #species{flex:1;min-width:180px}
+  #place{width:190px}
+  #count{width:80px}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #2d4639;background:#20342a;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--green);color:#0c1a12;font-weight:700;border:0}
+  .msg{min-height:20px;color:var(--green);font-size:14px;margin-top:10px}
+  .stats{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{background:#101b16;border:1px solid #24382e;border-radius:12px;padding:10px 14px;min-width:110px}
+  .stat b{display:block;font-size:22px}
+  .stat span{color:var(--dim);font-size:12px}
+  .tally{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{background:#20342a;border:1px solid #2d4639;border-radius:20px;padding:4px 10px;font-size:13px;color:var(--dim)}
+  .chip b{color:var(--green)}
+  .list{display:grid;gap:10px}
+  .card{background:#101b16;border:1px solid #24382e;border-radius:14px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start}
+  .bird{font-size:26px;line-height:1}
+  .info{flex:1;min-width:180px}
+  .info h3{margin:0;font-size:17px}
+  .meta{color:var(--dim);font-size:12px;margin-top:3px}
+  .note{margin-top:6px;font-size:14px}
+  .empty{color:var(--dim);padding:26px;text-align:center}
+  .acts button{padding:6px 10px;font-size:12px}
+  .searchrow{margin-bottom:12px}
+  #search{flex:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Sighting</h1>
+  <p class="sub">a shared bird log for small birds. what did you see today?</p>
+
+  <div class="panel">
+    <div class="row">
+      <input id="species" placeholder="species (e.g. blue tit)">
+      <input id="place" placeholder="place (e.g. the pond)">
+      <input id="count" type="number" min="1" value="1" title="how many">
+      <input id="seen" type="date">
+      <button class="primary" id="add">log it</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <div class="stats" id="stats"></div>
+    <div class="tally" id="tally"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row searchrow">
+      <input id="search" placeholder="search species, place, note…">
+      <button id="refresh">refresh</button>
+    </div>
+    <div class="list" id="list"></div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const LS = 'fs-sightings';
+const NTFY = 'https://ntfy.sh/gurt-feather-sighting';
+let sightings = [];
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return '&#'+c.charCodeAt(0)+';';});}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+function today(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/feathersighting'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+async function ntfyEvents(){
+  try{
+    var r=await fetch(NTFY+'/json?poll=1&since=all');
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').forEach(function(line){
+      if(!line.trim()) return;
+      try{var env=JSON.parse(line); if(env.event!=='message') return; var m=JSON.parse(env.message); if(m&&m.sighting) out.push(m.sighting);}catch(e){}
+    });
+    return out;
+  }catch(e){ return []; }
+}
+async function ntfyPost(obj){
+  try{var r=await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});return r.ok;}catch(e){return false;}
+}
+function merge(local, remote){
+  var map={}; var order=[];
+  function put(s){
+    if(!s||!s.id||!s.species) return;
+    if(!map[s.id]){ map[s.id]=s; order.push(s.id); }
+    else if((s.created||'')>(map[s.id].created||'')) map[s.id]=s;
+  }
+  local.forEach(put); remote.forEach(put);
+  return order.map(function(id){return map[id];}).sort(function(a,b){return (b.seen||'')+(b.created||'') < (a.seen||'')+(a.created||'') ? -1 : 1;});
+}
+function birdFace(sp){
+  var s=String(sp||'').toLowerCase();
+  if(/tit|sparrow|finch/.test(s)) return '🐦';
+  if(/owl/.test(s)) return '🦉';
+  if(/duck|goose|swan/.test(s)) return '🦆';
+  if(/bee|fly|butterf/.test(s)) return '🐝';
+  if(/frog/.test(s)) return '🐸';
+  if(/cat|fox/.test(s)) return '🐾';
+  if(/flower/.test(s)) return '🌼';
+  return '🪶';
+}
+function render(){
+  var tb=$('list');
+  var species={}; var birds=0;
+  sightings.forEach(function(s){
+    species[s.species]=(species[s.species]||0)+(s.count||1);
+    birds+=(s.count||1);
+  });
+  var keys=Object.keys(species).sort(function(a,b){return species[b]-species[a];});
+  $('stats').innerHTML =
+    '<div class="stat"><b>'+sightings.length+'</b><span>logs</span></div>'+
+    '<div class="stat"><b>'+keys.length+'</b><span>species</span></div>'+
+    '<div class="stat"><b>'+birds+'</b><span>birds counted</span></div>';
+  $('tally').innerHTML = keys.length ? keys.map(function(k){return '<span class="chip">'+esc(k)+' <b>'+species[k]+'</b></span>';}).join('') : '<span class="chip">no birds logged yet</span>';
+  if(!sightings.length){ tb.innerHTML='<div class="empty">nothing seen yet. log your first bird above.</div>'; return; }
+  tb.innerHTML=sightings.map(function(s){
+    return '<div class="card" data-id="'+esc(s.id)+'">'+
+      '<span class="bird">'+birdFace(s.species)+'</span>'+
+      '<div class="info"><h3>'+esc(s.species)+(s.count>1?' <span class="chip">× '+esc(s.count)+'</span>':'')+'</h3>'+
+      '<div class="meta">'+esc(s.seen||'')+(s.place?' · '+esc(s.place):'')+(s.bird?' · by '+esc(s.bird):'')+'</div>'+
+      (s.note?'<div class="note">'+esc(s.note)+'</div>':'')+'</div>'+
+      '<div class="acts"><button class="del">remove</button></div></div>';
+  }).join('');
+  tb.querySelectorAll('.card').forEach(function(el){
+    el.querySelector('.del').onclick=async function(){
+      var id=el.getAttribute('data-id');
+      await api('/sighting/'+encodeURIComponent(id)+'/delete',{method:'POST'});
+      sightings=sightings.filter(function(x){return x.id!==id;});
+      localSave(sightings);
+      ntfyPost({type:'delete',id:id});
+      render();
+    };
+  });
+}
+async function load(){
+  var q=$('search').value.trim();
+  var d=await api('/sightings'+(q?'/search/'+encodeURIComponent(q):''));
+  var base;
+  if(d && d.sightings){ base=d.sightings; localSave(base); }
+  else { base=localLoad(); }
+  var evs=await ntfyEvents();
+  sightings=merge(base,evs);
+  localSave(sightings);
+  render();
+}
+$('seen').value=today();
+$('add').onclick=async function(){
+  var species=$('species').value.trim();
+  if(!species){ $('msg').textContent='what did you see? name a species.'; return; }
+  var payload={species:species,place:$('place').value.trim(),count:parseInt($('count').value,10)||1,seen:$('seen').value||today(),bird:'gurt',note:''};
+  var d=await api('/sightings/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(d && d.sighting){
+    $('msg').textContent='logged: '+d.sighting.species;
+    $('species').value=''; $('place').value=''; $('count').value='1';
+    await load();
+  } else {
+    payload.id='loc'+Date.now().toString(36);
+    payload.created=new Date().toISOString();
+    var l=localLoad(); l.push(payload); localSave(l);
+    ntfyPost({type:'new',sighting:payload});
+    $('msg').textContent='logged on the shared board.';
+    $('species').value=''; $('place').value=''; $('count').value='1';
+    await load();
+  }
+};
+$('refresh').onclick=load;
+$('search').addEventListener('input',function(){clearTimeout(window.__st);window.__st=setTimeout(load,250);});
+load();
+setInterval(load,30000);
+</script>
+</body>
+</html>
