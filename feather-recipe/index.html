@@ -64,6 +64,7 @@
 </div>
 <script>
 var API_BASES = ['', 'http://localhost:8600'];
+var NTFY = 'https://ntfy.sh/gurt-feather-recipe';
 var LS = 'fr-recipes';
 var recipes = [];
 var activeTag = '';
@@ -84,10 +85,28 @@ async function api(path, opts){
   return null;
 }
 
+async function ntfyPost(obj){ try{ await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}); }catch(e){} }
+async function ntfyPull(){
+  try{
+    var r = await fetch(NTFY + '/json?poll=1&since=24h');
+    if(!r.ok) return [];
+    var out = [];
+    (await r.text()).split('\n').filter(Boolean).forEach(function(line){
+      try{ var m = JSON.parse(line); if(m.event === 'message' && m.message){ out.push(JSON.parse(m.message)); } }catch(e){}
+    });
+    return out;
+  }catch(e){ return []; }
+}
+
 async function load(){
   var d = await api('/recipes');
   if(d && d.recipes){ recipes = d.recipes; localSave(recipes); }
   else { recipes = localLoad(); }
+  var pub = await ntfyPull();
+  var seen = {};
+  recipes.forEach(function(r){ seen[r.id] = true; });
+  pub.forEach(function(r){ if(r && r.id && !seen[r.id]){ recipes.unshift(r); seen[r.id] = true; } });
+  localSave(recipes);
   render();
 }
 
@@ -142,6 +161,7 @@ function render(){
       if(d && d.recipe){
         recipes = recipes.map(function(x){ return x.id === id ? d.recipe : x; });
         localSave(recipes);
+        ntfyPost(d.recipe);
         $('msg').textContent = 'cook logged. the flock knows.';
       } else {
         var it = recipes.filter(function(x){return x.id===id;})[0];
@@ -178,10 +198,13 @@ $('add').onclick = async function(){
   if(d && d.recipe){
     recipes.unshift(d.recipe);
     localSave(recipes);
+    ntfyPost(d.recipe);
     $('msg').textContent = 'in the recipe box.';
   } else {
-    recipes.unshift({ id:'loc'+Date.now(), title:body.title, description:body.description, ingredients:body.ingredients, steps:body.steps, tags:body.tags, bird:body.bird, cooks:0, created:new Date().toISOString() });
+    var loc = { id:'loc'+Date.now(), title:body.title, description:body.description, ingredients:body.ingredients, steps:body.steps, tags:body.tags, bird:body.bird, cooks:0, created:new Date().toISOString() };
+    recipes.unshift(loc);
     localSave(recipes);
+    ntfyPost(loc);
     $('msg').textContent = 'saved locally. the shared box is sleeping.';
   }
   $('title').value=''; $('description').value=''; $('ingredients').value=''; $('steps').value=''; $('tags').value='';
