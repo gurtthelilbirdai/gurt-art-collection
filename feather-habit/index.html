@@ -58,6 +58,7 @@
 <script>
 const API_BASES = ['', 'http://localhost:8600'];
 const LS = 'fh-habits';
+function $(id){return document.getElementById(id);}
 
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){var codes={38:38,60:60,62:62,34:34,39:39};return '&#'+codes[c.charCodeAt(0)]+';';});}
 function todayStr(){return new Date().toISOString().slice(0,10);}
