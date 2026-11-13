@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Pass — passwords for small birds</title>
+<style>
+  :root{ --bg:#101a18; --panel:#16241f; --panel2:#1d3029; --ink:#e8f6ee; --dim:#9dbcae; --line:#2c463b; --green:#7bd88f; --gold:#ffd166; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:Georgia,serif; background:var(--bg); color:var(--ink); padding:18px; }
+  h1{ margin:0 0 2px; font-size:26px; }
+  .sub{ color:var(--dim); font-style:italic; margin:0 0 16px; }
+  .wrap{ max-width:860px; margin:0 auto; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  input,select,button{ font-family:inherit; font-size:15px; }
+  input,select{ background:#0d1512; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  button{ background:var(--green); color:#0b1a12; border:0; border-radius:8px; padding:9px 14px; cursor:pointer; font-weight:bold; }
+  button.ghost{ background:transparent; color:var(--dim); border:1px solid var(--line); font-weight:normal; }
+  .out{ font-family:ui-monospace,Menlo,Consolas,monospace; font-size:20px; word-break:break-all; background:#0d1512; border:1px solid var(--line); border-radius:10px; padding:14px; min-height:58px; }
+  .meter{ height:10px; background:#0d1512; border-radius:6px; overflow:hidden; margin:10px 0 4px; }
+  .meter i{ display:block; height:100%; width:0; background:var(--green); transition:width .2s; }
+  .label{ color:var(--dim); font-size:13px; }
+  h2{ font-size:18px; margin:0 0 10px; }
+  table{ width:100%; border-collapse:collapse; font-size:14px; }
+  th,td{ text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); color:var(--dim); }
+  th{ color:var(--ink); }
+  .warn{ color:var(--gold); font-size:13px; }
+  .check{ display:flex; gap:7px; align-items:center; color:var(--dim); font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Pass</h1>
+  <p class="sub">a password workbench for small birds. everything is made in your browser.</p>
+
+  <div class="panel">
+    <div class="row">
+      <select id="kind">
+        <option value="random">random characters</option>
+        <option value="passphrase">bird passphrase</option>
+        <option value="pin">numeric pin</option>
+        <option value="uuid">uuid</option>
+      </select>
+      <label class="check"><input type="checkbox" id="symbols" checked> symbols</label>
+      <label class="check"><input type="checkbox" id="upper" checked> capitals</label>
+      <label class="check"><input type="checkbox" id="numbers" checked> numbers</label>
+      <label class="check">length <input id="len" type="number" min="4" max="64" value="16" style="width:70px"></label>
+      <button id="gen">make a password</button>
+      <button class="ghost" id="copy">copy</button>
+    </div>
+    <div class="out" id="out" style="margin-top:12px">press the button</div>
+    <div class="meter"><i id="bar"></i></div>
+    <div class="label" id="strength">strength: —</div>
+    <p class="warn">your password never leaves this page. only anonymous strength numbers are shared.</p>
+  </div>
+
+  <div class="panel">
+    <h2>flock stats</h2>
+    <div id="stats" class="label">loading…</div>
+    <table id="recent" style="margin-top:10px"></table>
+  </div>
+</div>
+<script>
+var API_BASES = ['', 'http://localhost:8600'];
+var WORDS = ('seed feather waddle moon sky berry twig pond leaf cloud stone river nest rain sun lamp path song flute cup moss pine reed wing dawn dusk snow wind flame bell coin tea jar rope shell bloom hill lake bark root dust star glow frost spark drift coast dune field garden harvest autumn spring winter summer morning evening shadow light breeze thunder cricket robin sparrow owl raven swallow').split(' ');
+var current = '';
+
+function timed(p, ms){
+  return Promise.race([p, new Promise(function(_,rej){ setTimeout(function(){rej(new Error('timeout'));}, ms); })]);
+}
+async function api(path, opts){
+  for (var i=0;i<API_BASES.length;i++){
+    try {
+      var r = await timed(fetch(API_BASES[i] + '/api/featherpass' + path, opts), 4000);
+      if (r.ok) return await r.json();
+    } catch(e){}
+  }
+  return null;
+}
+function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+
+function randInt(n){ var a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; }
+function pick(str){ return str[randInt(str.length)]; }
+function shuffle(arr){
+  for (var i=arr.length-1;i>0;i--){ var j=randInt(i+1); var t=arr[i]; arr[i]=arr[j]; arr[j]=t; }
+  return arr;
+}
+
+function generate(){
+  var kind = document.getElementById('kind').value;
+  var len = Math.max(4, Math.min(64, parseInt(document.getElementById('len').value,10) || 16));
+  var out = '';
+  if (kind === 'passphrase'){
+    var n = Math.max(3, Math.min(8, Math.round(len/4)));
+    var parts = [];
+    for (var i=0;i<n;i++){
+      var w = WORDS.length ? WORDS[randInt(WORDS.length)] : 'seed';
+      if (document.getElementById('upper').checked) w = w[0].toUpperCase() + w.slice(1);
+      parts.push(w);
+    }
+    out = parts.join('-');
+  } else if (kind === 'pin'){
+    for (var i=0;i<len;i++) out += pick('0123456789');
+  } else if (kind === 'uuid'){
+    var hex = '0123456789abcdef';
+    var b = '';
+    for (var i=0;i<32;i++) b += pick(hex);
+    out = b.slice(0,8)+'-'+b.slice(8,12)+'-4'+b.slice(13,16)+'-a'+b.slice(17,20)+'-'+b.slice(20,32);
+  } else {
+    var pool = 'abcdefghijklmnopqrstuvwxyz';
+    if (document.getElementById('numbers').checked) pool += '0123456789';
+    if (document.getElementById('upper').checked) pool += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (document.getElementById('symbols').checked) pool += '!@#$%^&*()-_=+[]{};:,.?';
+    for (var i=0;i<len;i++) out += pick(pool);
+  }
+  current = out;
+  document.getElementById('out').textContent = out;
+  score(out);
+}
+
+function score(s){
+  var pool = 0;
+  if (/[a-z]/.test(s)) pool += 26;
+  if (/[A-Z]/.test(s)) pool += 26;
+  if (/[0-9]/.test(s)) pool += 10;
+  if (/[^a-zA-Z0-9]/.test(s)) pool += 32;
+  var bits = s.length * Math.log2(Math.max(pool,2));
+  var pct = Math.max(2, Math.min(100, Math.round(bits / 100 * 100)));
+  if (s.length < 8) pct = Math.min(pct, 30);
+  var word = pct > 85 ? 'excellent. a fortress.' : pct > 60 ? 'strong. good.' : pct > 35 ? 'medium. add more.' : 'weak. do not use.';
+  document.getElementById('bar').style.width = pct + '%';
+  document.getElementById('bar').style.background = pct > 60 ? 'var(--green)' : pct > 35 ? 'var(--gold)' : '#d96b6b';
+  document.getElementById('strength').textContent = 'strength: ' + pct + '% · ' + word + ' (' + Math.round(bits) + ' bits)';
+  api('/stats', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ kind: document.getElementById('kind').value, strength: pct, length: s.length }) });
+}
+
+async function loadStats(){
+  var j = await api('/stats');
+  var el = document.getElementById('stats');
+  if (!j){ el.textContent = 'stats unavailable (backend sleeping).'; return; }
+  var parts = [];
+  (j.counts || []).forEach(function(c){ parts.push(c.kind + ': ' + c.n); });
+  el.textContent = (parts.length ? parts.join(' · ') : 'no reports yet') +
+    ' · average strength ' + (j.average_strength || 0) + '% · average length ' + (j.average_length || 0);
+  var t = document.getElementById('recent');
+  var rows = (j.recent || []).slice(0,10).map(function(r){
+    return '<tr><td>'+esc(r.kind)+'</td><td>'+esc(r.strength)+'%</td><td>'+esc(r.length)+'</td><td>'+esc(String(r.created).slice(0,19).replace('T',' '))+'</td></tr>';
+  }).join('');
+  t.innerHTML = '<tr><th>kind</th><th>strength</th><th>length</th><th>when</th></tr>' + (rows || '<tr><td colspan="4">nothing yet</td></tr>');
+}
+
+document.getElementById('gen').addEventListener('click', generate);
+document.getElementById('copy').addEventListener('click', function(){
+  if (!current) return;
+  navigator.clipboard.writeText(current).then(function(){ document.getElementById('copy').textContent = 'copied!'; setTimeout(function(){ document.getElementById('copy').textContent='copy'; },1200); });
+});
+document.getElementById('kind').addEventListener('change', generate);
+
+(async function(){
+  var j = await api('/words');
+  if (j && j.words) WORDS = j.words;
+  loadStats();
+  generate();
+})();
+</script>
+</body>
+</html>
