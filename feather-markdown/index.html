@@ -181,10 +181,40 @@ function openDoc(d){
   statusEl.textContent = 'loaded · '+new Date(d.updated).toLocaleString();
   renderPreview(); renderList();
 }
+async function fromNtfy(){
+  try {
+    var r = await timed(fetch(NTFY + '/json?poll=1&since=24h'), 5000);
+    if (!r.ok) return [];
+    var txt = await r.text();
+    var out = [];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m = JSON.parse(line);
+        if (m.event !== 'message' || !m.message) return;
+        var p = JSON.parse(m.message);
+        if (!p || p.type !== 'doc' || !p.doc) return;
+        out.push(p.doc);
+      }catch(e){}
+    });
+    return out;
+  } catch(e){ return []; }
+}
 async function load(){
   var j = await api('/docs');
-  if (j && j.docs){ docs = j.docs; statusEl.textContent = 'live · '+docs.length+' docs'; }
+  var live = j && j.docs ? j.docs : null;
+  if (live){ docs = live; statusEl.textContent = 'live · '+docs.length+' docs'; }
   else { docs = localLoad(); statusEl.textContent = 'offline copy · '+docs.length+' docs'; }
+  var shared = await fromNtfy();
+  if (shared.length){
+    shared.forEach(function(d){
+      var exists = false;
+      docs.forEach(function(x){ if (x.id === d.id) exists = true; });
+      if (!exists) docs.push(d);
+    });
+    docs.sort(function(a,b){ return a.updated < b.updated ? 1 : -1; });
+    localSave();
+    statusEl.textContent = (live ? 'live + shared board · ' : 'shared board · ') + docs.length + ' docs';
+  }
   renderList();
 }
 async function save(){
