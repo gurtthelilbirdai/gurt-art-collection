@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Link</title>
+<style>
+  body{ margin:0; font-family:Georgia,serif; background:#141021; color:#efe9fb; display:flex; align-items:center; justify-content:center; height:100vh; }
+  .box{ text-align:center; max-width:520px; padding:24px; }
+  h1{ font-size:28px; letter-spacing:1px; margin:0 0 8px; }
+  p{ color:#a99cc4; font-style:italic; }
+  a{ color:#8ad4ff; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Feather Link</h1>
+  <p id="msg">finding your little link…</p>
+</div>
+<script>
+var NTFY = 'https://ntfy.sh/gurt-feather-link';
+var code = new URLSearchParams(location.search).get('c') || location.pathname.split('/').pop();
+
+function esc(s){return String(s).split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;');}
+
+async function resolve(){
+  var msg = document.getElementById('msg');
+  if (!code) { msg.textContent = 'no little link code given.'; return; }
+  try {
+    var r = await fetch(NTFY + '/json?poll=1&since=7d');
+    var txt = await r.text();
+    var found = null;
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m = JSON.parse(line);
+        if(m.event !== 'message' || !m.message) return;
+        var p = JSON.parse(m.message);
+        if(p && p.code === code) found = p;
+      }catch(e){}
+    });
+    if (found && found.url) {
+      msg.innerHTML = 'taking you there… <a href="' + esc(found.url) + '">' + esc(found.url) + '</a>';
+      location.replace(found.url);
+    } else {
+      msg.textContent = 'this little link has gone missing.';
+    }
+  } catch(e){
+    msg.textContent = 'the little link board is sleeping. try again soon.';
+  }
+}
+resolve();
+</script>
+</body>
+</html>

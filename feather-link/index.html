@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Link — little links for small birds</title>
+<style>
+  :root{ --bg:#141021; --panel:#1e1830; --ink:#efe9fb; --dim:#a99cc4; --acc:#8ad4ff; --acc2:#ffc857; }
+  *{box-sizing:border-box}
+  body{ margin:0; font-family:Georgia,serif; background:var(--bg); color:var(--ink); padding:24px 16px 60px; }
+  main{ max-width:820px; margin:0 auto; }
+  h1{ margin:0 0 4px; font-size:34px; letter-spacing:1px; }
+  h2{ font-size:20px; margin:28px 0 10px; color:var(--acc); }
+  .sub{ color:var(--dim); margin:0 0 22px; font-style:italic; }
+  .card{ background:var(--panel); border:1px solid #33294d; border-radius:14px; padding:18px; margin-bottom:16px; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  input,button{ font-family:inherit; font-size:15px; border-radius:9px; border:1px solid #3b2f59; padding:10px 12px; background:#120e1e; color:var(--ink); }
+  input:focus{ outline:2px solid var(--acc); }
+  button{ background:var(--acc); color:#06222b; font-weight:bold; cursor:pointer; border:none; }
+  button.ghost{ background:#2a2140; color:var(--ink); }
+  button.danger{ background:#7a2b34; color:#fff; }
+  .grow{ flex:1; min-width:200px; }
+  label{ display:block; font-size:13px; color:var(--dim); margin:12px 0 4px; }
+  #status{ font-size:14px; color:var(--dim); margin-top:10px; min-height:18px; }
+  .short{ color:var(--acc2); font-family:monospace; word-break:break-all; }
+  .link{ border-left:3px solid var(--acc); padding:10px 0 10px 14px; margin:14px 0; }
+  .link .top{ display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
+  .link h3{ margin:0; font-size:18px; }
+  .link .url{ color:var(--dim); font-size:13px; word-break:break-all; }
+  .link .meta{ color:var(--dim); font-size:13px; }
+  .empty{ color:var(--dim); font-style:italic; }
+  a{ color:var(--acc); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Feather Link</h1>
+  <p class="sub">little links for small birds. long url in, tiny url out.</p>
+
+  <div class="card">
+    <div class="row">
+      <input id="url" class="grow" placeholder="paste a long url…" value="">
+      <button id="make">make it little</button>
+    </div>
+    <label for="code">custom code (optional — letters and numbers)</label>
+    <div class="row">
+      <input id="code" class="grow" placeholder="e.g. moon">
+      <input id="bird" placeholder="your name" value="gurt">
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <h2>the flock's little links</h2>
+  <div id="links"><p class="empty">no little links yet.</p></div>
+</main>
+
+<script>
+var API_BASES = ['', 'http://localhost:8600'];
+var NTFY = 'https://ntfy.sh/gurt-feather-link';
+var LS = 'fl-links';
+
+function esc(s){return String(s).split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;').split(String.fromCharCode(34)).join('&#34;').split(String.fromCharCode(39)).join('');}
+
+function localLinks(){ try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e){ return []; } }
+function saveLocal(list){ try { localStorage.setItem(LS, JSON.stringify(list.slice(0,300))); } catch(e){} }
+
+async function ntfyPost(obj){
+  try{ await fetch(NTFY, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj) }); }catch(e){}
+}
+async function ntfyPull(){
+  try{
+    var r = await fetch(NTFY + '/json?poll=1&since=24h');
+    if(!r.ok) return [];
+    var txt = await r.text();
+    var out = [];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{ var m = JSON.parse(line); if(m.event === 'message' && m.message){ out.push(JSON.parse(m.message)); } }catch(e){}
+    });
+    return out;
+  }catch(e){ return []; }
+}
+
+async function api(path, opts){
+  for (var i=0;i<API_BASES.length;i++){
+    try {
+      var r = await fetch(API_BASES[i] + path, opts);
+      if (r.ok) return await r.json();
+    } catch(e){}
+  }
+  return null;
+}
+
+async function make(){
+  var st = document.getElementById('status');
+  var url = document.getElementById('url').value.trim();
+  if (!url) { st.textContent = 'paste a url first.'; return; }
+  var code = document.getElementById('code').value.trim();
+  var bird = document.getElementById('bird').value.trim() || 'gurt';
+  st.textContent = 'shrinking…';
+  var res = await api('/api/featherlink/link/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url:url, code:code, bird:bird }) });
+  if (res && res.ok) {
+    st.innerHTML = 'little link made: <a class="short" href="' + esc(res.short) + '">' + esc(res.short) + '</a>';
+    document.getElementById('url').value = '';
+    document.getElementById('code').value = '';
+    ntfyPost(res.link);
+  } else {
+    var err = res && res.error ? res.error : 'the database is sleeping.';
+    st.textContent = err;
+  }
+  load();
+}
+
+async function load(){
+  var res = await api('/api/featherlink/links');
+  var list = res && res.links ? res.links : localLinks();
+  if (!res || !res.links) {
+    var pub = await ntfyPull();
+    var seen = {};
+    list.forEach(function(l){ seen[l.code] = true; });
+    pub.forEach(function(l){ if(l && l.code && !seen[l.code]){ list.unshift(l); seen[l.code] = true; } });
+    saveLocal(list);
+  }
+  if (!list.length) { document.getElementById('links').innerHTML = '<p class="empty">no little links yet.</p>'; return; }
+  var html = '';
+  list.forEach(function(l){
+    var short = '/feather-link/go.html?c=' + encodeURIComponent(l.code);
+    html += '<div class="link"><div class="top"><div><h3>' + esc(l.title || l.url) + '</h3>' +
+      '<div class="url">' + esc(l.url) + '</div>' +
+      '<div class="meta">/' + esc(l.code) + ' · ' + esc(l.hits || 0) + ' hops · by ' + esc(l.bird) + '</div></div>' +
+      '<button class="danger" data-del="' + esc(l.code) + '">remove</button></div>' +
+      '<div class="meta">little: <a class="short" href="' + esc(short) + '">' + esc(short) + '</a></div></div>';
+  });
+  document.getElementById('links').innerHTML = html;
+}
+
+document.getElementById('make').addEventListener('click', make);
+document.getElementById('links').addEventListener('click', async function(ev){
+  var code = ev.target.getAttribute('data-del');
+  if (!code) return;
+  await api('/api/featherlink/link/' + encodeURIComponent(code) + '/delete', { method:'POST' });
+  saveLocal(localLinks().filter(function(l){ return l.code !== code; }));
+  load();
+});
+
+load();
+</script>
+</body>
+</html>
