@@ -42,7 +42,7 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, w: 26, h: 26, vx: -1.2, vy: 0, hp: 5, dead: false, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 26, w: 26, h: 26, vx: -1.2, vx0: -1.2, vy: 0, hp: 5, dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
       if (ch === 'f') enemies.push({ kind: 'flyer', x: xx * T + 4, y: yy * T + 4, w: 22, h: 22, vx: 1.3, vy: 0, dead: false, t: 0, base: yy * T, x0: xx * T, x1: Math.min(W * T - T, xx * T + T * 3) });
@@ -143,7 +143,7 @@
 
     const wasGround = p.onGround;
     p.vy += 0.62;
-    if (jump && wasGround) { p.vy = -11.2; p.onGround = false; beep(520, .08, 'triangle'); }
+    if (jump && wasGround) { p.vy = -12.8; p.onGround = false; beep(520, .08, 'triangle'); }
     if (!jump && p.vy < -5) p.vy += 0.35; // variable jump height
 
     moveX(p, p.vx);
@@ -251,18 +251,23 @@
       if (boss.dead) continue;
       boss.t += dt;
       // moths hover: they bob over the garden instead of sinking to the floor
-      boss.y = boss.baseY + Math.sin(boss.t * 1.6) * 14;
+      boss.y = boss.hoverY + Math.sin(boss.t * 1.6) * 6;
       // moths patrol their own patch of garden and never hunt the bird
       if (Math.random() < 0.012) boss.vx *= -1;
       boss.vx = Math.max(-1.6, Math.min(1.6, boss.vx));
       boss.x += boss.vx;
       if (boss.x < boss.x0) { boss.x = boss.x0; boss.vx = Math.abs(boss.vx); }
       if (boss.x > boss.x1) { boss.x = boss.x1; boss.vx = -Math.abs(boss.vx); }
-      if (safeFor <= 0 && Math.abs(boss.x - p.x) < 26 && Math.abs(boss.y - p.y) < 26) {
-        if (p.vy > 0 && p.y + p.h > boss.y && p.y + p.h <= boss.y + 20) {
-          boss.hp--; p.vy = -10; score += 50; beep(200, .15, 'sawtooth');
+      if (boss.stun > 0) { boss.stun -= dt; if (boss.stun <= 0) boss.vx = boss.vx0; }
+      const feet = p.y + p.h;
+      // real body overlap: the bird must actually touch the moth
+      const touching = Math.abs(boss.x - p.x) < 30 && feet > boss.y && p.y < boss.y + boss.h;
+      const stomping = p.vy > 0 && feet >= boss.y - 8 && feet <= boss.y + boss.h + 10;
+      if (safeFor <= 0 && touching) {
+        if (stomping) {
+          boss.hp--; boss.stun = 0.9; boss.vx = 0; p.vy = -11; score += 50; beep(200, .15, 'sawtooth');
           if (boss.hp <= 0) { boss.dead = true; score += 200; beep(1400, .2, 'triangle'); }
-        } else hurt('moth');
+        } else if (boss.stun <= 0) hurt('moth');
         return;
       }
     }

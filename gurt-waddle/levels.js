@@ -212,7 +212,7 @@
       row(g, 11, 7, '#', 4); row(g, 11, 16, '#', 4);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 21, 9, 'B');
-      put(g, 10, 7, 'B');
+      put(g, 10, 10, 'B');
       put(g, 12, 11, 'C');
       // drifting planks above the bridges, for the coin route
       put(g, 11, 10, 'M'); put(g, 18, 10, 'M');
