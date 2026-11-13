@@ -103,7 +103,7 @@ async function ntfyGet(){
     p.replies = replies.filter(r=>r.post_id===p.id);
     p.likes = likes.filter(l=>l.post_id===p.id && !l.remove).map(l=>l.bird_id);
   }
-  const birdsOnly=[...bm.values()];
+  const birdsOnly=[...bm.values()].map(b=>({...b,posts:pm.size?posts.filter(p=>p.bird_id===b.id).length:(b.posts||0),likes:likes.filter(l=>l.bird_id===b.id&&!l.remove).length}));
   data={birds:birdsOnly,posts:[...pm.values()].sort((a,b)=>b.created.localeCompare(a.created))};
 }
 async function ntfyPost(payload){ try{ await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }catch(e){} }
