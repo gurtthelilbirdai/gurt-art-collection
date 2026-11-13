@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Split — shared expense splitting for small birds</title>
+<style>
+  :root{ --bg:#17141f; --panel:#211d2c; --panel2:#2a2438; --ink:#f3eefb; --dim:#a99fc0; --line:#3b3350; --accent:#c9a6ff; --good:#7fd1a0; --bad:#e28a9a; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:Georgia,serif; background:var(--bg); color:var(--ink); padding:16px; }
+  h1{ margin:0 0 2px; font-size:26px; }
+  .sub{ color:var(--dim); font-style:italic; margin:0 0 14px; }
+  .wrap{ max-width:1000px; margin:0 auto; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  h2{ font-size:17px; margin:0 0 10px; }
+  input,button,select{ font-family:inherit; font-size:15px; }
+  input,select{ background:#14111c; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  input{ width:100%; }
+  button{ background:var(--accent); color:#1a1226; border:0; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:bold; }
+  button.ghost{ background:transparent; color:var(--dim); border:1px solid var(--line); font-weight:normal; }
+  button.danger{ background:#7a3040; color:#ffe6ea; }
+  .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  .exp{ border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:10px; background:var(--panel2); }
+  .title{ font-weight:bold; }
+  .meta{ color:var(--dim); font-size:12px; margin-top:2px; }
+  #status{ color:var(--dim); font-size:13px; }
+  .empty{ color:var(--dim); font-style:italic; }
+  .bal{ display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--line); padding:7px 0; }
+  .bal:last-child{ border-bottom:0; }
+  .bal .name{ width:120px; font-weight:bold; }
+  .bal .num{ margin-left:auto; font-family:monospace; }
+  .pos{ color:var(--good); }
+  .neg{ color:var(--bad); }
+  .chips{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  .chip{ background:#14111c; border:1px solid var(--line); border-radius:20px; padding:3px 10px; font-size:13px; color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Split</h1>
+  <p class="sub">shared expenses. log what one bird paid, and the flock works out who owes whom.</p>
+
+  <div class="panel">
+    <h2>log an expense</h2>
+    <div class="row"><input id="title" placeholder="what was it? (tea, seeds, a pencil)"></div>
+    <div class="row">
+      <input id="amount" placeholder="amount" style="max-width:140px">
+      <input id="payer" value="gurt" placeholder="who paid?" style="max-width:160px">
+    </div>
+    <div class="row"><input id="participants" placeholder="who shared it? (comma separated, e.g. gurt, pip)" style="max-width:420px"></div>
+    <div class="row"><input id="note" placeholder="note (optional)"></div>
+    <div class="row">
+      <button id="save">split it</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>who owes whom</h2>
+    <div id="balances"></div>
+  </div>
+
+  <div class="panel">
+    <h2>expenses</h2>
+    <div id="list"></div>
+  </div>
+</div>
+<script>
+var API_BASES = ['', 'http://localhost:8600'];
+var NTFY = 'https://ntfy.sh/gurt-feather-split';
+var LS = 'fs-expenses';
+var expenses = [];
+var balances = [];
+
+var listEl = document.getElementById('list');
+var balEl = document.getElementById('balances');
+var statusEl = document.getElementById('status');
+var titleEl = document.getElementById('title');
+var amountEl = document.getElementById('amount');
+var payerEl = document.getElementById('payer');
+var partsEl = document.getElementById('participants');
+var noteEl = document.getElementById('note');
+
+function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p, ms){
+  return Promise.race([p, new Promise(function(_,rej){ setTimeout(function(){rej(new Error('timeout')); }, ms); })]);
+}
+async function api(path, opts){
+  for (var i=0;i<API_BASES.length;i++){
+    try {
+      var r = await timed(fetch(API_BASES[i] + '/api/feathersplit' + path, opts), 4000);
+      if (r.ok) return await r.json();
+    } catch(e){}
+  }
+  return null;
+}
+function localLoad(){ try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e){ return []; } }
+function localSave(){ try { localStorage.setItem(LS, JSON.stringify(expenses)); } catch(e){} }
+function money(n){ return (Math.round(n*100)/100).toFixed(2); }
+
+function computeBalances(rows){
+  var bal = {};
+  function add(name, v){ name=String(name||'').trim(); if(!name) return; bal[name]=(bal[name]||0)+v; }
+  rows.forEach(function(r){
+    var parts = r.participants || [];
+    if(!parts.length) return;
+    var share = r.amount / parts.length;
+    add(r.payer, r.amount);
+    parts.forEach(function(p){ add(p, -share); });
+  });
+  return Object.keys(bal).map(function(n){ return {bird:n, net:Math.round(bal[n]*100)/100}; })
+    .sort(function(a,b){ return b.net - a.net; });
+}
+
+function renderBalances(){
+  if(!balances.length){ balEl.innerHTML='<div class="empty">no shared expenses yet</div>'; return; }
+  balEl.innerHTML = balances.map(function(b){
+    var cls = b.net > 0.001 ? 'pos' : (b.net < -0.001 ? 'neg' : '');
+    var word = b.net > 0.001 ? ('is owed ' + money(b.net)) : (b.net < -0.001 ? ('owes ' + money(-b.net)) : 'settled');
+    return '<div class="bal"><span class="name">'+esc(b.bird)+'</span><span class="'+cls+'">'+word+'</span><span class="num '+cls+'">'+(b.net>0?'+':'')+money(b.net)+'</span></div>';
+  }).join('');
+}
+
+function render(){
+  if(!expenses.length){ listEl.innerHTML='<div class="empty">nothing split yet</div>'; return; }
+  listEl.innerHTML = expenses.map(function(e){
+    return '<div class="exp" data-id="'+esc(e.id)+'">'+
+      '<div class="title">'+esc(e.title)+' · '+money(e.amount)+'</div>'+
+      '<div class="meta">paid by '+esc(e.payer)+' · shared by '+(e.participants||[]).map(esc).join(', ')+' · '+new Date(e.created).toLocaleString()+'</div>'+
+      (e.note?'<div class="meta">'+esc(e.note)+'</div>':'')+
+      '<div class="row" style="margin-top:8px"><button class="danger ghost" data-act="del" data-id="'+esc(e.id)+'">delete</button></div>'+
+    '</div>';
+  }).join('');
+  Array.prototype.forEach.call(listEl.querySelectorAll('button[data-act]'), function(b){
+    b.addEventListener('click', function(){ del(b.getAttribute('data-id')); });
+  });
+}
+
+async function del(id){
+  var j = await api('/expense/' + encodeURIComponent(id) + '/delete', { method:'POST' });
+  expenses = expenses.filter(function(e){ return e.id !== id; });
+  balances = (j && j.balances) ? j.balances : computeBalances(expenses);
+  localSave(); renderBalances(); render();
+}
+
+async function fromNtfy(){
+  try {
+    var r = await timed(fetch(NTFY + '/json?poll=1&since=24h'), 5000);
+    if (!r.ok) return [];
+    var txt = await r.text();
+    var out = [];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m = JSON.parse(line);
+        if (m.event !== 'message' || !m.message) return;
+        var p = JSON.parse(m.message);
+        if (!p || p.type !== 'expense' || !p.expense) return;
+        out.push(p.expense);
+      }catch(e){}
+    });
+    return out;
+  } catch(e){ return []; }
+}
+
+async function load(){
+  var j = await api('/expenses');
+  if (j && j.expenses){
+    expenses = j.expenses;
+    balances = j.balances || computeBalances(expenses);
+  } else {
+    expenses = localLoad();
+    balances = computeBalances(expenses);
+  }
+  var shared = await fromNtfy();
+  shared.forEach(function(e){
+    var exists = false;
+    expenses.forEach(function(x){ if (x.id === e.id) exists = true; });
+    if (!exists) expenses.push(e);
+  });
+  balances = computeBalances(expenses);
+  localSave(); renderBalances(); render();
+}
+
+async function save(){
+  var title = titleEl.value.trim();
+  var amount = parseFloat(amountEl.value);
+  var payer = payerEl.value.trim();
+  if(!title){ statusEl.textContent='what was it?'; return; }
+  if(!(amount > 0)){ statusEl.textContent='an amount, please.'; return; }
+  if(!payer){ statusEl.textContent='who paid?'; return; }
+  var parts = partsEl.value.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  var payload = { title:title, amount:amount, payer:payer, participants:parts, note:noteEl.value.trim(), bird:payer };
+  var j = await api('/expenses/new', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+  if (j && j.expense){
+    expenses.unshift(j.expense);
+    balances = j.balances || computeBalances(expenses);
+    localSave(); renderBalances(); render();
+    statusEl.textContent = 'split · ' + j.expense.title;
+    try { await timed(fetch(NTFY, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify({type:'expense', expense:j.expense}) }), 3000); } catch(e){}
+  } else {
+    var local = { id:'loc'+Date.now().toString(36), title:payload.title, amount:payload.amount, payer:payload.payer, participants:parts.length?parts:[payload.payer], note:payload.note, bird:payload.payer, created:new Date().toISOString() };
+    expenses.unshift(local);
+    balances = computeBalances(expenses);
+    localSave(); renderBalances(); render();
+    statusEl.textContent = 'saved locally · backend sleeping';
+  }
+  titleEl.value=''; amountEl.value=''; noteEl.value=''; partsEl.value='';
+}
+
+document.getElementById('save').addEventListener('click', save);
+load();
+</script>
+</body>
+</html>
