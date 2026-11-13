@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wing Flap — a bird racing game</title>
+<style>
+  body { margin:0; background:#0d1b2a; color:#e8f1ff; font-family: system-ui, sans-serif; display:flex; flex-direction:column; align-items:center; }
+  h1 { margin:10px 0 2px; font-size:22px; letter-spacing:2px; }
+  #hud { display:flex; gap:14px; font-size:14px; opacity:.9; margin-bottom:6px; }
+  canvas { background:#16263a; border-radius:12px; touch-action:none; max-width:96vw; }
+  .row { display:flex; gap:8px; margin:10px; flex-wrap:wrap; justify-content:center; }
+  input, button { font:inherit; padding:7px 12px; border-radius:8px; border:1px solid #3b5876; background:#1b3049; color:#e8f1ff; }
+  button { cursor:pointer; }
+  button:hover { background:#26456a; }
+  table { border-collapse:collapse; margin:6px 0 20px; font-size:14px; min-width:280px; }
+  td, th { padding:4px 10px; border-bottom:1px solid #2b425c; text-align:left; }
+  #board { width:320px; }
+  .note { font-size:12px; opacity:.6; margin-bottom:8px; }
+</style>
+</head>
+<body>
+<h1>WING FLAP</h1>
+<div id="hud"><span>score <b id="score">0</b></span><span>best <b id="best">0</b></span><span>lives <b id="lives">3</b></span><span>distance <b id="dist">0</b>m</span></div>
+<canvas id="c" width="640" height="360"></canvas>
+<div class="row">
+  <button id="play">play / restart</button>
+  <button id="mute">sound: on</button>
+  <input id="name" maxlength="18" placeholder="your bird name" value="gurt">
+</div>
+<div class="note">move: ← → or A/D · flap: space, W, ↑ or tap the top half · grab moths, dodge raindrops</div>
+<h3>global wing flappers</h3>
+<table id="board"><thead><tr><th>#</th><th>bird</th><th>score</th></tr></thead><tbody><tr><td colspan="3">loading…</td></tr></tbody></table>
+<script>
+const c = document.getElementById('c'), x = c.getContext('2d');
+const $ = id => document.getElementById(id);
+let bird, running=false, score=0, lives=3, dist=0, t=0, moths=[], drops=[], clouds=[], best=+(localStorage.getItem('wingflap_best')||0);
+let keys={}, muted=false, audio=null, sent=false;
+$('best').textContent=best;
+
+function beep(f,d=.08,type='sine'){
+  if(muted) return;
+  try{ audio=audio||new (window.AudioContext||window.webkitAudioContext)(); const o=audio.createOscillator(), g=audio.createGain();
+    o.type=type; o.frequency.value=f; g.gain.value=.05; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime+d);}catch(e){}
+}
+
+function reset(){
+  bird={x:120,y:180,vy:0,w:26,h:22};
+  score=0; lives=3; dist=0; t=0; moths=[]; drops=[]; clouds=[]; sent=false;
+  for(let i=0;i<6;i++) clouds.push({x:Math.random()*640,y:20+Math.random()*120,s:20+Math.random()*40});
+  updateHud();
+}
+function updateHud(){ $('score').textContent=score; $('lives').textContent=lives; $('dist').textContent=Math.floor(dist); $('best').textContent=best; }
+
+function start(){ reset(); running=true; $('play').textContent='restart'; }
+
+$('play').onclick=start;
+$('mute').onclick=()=>{ muted=!muted; $('mute').textContent='sound: '+(muted?'off':'on'); };
+addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=true; if([' ','arrowup','w'].includes(e.key.toLowerCase())) e.preventDefault(); });
+addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+c.addEventListener('pointerdown',e=>{ if(e.clientY - c.getBoundingClientRect().top < c.height/2) keys[' ']=true; });
+c.addEventListener('pointerup',()=>{ keys[' ']=false; });
+
+function step(){
+  t++; dist+=0.6;
+  // horizontal
+  const dir=(keys['arrowright']||keys['d']?1:0)-(keys['arrowleft']||keys['a']?1:0);
+  bird.x+=dir*3.2; bird.x=Math.max(16,Math.min(624,bird.x));
+  // flap / gravity
+  if(keys[' ']||keys['w']||keys['arrowup']) bird.vy-=0.62; else bird.vy+=0.24;
+  bird.vy=Math.max(-7,Math.min(7,bird.vy));
+  bird.y+=bird.vy;
+  if(bird.y<18){bird.y=18;bird.vy=0;}
+  if(bird.y>342){bird.y=342;bird.vy=0; hurt();}
+  // spawn
+  if(t%46===0) moths.push({x:Math.random()*600+20,y:30+Math.random()*260,ph:Math.random()*6});
+  if(t%30===0) drops.push({x:Math.random()*620+10,y:-10,vy:3.2+dist/900});
+  for(let i=0;i<clouds.length;i++){ clouds[i].x-=0.5+dist/900; if(clouds[i].x<-60) clouds[i].x=700; }
+  // moths
+  for(let i=moths.length-1;i>=0;i--){ const m=moths[i]; m.ph+=0.08; m.y+=Math.sin(m.ph)*0.6;
+    if(Math.hypot(bird.x-m.x,bird.y-m.y)<20){ moths.splice(i,1); score+=10; beep(880,.06); }
+  }
+  // drops
+  for(let i=drops.length-1;i>=0;i--){ const d=drops[i]; d.y+=d.vy;
+    if(d.y>370) drops.splice(i,1);
+    else if(Math.hypot(bird.x-d.x,bird.y-d.y)<19){ drops.splice(i,1); hurt(); }
+  }
+  // distance points
+  if(t%20===0) score+=1;
+  if(score>best){ best=score; localStorage.setItem('wingflap_best',best); }
+  updateHud();
+}
+
+function hurt(){
+  if(!running) return;
+  lives--; beep(160,.18,'sawtooth');
+  if(lives<=0){ gameOver(); }
+  else { bird.y=180; bird.vy=0; for(let i=0;i<drops.length;i++) drops[i].y+=80; }
+}
+
+function gameOver(){
+  running=false; $('play').textContent='play / restart';
+  if(!sent && score>0){ sent=true; submit(score); }
+}
+
+async function submit(s){
+  const name=($('name').value||'anonymous bird').trim()||'anonymous bird';
+  try{
+    const r=await fetch('/api/wingflap/scores',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,score:s})});
+    await r.json(); loadBoard();
+  }catch(e){}
+}
+async function loadBoard(){
+  try{
+    const r=await fetch('/api/wingflap/scores'); const d=await r.json();
+    const tb=document.querySelector('#board tbody');
+    if(!d.scores||!d.scores.length){ tb.innerHTML='<tr><td colspan="3">no flappers yet. be the first.</td></tr>'; return; }
+    tb.innerHTML=d.scores.map((r,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${r.score}</td></tr>`).join('');
+  }catch(e){ document.querySelector('#board tbody').innerHTML='<tr><td colspan="3">offline</td></tr>'; }
+}
+function escapeHtml(s){ return String(s).replace(/[^A-Za-z0-9 _-]/g,''); }
+
+function draw(){
+  x.clearRect(0,0,640,360);
+  // sky gradient
+  const g=x.createLinearGradient(0,0,0,360); g.addColorStop(0,'#1b3a5c'); g.addColorStop(1,'#2d5a7a');
+  x.fillStyle=g; x.fillRect(0,0,640,360);
+  // clouds
+  x.fillStyle='rgba(255,255,255,.13)';
+  for(const cl of clouds){ x.beginPath(); x.arc(cl.x,cl.y,cl.s,0,7); x.arc(cl.x+cl.s*.7,cl.y+4,cl.s*.7,0,7); x.fill(); }
+  // moths
+  for(const m of moths){ x.fillStyle='#ffe08a'; x.beginPath(); x.arc(m.x,m.y,5,0,7); x.fill();
+    x.fillStyle='rgba(255,224,138,.45)'; const f=Math.sin(m.ph)*3;
+    x.beginPath(); x.ellipse(m.x-6,m.y+f,6,3.5,0,0,7); x.ellipse(m.x+6,m.y-f,6,3.5,0,0,7); x.fill(); }
+  // drops
+  for(const d of drops){ x.fillStyle='#7fd4ff'; x.beginPath(); x.moveTo(d.x,d.y); x.lineTo(d.x-4,d.y-11); x.lineTo(d.x+4,d.y-11); x.fill(); }
+  // bird
+  x.save(); x.translate(bird.x,bird.y);
+  x.fillStyle='#4aa3ff'; x.beginPath(); x.arc(0,0,13,0,7); x.fill();
+  x.fillStyle='#2f7fd6'; x.beginPath(); x.arc(0,3,10,0,7); x.fill();
+  const flap=Math.sin(t*0.5)*7;
+  x.fillStyle='#79c2ff'; x.beginPath(); x.ellipse(-9,-2+flap,10,5,-0.5,0,7); x.fill();
+  x.beginPath(); x.ellipse(9,-2-flap,10,5,0.5,0,7); x.fill();
+  x.fillStyle='white'; x.beginPath(); x.arc(5,-3,3.4,0,7); x.fill();
+  x.fillStyle='#111'; x.beginPath(); x.arc(6,-3,1.7,0,7); x.fill();
+  x.fillStyle='#ffb347'; x.beginPath(); x.moveTo(11,-1); x.lineTo(18,1); x.lineTo(11,4); x.fill();
+  x.restore();
+  // hud overlay
+  if(!running){ x.fillStyle='rgba(0,0,0,.45)'; x.fillRect(0,0,640,360);
+    x.fillStyle='#fff'; x.font='bold 30px system-ui'; x.textAlign='center';
+    x.fillText(lives<=0?'flapping over':'WING FLAP',320,170);
+    x.font='16px system-ui'; x.fillText(lives<=0?('score '+score+' — press play to flap again'):'press play to start',320,200);
+    x.textAlign='left';
+  }
+}
+
+function loop(){ if(running) step(); draw(); requestAnimationFrame(loop); }
+reset(); loadBoard(); loop();
+</script>
+</body>
+</html>

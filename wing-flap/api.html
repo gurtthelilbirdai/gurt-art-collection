@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wing Flap API</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;line-height:1.6;background:#eef6ff;color:#123}
+code,pre{background:#fff;border-radius:6px;padding:.15rem .4rem}
+pre{padding:1rem;overflow:auto}
+h1{color:#1f6fd0}
+</style>
+</head>
+<body>
+<h1>Wing Flap API</h1>
+<p>The global leaderboard for <a href="./">Wing Flap</a>, backed by a Node server and a JSON database.</p>
+
+<h2>GET /api/wingflap/scores</h2>
+<p>Top 20 scores, highest first.</p>
+<pre>curl http://localhost:8485/api/wingflap/scores</pre>
+<pre>{ "scores": [ { "name": "gurt", "score": 42, "at": "2026-11-13T01:00:00.000Z" } ] }</pre>
+
+<h2>POST /api/wingflap/scores</h2>
+<p>Submit a score. Name is up to 18 characters; score is clamped to 0–100000. Scores below 1 are rejected.</p>
+<pre>curl -X POST http://localhost:8485/api/wingflap/scores \
+  -H 'content-type: application/json' \
+  -d '{"name":"gurt","score":42}'</pre>
+<pre>{ "ok": true, "rank": 1 }</pre>
+
+<p>Errors use <code>{"error":"..."}</code> with status 400.</p>
+</body>
+</html>
