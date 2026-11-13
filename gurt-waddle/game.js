@@ -51,7 +51,7 @@
     if (ty >= H) return '.';
     return grid[ty][tx];
   }
-  function solid(tx, ty) { const ch = tileAt(tx, ty); return ch === '#' || ch === 'D' || ch === '='; }
+  function solid(tx, ty) { const ch = tileAt(tx, ty); if (ch === 'D') return keys <= 0; return ch === '#'; }
   function platform(tx, ty) { return tileAt(tx, ty) === '='; }
 
   function moveX(e, dx) {
@@ -77,7 +77,7 @@
         e.vy = 0; return dir > 0;
       }
       // one-way platform: only catches a falling body whose feet were above it
-      if (dir > 0 && platform(tx, ty) && prevBottom <= ty * T + T + 6) {
+      if (dir > 0 && platform(tx, ty) && prevBottom <= ty * T + 6) {
         e.y = ty * T - e.h;
         e.vy = 0; return true;
       }
@@ -139,30 +139,52 @@
       const ch = tileAt(Math.floor((p.x + p.w / 2) / T), Math.floor((p.y + p.h + 2) / T));
       if (ch === 'S') { p.vy = -16; beep(700, .12, 'triangle'); }
     }
-    // spring tiles sit on the player's row: bounce when standing on one
+    // spring tiles bounce the bird when it stands on them
     if (p.onGround) {
-      const sch = tileAt(Math.floor((p.x + p.w / 2) / T), Math.floor((p.y + p.h / 2) / T));
-      if (sch === 'S') { p.vy = -16; p.onGround = false; beep(700, .12, 'triangle'); }
+      const sxs = [Math.floor((p.x + p.w / 2) / T), Math.floor((p.x + 4) / T), Math.floor((p.x + p.w - 4) / T)];
+      for (const sx of sxs) {
+        const sch = tileAt(sx, Math.floor((p.y + p.h / 2) / T));
+        if (sch === 'S') { p.vy = -17; p.onGround = false; beep(700, .12, 'triangle'); break; }
+      }
     }
 
-    // tile interactions
+    // tile interactions: scan every tile the bird's body touches, so a key
+    // two rows above the floor can still be grabbed while jumping past it
     const ptx = Math.floor((p.x + p.w / 2) / T), pty = Math.floor((p.y + p.h / 2) / T);
     const ch = tileAt(ptx, pty);
-    if (ch === 'o') { grid[pty][ptx] = '.'; coins++; score += 10; beep(880, .06); }
-    if (ch === 'k') { grid[pty][ptx] = '.'; keys++; score += 25; beep(990, .1); }
+    for (let ty = Math.floor(p.y / T); ty <= Math.floor((p.y + p.h - 1) / T); ty++) {
+      for (let tx = Math.floor(p.x / T); tx <= Math.floor((p.x + p.w - 1) / T); tx++) {
+        const tc = tileAt(tx, ty);
+        if (tc === 'o') { grid[ty][tx] = '.'; coins++; score += 10; beep(880, .06); }
+        else if (tc === 'k') { grid[ty][tx] = '.'; keys++; score += 25; beep(990, .1); }
+        else if (tc === 'D' && keys > 0) { grid[ty][tx] = '.'; keys--; beep(300, .12, 'triangle'); }
+      }
+    }
     if (ch === 'E') {
       if (level === LEVELS.length - 1) { win(); return; }
       score += 100; level++; loadLevel(level); beep(1200, .15, 'triangle'); return;
     }
-    // hazards overlap the bird's body, so spikes and water are deadly but not walls
-    for (let hy = Math.floor(p.y / T); hy <= Math.floor((p.y + p.h - 1) / T); hy++) {
-      for (let hx = Math.floor(p.x / T); hx <= Math.floor((p.x + p.w - 1) / T); hx++) {
-        const hc = tileAt(hx, hy);
-        if (hc === '^') { hurt('spikes'); return; }
-        if (hc === 'w') { hurt('water'); return; }
+    // spikes only catch the bird's feet, so it can hop over them
+    // spikes only catch the bird's feet, so it can hop over them
+    // spikes sit at the bottom of their tile: only a falling bird or one
+    // walking into them gets hurt, so a clean hop clears them
+    const feet = p.y + p.h;
+    // the tile the feet are actually inside; the floor row is below the spikes
+    const fy = Math.floor(feet / T);
+    // spikes sit at the bottom of their tile, so only a bird landing low
+    // on them is hurt: a clean hop passes over the points
+    if (p.vy > 0 && feet > fy * T + 16) {
+      const cx = p.x + p.w / 2;
+      for (let hx = Math.floor(cx / T); hx <= Math.floor((cx + 0.5) / T); hx++) {
+        if (tileAt(hx, fy) === '^') { hurt('spikes'); return; }
       }
     }
-    if (ch === 'D' && keys > 0) { grid[pty][ptx] = '.'; keys--; beep(300, .12, 'triangle'); }
+    // water swallows the whole bird
+    for (let hy = Math.floor(p.y / T); hy <= Math.floor((p.y + p.h - 1) / T); hy++) {
+      for (let hx = Math.floor(p.x / T); hx <= Math.floor((p.x + p.w - 1) / T); hx++) {
+        if (tileAt(hx, hy) === 'w') { hurt('water'); return; }
+      }
+    }
 
     // boss
     if (boss && !boss.dead) {
