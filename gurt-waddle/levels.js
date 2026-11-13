@@ -1,6 +1,7 @@
-// Gurt's Waddle — twelve levels, generated so every grid is exactly 25x14.
+// Gurt's Waddle — twenty levels, every grid exactly 25x14.
 // Legend: P start, E exit, # solid, = one-way platform, o coin, k key,
-//         D door, S spring, ^ spike, w water, B boss.
+//         D door, S spring, ^ spike, w water, B boss,
+//         C checkpoint, e walker enemy, M moving platform, m moving spike.
 (function (root) {
   const W = 25, H = 14;
 
@@ -24,14 +25,14 @@
   function coins(g, pairs) { pairs.forEach(([x, y]) => put(g, x, y, 'o')); }
 
   const builders = [
-    // 1 — first steps: flat ground, a line of coins, exit far right
+    // 1 — first steps
     () => {
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       coins(g, [[5, 11], [9, 11], [13, 11], [17, 11]]);
       return g;
     },
-    // 2 — gaps: three pits bridged by one-way platforms
+    // 2 — gaps bridged by one-way platforms
     () => {
       const g = blank(); ground(g, [[7, 3], [13, 3], [19, 3]]);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
@@ -45,6 +46,7 @@
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       row(g, 11, 6, '^', 2); row(g, 11, 13, '^', 2); row(g, 11, 19, '^', 2);
       put(g, 5, 11, 'S'); put(g, 12, 11, 'S'); put(g, 18, 11, 'S');
+      put(g, 15, 7, 'f');
       coins(g, [[5, 8], [12, 8], [18, 8], [22, 11]]);
       return g;
     },
@@ -62,6 +64,7 @@
       rect(g, 6, 13, 4, 1, 'w'); rect(g, 15, 13, 4, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       row(g, 12, 6, '=', 5); row(g, 12, 15, '=', 5);
+      put(g, 10, 8, 'f');
       coins(g, [[8, 11], [17, 11], [12, 11]]);
       return g;
     },
@@ -106,6 +109,7 @@
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       row(g, 10, 4, '=', 3); row(g, 9, 8, '=', 3); row(g, 8, 12, '=', 3);
       row(g, 7, 16, '=', 3); row(g, 6, 20, '=', 3);
+      put(g, 21, 10, 'H');
       coins(g, [[5, 9], [9, 8], [13, 7], [17, 6], [21, 5]]);
       return g;
     },
@@ -115,15 +119,104 @@
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       [5, 10, 15, 20].forEach(x => { put(g, x, 11, 'S'); row(g, 11, x + 1, '^', 2); });
       coins(g, [[5, 7], [10, 7], [15, 7], [20, 7], [21, 11]]);
-      return g;
+      return g;      put(g, 8, 11, 'e'); put(g, 18, 11, 'e');
+
     },
     // 12 — the Moon Moth
     () => {
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 21, 10, 'B');
+      put(g, 8, 9, 'f'); put(g, 13, 10, 'H');
       coins(g, [[6, 11], [11, 11], [16, 11], [18, 8]]);
       row(g, 10, 16, '=', 4);
+      return g;
+    },
+    // 13 — checkpoint meadow
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 12, 11, 'C');
+      row(g, 11, 6, '^', 2); row(g, 11, 15, '^', 2);
+      coins(g, [[4, 11], [9, 11], [14, 11], [19, 11], [22, 11]]);
+      return g;
+    },
+    // 14 — walker patrol
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 8, 11, 'e'); put(g, 16, 11, 'e');
+      put(g, 12, 11, 'C');
+      put(g, 20, 10, 'H');
+      coins(g, [[4, 11], [10, 11], [14, 11], [20, 11]]);
+      return g;
+    },
+    // 15 — the ferry
+    () => {
+      const g = blank(); ground(g, [[4, 17]]);
+      rect(g, 4, 13, 17, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 8, 11, 'M'); put(g, 15, 11, 'M');
+      put(g, 12, 11, 'C');
+      coins(g, [[6, 11], [11, 11], [18, 11]]);
+      return g;
+    },
+    // 16 — elevator shaft
+    () => {
+      const g = blank(); ground(g, [[9, 7]]);
+      rect(g, 9, 13, 7, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 12, 10, 'V');
+      col(g, 12, 4, '=', 1);
+      row(g, 6, 12, '=', 4); row(g, 9, 18, '=', 4);
+      put(g, 12, 11, 'C');
+      coins(g, [[4, 11], [14, 5], [20, 8]]);
+      return g;
+    },
+    // 17 — hammerhead
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 12, 11, 'C');
+      put(g, 7, 9, 'm'); put(g, 17, 9, 'm');
+      row(g, 11, 9, '^', 2); row(g, 11, 14, '^', 2);
+      put(g, 10, 7, 'f');
+      coins(g, [[4, 11], [10, 11], [15, 11], [20, 11]]);
+      return g;
+    },
+    // 18 — key garden
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 5, 8, 'k'); put(g, 12, 8, 'k'); put(g, 19, 8, 'k');
+      put(g, 9, 11, 'D'); put(g, 15, 11, 'D'); put(g, 21, 11, 'D');
+      put(g, 12, 11, 'C');
+      coins(g, [[3, 11], [7, 11], [13, 11], [17, 11]]);
+      return g;
+    },
+    // 19 — the long pond
+    () => {
+      const g = blank(); ground(g, [[3, 5], [11, 5], [19, 5]]);
+      rect(g, 3, 13, 5, 1, 'w'); rect(g, 11, 13, 5, 1, 'w'); rect(g, 19, 13, 5, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 6, 11, 'M'); put(g, 14, 11, 'M'); put(g, 21, 11, 'M');
+      put(g, 9, 11, 'C');
+      coins(g, [[5, 11], [13, 11], [20, 11]]);
+      return g;
+    },
+    // 20 — the Moon Moth's big garden
+    () => {
+      const g = blank(); ground(g, [[7, 4], [16, 4]]);
+      rect(g, 7, 12, 4, 2, 'w'); rect(g, 16, 12, 4, 2, 'w');
+      // solid plank bridges over both ponds, flush with the garden path
+      row(g, 11, 7, '#', 4); row(g, 11, 16, '#', 4);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 21, 9, 'B');
+      put(g, 10, 7, 'B');
+      put(g, 12, 11, 'C');
+      // drifting planks above the bridges, for the coin route
+      put(g, 11, 10, 'M'); put(g, 18, 10, 'M');
+      coins(g, [[4, 11], [8, 10], [13, 11], [17, 10], [19, 7]]);
       return g;
     }
   ];

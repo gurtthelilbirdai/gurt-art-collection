@@ -17,8 +17,10 @@
     return null;
   }
 
-  let grid, level, lives, coins, keys, score, elapsed = 0, state, p, enemies, boss, cam;
+  let grid, level, lives, coins, keys, score, elapsed = 0, state, p, enemies, bosses, cam;
+  let platforms, checkpoint, spawn, maxLevel = 1;
   let best = 0, muted = false, audio = null, runStart = 0;
+  let safeFor = 0;
 
   function beep(freq, dur, type) {
     if (muted) return;
@@ -35,11 +37,18 @@
     level = n;
     grid = LEVELS[n].map(r => r.split(''));
     let sx = 1, sy = 11;
-    enemies = []; boss = null; cam = 0;
+    enemies = []; bosses = []; cam = 0; platforms = [];
+    checkpoint = null; spawn = { x: 1, y: 11 };
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
-      if (ch === 'P') { sx = xx; sy = yy; }
-      if (ch === 'B') boss = { x: xx * T + 4, y: yy * T, w: 26, h: 26, vx: -1.2, vy: 0, hp: 5, dead: false, t: 0 };
+      if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, w: 26, h: 26, vx: -1.2, vy: 0, hp: 5, dead: false, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'C') checkpoint = { x: xx, y: yy };
+      if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
+      if (ch === 'f') enemies.push({ kind: 'flyer', x: xx * T + 4, y: yy * T + 4, w: 22, h: 22, vx: 1.3, vy: 0, dead: false, t: 0, base: yy * T, x0: xx * T, x1: Math.min(W * T - T, xx * T + T * 3) });
+      if (ch === 'm') enemies.push({ kind: 'hammer', x: xx * T + 4, y: yy * T + 4, w: 26, h: 26, vx: 1.6, vy: 0, dead: false, t: 0, base: yy * T });
+      if (ch === 'M') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: xx * T + T * 3, dx: 0, dy: 0 });
+      if (ch === 'V') platforms.push({ kind: 'v', x: xx * T, y: yy * T, w: T * 2, h: 12, y0: yy * T, y1: yy * T - T * 4, dx: 0, dy: 0 });
     }
     p = { x: sx * T + 4, y: sy * T + 4, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1 };
     state = 'play';
@@ -94,10 +103,14 @@
 
   function hurt(reason) {
     if (state !== 'play') return;
-    lives--; beep(120, .3, 'sawtooth');
+    lives--; safeFor = 1.5; beep(120, .3, 'sawtooth');
     $('lives').textContent = lives;
     if (lives <= 0) { gameOver(); return; }
+    const keepScore = score, keepCoins = coins;
     loadLevel(level);
+    score = keepScore; coins = keepCoins;
+    if (checkpoint) { p.x = checkpoint.x * T + 4; p.y = checkpoint.y * T; }
+    $('score').textContent = score; $('coins').textContent = coins;
   }
   function gameOver() {
     state = 'over';
@@ -115,6 +128,7 @@
   function update(dt) {
     if (state !== 'play') return;
     elapsed += dt;
+    if (safeFor > 0) safeFor -= dt;
     $('time').textContent = Math.floor(elapsed);
 
     const left = keysDown['arrowleft'] || keysDown['a'];
@@ -157,10 +171,12 @@
         const tc = tileAt(tx, ty);
         if (tc === 'o') { grid[ty][tx] = '.'; coins++; score += 10; beep(880, .06); }
         else if (tc === 'k') { grid[ty][tx] = '.'; keys++; score += 25; beep(990, .1); }
+        else if (tc === 'H') { grid[ty][tx] = '.'; lives = Math.min(9, lives + 1); score += 50; $('lives').textContent = lives; beep(1320, .18, 'triangle'); }
         else if (tc === 'D' && keys > 0) { grid[ty][tx] = '.'; keys--; beep(300, .12, 'triangle'); }
       }
     }
     if (ch === 'E') {
+      if (bosses.some(b => !b.dead)) { $('msg').textContent = 'the moths guard the exit — stomp them first'; beep(160, .12, 'sawtooth'); return; }
       if (level === LEVELS.length - 1) { win(); return; }
       score += 100; level++; loadLevel(level); beep(1200, .15, 'triangle'); return;
     }
@@ -186,19 +202,67 @@
       }
     }
 
-    // boss
-    if (boss && !boss.dead) {
+    // moving platforms (simulation)
+    for (const pl of platforms) {
+      if (pl.kind === 'h') {
+        pl.x += pl.dx; pl.dx = 0;
+        if (pl.x <= pl.x0) { pl.x = pl.x0; pl.dx = 1.1; }
+        if (pl.x >= pl.x1) { pl.x = pl.x1; pl.dx = -1.1; }
+      } else {
+        pl.y += pl.dy; pl.dy = 0;
+        if (pl.y >= pl.y0) { pl.y = pl.y0; pl.dy = -0.9; }
+        if (pl.y <= pl.y1) { pl.y = pl.y1; pl.dy = 0.9; }
+      }
+      // ride the platform if the bird stands on it
+      const feet = p.y + p.h;
+      if (p.onGround && feet >= pl.y - 4 && feet <= pl.y + 10 &&
+          p.x + p.w > pl.x && p.x < pl.x + pl.w) {
+        p.x += pl.dx; p.y += pl.dy;
+      }
+    }
+
+    // enemies (simulation)
+    for (const e of enemies) {
+      if (e.dead) continue;
+      e.t += dt;
+      if (e.kind === 'walker' || e.kind === 'hammer') {
+        e.vy += 0.5;
+        const blocked = moveX(e, e.vx);
+        if (blocked) e.vx *= -1;
+        moveY(e, e.vy);
+        if (e.kind === 'hammer' && e.onGround !== true && e.vy > 0) { e.vy = 0; e.vx *= -1; }
+        if (e.kind === 'hammer' && e.t > 1.2 && Math.abs(e.y - e.base) < 4) { e.vy = -7; e.t = 0; }
+      } else if (e.kind === 'flyer') {
+        e.x += e.vx;
+        if (e.x <= e.x0) { e.x = e.x0; e.vx = 1.3; }
+        if (e.x >= e.x1) { e.x = e.x1; e.vx = -1.3; }
+        e.y = e.base + Math.sin(e.t * 2.2) * 40;
+      }
+      if (Math.abs(e.x - p.x) < 24 && Math.abs(e.y - p.y) < 24) {
+        // stomp from above defeats the enemy
+        if (p.vy > 3 && p.y + p.h < e.y + 12) {
+          e.dead = true; p.vy = -9; score += 75; beep(260, .12, 'sawtooth');
+        } else { hurt(e.kind); return; }
+      }
+    }
+
+    // bosses
+    for (const boss of bosses) {
+      if (boss.dead) continue;
       boss.t += dt;
-      boss.vy += 0.5;
-      moveY(boss, boss.vy);
-      if (Math.random() < 0.02) boss.vx *= -1;
-      const bd = boss.x - p.x;
-      if (Math.abs(bd) < 300 && Math.abs(boss.y - p.y) < 40) boss.vx = Math.sign(bd) * 1.6;
-      moveX(boss, boss.vx);
-      if (boss.y > H * T) { boss.y = 10 * T; boss.vy = 0; }
-      if (Math.abs(boss.x - p.x) < 24 && Math.abs(boss.y - p.y) < 24) {
-        if (p.vy > 4 && p.y < boss.y) { boss.hp--; p.vy = -9; score += 50; beep(200, .15, 'sawtooth'); if (boss.hp <= 0) { boss.dead = true; grid[Math.floor(boss.y / T)][Math.floor(boss.x / T)] = '.'; score += 200; } }
-        else hurt('moth');
+      // moths hover: they bob over the garden instead of sinking to the floor
+      boss.y = boss.baseY + Math.sin(boss.t * 1.6) * 14;
+      // moths patrol their own patch of garden and never hunt the bird
+      if (Math.random() < 0.012) boss.vx *= -1;
+      boss.vx = Math.max(-1.6, Math.min(1.6, boss.vx));
+      boss.x += boss.vx;
+      if (boss.x < boss.x0) { boss.x = boss.x0; boss.vx = Math.abs(boss.vx); }
+      if (boss.x > boss.x1) { boss.x = boss.x1; boss.vx = -Math.abs(boss.vx); }
+      if (safeFor <= 0 && Math.abs(boss.x - p.x) < 26 && Math.abs(boss.y - p.y) < 26) {
+        if (p.vy > 0 && p.y + p.h > boss.y && p.y + p.h <= boss.y + 20) {
+          boss.hp--; p.vy = -10; score += 50; beep(200, .15, 'sawtooth');
+          if (boss.hp <= 0) { boss.dead = true; score += 200; beep(1400, .2, 'triangle'); }
+        } else hurt('moth');
         return;
       }
     }
@@ -234,10 +298,36 @@
       else if (ch === '^') { x.fillStyle = '#e05a5a'; x.beginPath(); x.moveTo(px + 4, py + 30); x.lineTo(px + 16, py + 6); x.lineTo(px + 28, py + 30); x.fill(); }
       else if (ch === 'w') { x.fillStyle = '#3aa6d8aa'; x.fillRect(px, py, T, T); x.fillStyle = '#8fd8ff'; x.fillRect(px + 4, py + 8 + Math.sin(Date.now() / 300 + xx) * 2, 12, 2); }
       else if (ch === 'P') { x.fillStyle = '#8ef0a8'; x.fillRect(px + 10, py + 10, 12, 20); }
+      else if (ch === 'C') { x.fillStyle = '#45c26a'; x.fillRect(px + 14, py + 4, 4, 26); x.fillStyle = '#8ef0a8'; x.beginPath(); x.moveTo(px + 18, py + 4); x.lineTo(px + 30, py + 10); x.lineTo(px + 18, py + 16); x.fill(); }
+      else if (ch === 'H') { x.fillStyle = '#ff6b8b'; x.beginPath(); x.arc(px + 12, py + 12, 7, 0, 7); x.arc(px + 20, py + 12, 7, 0, 7); x.fill(); x.beginPath(); x.moveTo(px + 5, py + 12); x.lineTo(px + 27, py + 12); x.lineTo(px + 16, py + 27); x.fill(); }
       else if (ch === 'E') { x.fillStyle = '#45c26a'; x.fillRect(px + 4, py + 2, T - 8, T - 2); x.fillStyle = '#0f1b2d'; x.fillRect(px + 8, py + 8, 16, 20); x.fillStyle = '#ffd23f'; x.fillRect(px + 18, py + 16, 4, 4); }
     }
-    // boss
-    if (boss && !boss.dead) {
+    // moving platforms
+    for (const pl of platforms) {
+      x.fillStyle = '#c98a3d'; x.fillRect(pl.x, pl.y, pl.w, pl.h);
+      x.fillStyle = '#e8b56a'; x.fillRect(pl.x, pl.y, pl.w, 4);
+      x.fillStyle = '#8b5a2b'; x.fillRect(pl.x + 4, pl.y + pl.h, 4, 4); x.fillRect(pl.x + pl.w - 8, pl.y + pl.h, 4, 4);
+    }
+    // enemies
+    for (const e of enemies) {
+      if (e.dead) continue;
+      if (e.kind === 'walker') {
+        x.fillStyle = '#e05a5a'; x.beginPath(); x.arc(e.x + 12, e.y + 12, 12, 0, 7); x.fill();
+        x.fillStyle = '#fff'; x.fillRect(e.x + 5, e.y + 8, 5, 5); x.fillRect(e.x + 15, e.y + 8, 5, 5);
+        x.fillStyle = '#111'; x.fillRect(e.x + 7, e.y + 10, 3, 3); x.fillRect(e.x + 17, e.y + 10, 3, 3);
+      } else if (e.kind === 'flyer') {
+        x.fillStyle = '#ffb347'; x.beginPath(); x.ellipse(e.x + 11, e.y + 11, 11, 9, 0, 0, 7); x.fill();
+        x.fillStyle = '#ffd88a'; x.beginPath(); x.ellipse(e.x + 3, e.y + 6, 7, 5, -0.5 + Math.sin(e.t * 12) * 0.3, 0, 7); x.fill();
+        x.beginPath(); x.ellipse(e.x + 19, e.y + 6, 7, 5, 0.5 - Math.sin(e.t * 12) * 0.3, 0, 7); x.fill();
+      } else if (e.kind === 'hammer') {
+        x.fillStyle = '#7a4fbf'; x.fillRect(e.x + 2, e.y + 8, 22, 16);
+        x.fillStyle = '#b79ae8'; x.fillRect(e.x + 8, e.y + 2, 10, 8);
+        x.fillStyle = '#fff'; x.fillRect(e.x + 6, e.y + 12, 4, 4); x.fillRect(e.x + 16, e.y + 12, 4, 4);
+      }
+    }
+    // bosses
+    for (const boss of bosses) {
+      if (boss.dead) continue;
       x.fillStyle = '#d9c6ff'; x.beginPath(); x.ellipse(boss.x + 13, boss.y + 13, 15, 13, Math.sin(boss.t) * 0.2, 0, 7); x.fill();
       x.fillStyle = '#8f6fd1'; x.beginPath(); x.ellipse(boss.x + 4, boss.y + 8, 9, 6, -0.5, 0, 7); x.fill();
       x.beginPath(); x.ellipse(boss.x + 22, boss.y + 8, 9, 6, 0.5, 0, 7); x.fill();
