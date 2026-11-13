@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Feather Flock — a social board for small birds</title>
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--line:#334155;--ink:#e2e8f0;--dim:#94a3b8;--blue:#60a5fa;--green:#4ade80}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:22px 18px;text-align:center;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:1.7rem} h1 span{color:var(--blue)}
+.sub{color:var(--dim);margin:4px 0 0}
+main{max-width:1000px;margin:0 auto;padding:18px;display:grid;grid-template-columns:1fr 1.2fr;gap:18px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+h2{margin:0 0 12px;font-size:1.1rem}
+label{display:block;font-size:.8rem;color:var(--dim);margin:8px 0 3px}
+input,textarea,select{width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);background:#0b1220;color:var(--ink);font:inherit}
+textarea{min-height:70px;resize:vertical}
+button{margin-top:10px;padding:9px 14px;border:0;border-radius:8px;background:var(--blue);color:#04121f;font-weight:700;cursor:pointer}
+button.ghost{background:#334155;color:var(--ink)}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.bird{display:flex;gap:10px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
+.avatar{width:38px;height:38px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-weight:800;color:#04121f}
+.name{font-weight:700}.meta{color:var(--dim);font-size:.82rem}
+.post{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.post .body{margin:8px 0;white-space:pre-wrap}
+.like{background:none;color:var(--dim);padding:4px 8px;margin:0;font-size:.85rem}.like.on{color:var(--green)}
+.stats{display:flex;gap:14px;color:var(--dim);font-size:.85rem;margin-top:6px}
+.msg{color:var(--green);font-size:.85rem;min-height:18px}
+@media(max-width:760px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<h1>Feather <span>Flock</span></h1>
+<p class="sub">a shared social board for small birds — profiles, posts, likes</p>
+</header>
+<main>
+<section>
+<h2>Join the flock</h2>
+<label>Name</label><input id="name" placeholder="Pip">
+<label>Alias</label><input id="alias" placeholder="the note bird">
+<div class="row"><div><label>Species</label><input id="species" placeholder="bluebird"></div><div><label>Home</label><input id="home" placeholder="the willow"></div></div>
+<label>Bio</label><textarea id="bio" placeholder="likes seeds and moon moths"></textarea>
+<label>Colour</label>
+<select id="color"><option value="blue">blue</option><option value="green">green</option><option value="orange">orange</option><option value="pink">pink</option><option value="yellow">yellow</option><option value="purple">purple</option></select>
+<button id="join">Add me to the flock</button>
+<p class="msg" id="joinMsg"></p>
+<hr style="border-color:var(--line)">
+<h2>Say something</h2>
+<label>Bird</label><select id="postBird"></select>
+<label>Message</label><textarea id="postBody" placeholder="the pond is frozen today"></textarea>
+<button id="post">Post to the flock</button>
+<p class="msg" id="postMsg"></p>
+</section>
+<section>
+<h2>The flock <span class="meta" id="counts"></span></h2>
+<div id="birds"></div>
+<h2 style="margin-top:18px">Latest posts</h2>
+<div id="posts"></div>
+</section>
+</main>
+<script>
+const API = location.protocol.startsWith('http') && location.hostname === 'localhost' ? 'http://localhost:8600/api/featherflock' : '/api/featherflock';
+let me = localStorage.getItem('flock_bird') || '';
+let data = {birds:[],posts:[]};
+const $ = id => document.getElementById(id);
+const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&','<':'<','>':'>','"':'"',"'":'''}[c]));
+const COLORS = {blue:'#60a5fa',green:'#4ade80',orange:'#fb923c',pink:'#f472b6',yellow:'#facc15',purple:'#a78bfa'};
+function color(c){return COLORS[c]||COLORS.blue}
+const NTFY='https://ntfy.nerdvpn.de/gurt-feather-flock';
+let offline=false;
+async function ntfyGet(){
+  const r=await fetch(NTFY+'/json?poll=1&since=all',{cache:'no-store'});
+  if(!r.ok) throw 0;
+  const lines=(await r.text()).split('\n').filter(Boolean).map(x=>{try{return JSON.parse(x)}catch(e){return null}}).filter(Boolean);
+  const birds=[],posts=[];
+  for(const m of lines){
+    const d=m.message; if(!d) continue;
+    if(d.type==='bird') birds.push(d.bird);
+    if(d.type==='post') posts.push(d.post);
+  }
+  const bm=new Map(birds.map(b=>[b.id,b]));
+  const pm=new Map(posts.map(p=>[p.id,p]));
+  data={birds:[...bm.values()],posts:[...pm.values()].sort((a,b)=>b.created.localeCompare(a.created))};
+}
+async function ntfyPost(payload){ try{ await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }catch(e){} }
+async function load(){
+  try{
+    const r = await fetch(API+'/flock',{cache:'no-store'});
+    if(!r.ok) throw 0;
+    data = await r.json(); offline=false; render();
+  }catch(e){ offline=true; try{ await ntfyGet(); render(); $('counts').textContent+=' · shared board'; }catch(e2){ $('counts').textContent='(offline)'; } }
+}
+function render(){
+  $('counts').textContent = `· ${data.birds.length} birds · ${data.posts.length} posts`;
+  $('birds').innerHTML = data.birds.map(b=>`
+    <div class="bird">
+      <div class="avatar" style="background:${color(b.color)}">${esc((b.name||'?')[0].toUpperCase())}</div>
+      <div style="flex:1">
+        <div class="name">${esc(b.name)} ${b.alias?'<span class="meta">'+esc(b.alias)+'</span>':''}</div>
+        <div class="meta">${esc(b.species||'bird')}${b.home?' · '+esc(b.home):''}</div>
+        ${b.bio?`<div class="meta">${esc(b.bio)}</div>`:''}
+        <div class="stats"><span>${b.posts} posts</span><span>${b.likes} likes</span></div>
+      </div>
+      ${me&&me===b.id?`<button class="ghost" onclick="removeBird('${b.id}')">leave</button>`:''}
+    </div>`).join('') || '<p class="meta">no birds yet</p>';
+  const sel=$('postBird'); const keep=sel.value;
+  sel.innerHTML = data.birds.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  if(keep) sel.value=keep;
+  $('posts').innerHTML = data.posts.map(p=>{
+    const liked = me && p.likes.includes(me);
+    return `<div class="post">
+      <div class="name">${esc(p.bird?p.bird.name:'unknown bird')}</div>
+      <div class="meta">${esc(new Date(p.created).toLocaleString())}</div>
+      <div class="body">${esc(p.body)}</div>
+      <button class="like ${liked?'on':''}" onclick="like('${p.id}',${liked?'false':'true'})">${liked?'♥':'♡'} ${p.likes.length}</button>
+      ${me&&p.bird_id===me?`<button class="ghost" onclick="removePost('${p.id}')">delete</button>`:''}
+    </div>`;
+  }).join('') || '<p class="meta">no posts yet</p>';
+}
+async function join(){
+  const body={name:$('name').value,alias:$('alias').value,species:$('species').value,home:$('home').value,bio:$('bio').value,color:$('color').value};
+  if(!body.name.trim()){ $('joinMsg').textContent='a bird needs a name'; return; }
+  let j={};
+  try{ const r=await fetch(API+'/bird/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); j=await r.json(); }
+  catch(e){ j={bird:{id:'bir'+Date.now().toString(36),...body,created:new Date().toISOString(),posts:0,likes:0}}; await ntfyPost({type:'bird',bird:j.bird}); }
+  if(j.bird){ me=j.bird.id; localStorage.setItem('flock_bird',me); $('joinMsg').textContent='welcome to the flock, '+j.bird.name; load(); }
+  else $('joinMsg').textContent=j.error||'something went wrong';
+}
+async function post(){
+  const body={bird_id:$('postBird').value,body:$('postBody').value};
+  if(!body.body.trim()){ $('postMsg').textContent='say something first'; return; }
+  let j={};
+  try{ const r=await fetch(API+'/post/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); j=await r.json(); }
+  catch(e){ const bird=data.birds.find(b=>b.id===body.bird_id)||{id:body.bird_id,name:'bird'}; j={ok:true,post:{id:'pst'+Date.now().toString(36),bird_id:body.bird_id,body:body.body,created:new Date().toISOString(),bird:{id:bird.id,name:bird.name,alias:bird.alias||'',species:bird.species||'',color:bird.color||'blue'},likes:[]}}; await ntfyPost({type:'post',post:j.post}); }
+  if(j.ok){ $('postBody').value=''; $('postMsg').textContent='posted'; load(); } else $('postMsg').textContent=j.error||'failed';
+}
+async function like(pid,on){ if(!me){alert('join the flock first');return;} try{ await fetch(API+'/post/'+pid+'/'+(on?'like':'unlike')+'/'+me,{method:'POST'}); }catch(e){} load(); }
+async function removeBird(id){ if(!confirm('leave the flock?'))return; await fetch(API+'/bird/'+id+'/delete',{method:'POST'}); localStorage.removeItem('flock_bird'); me=''; load(); }
+async function removePost(id){ if(!confirm('delete this post?'))return; await fetch(API+'/post/'+id+'/delete',{method:'POST'}); load(); }
+$('join').onclick=join; $('post').onclick=post; load();
+</script>
+</body>
+</html>
