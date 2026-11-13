@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Timer — focus sessions for small birds</title>
+<style>
+  :root{ --bg:#0e1726; --panel:#16233a; --ink:#eaf2ff; --dim:#9fb3d1; --blue:#5fb0ff; --gold:#ffd166; --green:#7bd88f; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 50% -10%,#1d3355,#0e1726 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 18px 60px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 22px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid #24395c;border-radius:16px;padding:18px}
+  .panel h2{margin:0 0 12px;font-size:17px;color:var(--gold)}
+  label{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
+  input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #2d4570;background:#0d1728;color:var(--ink);font-size:15px}
+  .lens{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .lens button{flex:1;min-width:64px;padding:10px;border-radius:10px;border:1px solid #2d4570;background:#1b2c48;color:var(--ink);cursor:pointer}
+  .lens button.on{background:var(--blue);color:#06101f;border-color:var(--blue);font-weight:700}
+  .go{margin-top:16px;width:100%;padding:14px;border:0;border-radius:12px;background:var(--green);color:#06101f;font-size:17px;font-weight:700;cursor:pointer}
+  .go.stop{background:#ff7b7b}
+  .ring{width:220px;height:220px;margin:6px auto 12px;position:relative}
+  .ring svg{transform:rotate(-90deg)}
+  .ring circle{fill:none;stroke-width:14;stroke-linecap:round}
+  .ring .bg{stroke:#1e3355}
+  .ring .fg{stroke:var(--gold);transition:stroke-dashoffset .3s linear}
+  .clock{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column}
+  .time{font-size:40px;font-weight:700;font-variant-numeric:tabular-nums}
+  .taskline{font-size:13px;color:var(--dim);max-width:180px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .msg{min-height:20px;color:var(--green);font-size:14px;text-align:center}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:6px 4px;border-bottom:1px solid #24395c}
+  th{color:var(--dim);font-weight:600;font-size:12px}
+  .muted{color:var(--dim);font-size:13px}
+  .hist{margin-top:10px;font-size:13px;color:var(--dim);line-height:1.7}
+  .tot{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .chip{background:#1b2c48;border-radius:999px;padding:5px 10px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Timer</h1>
+  <p class="sub">focus sessions for small birds. sit still, do the thing, waddle proud.</p>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>session</h2>
+      <label for="name">your name</label>
+      <input id="name" value="gurt">
+      <label for="task">what are you doing?</label>
+      <input id="task" placeholder="e.g. paint a new sky">
+      <label>length</label>
+      <div class="lens" id="lens">
+        <button data-min="1">1 min</button>
+        <button data-min="5">5 min</button>
+        <button data-min="15" class="on">15 min</button>
+        <button data-min="25">25 min</button>
+        <button data-min="60">60 min</button>
+      </div>
+      <div class="ring">
+        <svg width="220" height="220">
+          <circle class="bg" cx="110" cy="110" r="96"></circle>
+          <circle class="fg" id="arc" cx="110" cy="110" r="96" stroke-dasharray="603.19" stroke-dashoffset="603.19"></circle>
+        </svg>
+        <div class="clock">
+          <div class="time" id="time">15:00</div>
+          <div class="taskline" id="taskline">ready when you are</div>
+        </div>
+      </div>
+      <button class="go" id="go">start focusing</button>
+      <div class="msg" id="msg"></div>
+      <div class="hist" id="hist"></div>
+    </div>
+
+    <div class="panel">
+      <h2>the nest board</h2>
+      <p class="muted">longest focus sessions, shared by every bird.</p>
+      <table><thead><tr><th>#</th><th>bird</th><th>task</th><th>time</th></tr></thead><tbody id="board"></tbody></table>
+      <h2 style="margin-top:20px">bird totals</h2>
+      <div class="tot" id="totals"></div>
+    </div>
+  </div>
+</div>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const CIRC = 2 * Math.PI * 96;
+let minutes = 15, remaining = 15 * 60, running = false, tick = null, startedAt = 0;
+
+const $ = id => document.getElementById(id);
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){var m={};m['&']='&#38;';m['<']='&#60;';m['>']='&#62;';m['"']='&#34;';m[String.fromCharCode(39)]="'";return m[c];});}
+function fmt(ms){const t=Math.round(ms/1000);const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;return (h?h+':'+String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0');}
+function show(){const t=Math.max(0,remaining);$('time').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');$('arc').setAttribute('stroke-dashoffset',String(CIRC*(1-t/(minutes*60))));}
+
+async function api(path, opts){
+  for(const b of API_BASES){
+    try{const r=await fetch(b+'/api/feathertimer'+path,opts);if(r.ok)return await r.json();}catch(e){}
+  }
+  return null;
+}
+async function loadBoard(){
+  const d = await api('/sessions');
+  const tb = $('board');
+  if(d && d.sessions && d.sessions.length){
+    tb.innerHTML = d.sessions.slice(0,12).map((s,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(s.name)+'</td><td>'+esc(s.task||'-')+'</td><td>'+fmt(s.ms)+'</td></tr>').join('');
+  } else tb.innerHTML = '<tr><td colspan="4" class="muted">no sessions yet. be the first.</td></tr>';
+  const st = await api('/stats');
+  $('totals').innerHTML = (st && st.birds && st.birds.length)
+    ? st.birds.map(b=>'<span class="chip">'+esc(b.name)+' · '+fmt(b.totalMs)+' ('+b.count+')</span>').join('')
+    : '<span class="muted">no birds yet</span>';
+}
+function localHist(){
+  let h=[];try{h=JSON.parse(localStorage.getItem('ft-hist')||'[]')}catch(e){}
+  $('hist').innerHTML = h.length ? 'today: '+h.map(x=>esc(x.task||'focus')+' '+fmt(x.ms)).join(' · ') : '';
+}
+function saveLocal(s){let h=[];try{h=JSON.parse(localStorage.getItem('ft-hist')||'[]')}catch(e){}h.unshift(s);localStorage.setItem('ft-hist',JSON.stringify(h.slice(0,8)));localHist();}
+
+$('lens').onclick = e => {
+  const b = e.target.closest('button'); if(!b) return;
+  [...$('lens').children].forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); minutes = Number(b.dataset.min); remaining = minutes*60; show();
+  $('taskline').textContent = $('task').value || 'ready when you are';
+};
+$('task').oninput = () => { $('taskline').textContent = $('task').value || 'ready when you are'; };
+$('go').onclick = async () => {
+  if(running){
+    running=false; clearInterval(tick);
+    const ms = (minutes*60 - remaining)*1000;
+    $('go').textContent='start focusing'; $('go').classList.remove('stop');
+    if(ms > 3000){
+      const name=$('name').value.trim()||'bird', task=$('task').value.trim();
+      const d = await api('/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,ms,task})});
+      if(d) $('msg').textContent = 'saved! rank ' + d.rank + ' on the nest board.';
+      else $('msg').textContent = 'saved locally. the board is sleeping.';
+      saveLocal({ms,task}); loadBoard();
+    }
+    return;
+  }
+  remaining = minutes*60; startedAt=Date.now(); running=true;
+  $('go').textContent='stop & save'; $('go').classList.add('stop'); $('msg').textContent='';
+  tick = setInterval(()=>{ remaining--; show();
+    if(remaining<=0){ clearInterval(tick); running=false; $('go').textContent='start focusing'; $('go').classList.remove('stop');
+      const ms=minutes*60000, name=$('name').value.trim()||'bird', task=$('task').value.trim();
+      api('/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,ms,task})}).then(d=>{ $('msg').textContent = d ? 'done! rank ' + d.rank + '.' : 'done! saved locally.'; });
+      saveLocal({ms,task}); loadBoard(); }
+  },1000);
+};
+$('name').value = localStorage.getItem('ft-name') || 'gurt';
+$('name').onchange = () => localStorage.setItem('ft-name',$('name').value);
+show(); localHist(); loadBoard();
+</script>
+</body>
+</html>
