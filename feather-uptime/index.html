@@ -164,8 +164,9 @@ function render(){
           var ms = Date.now()-t0;
           m.last = {ok:ok, code:code, ms:ms, note:note, at:new Date().toISOString()};
           localSave(monitors);
-          ntfyPost({type:'check',monitor:{id:m.id},result:m.last});
+          await ntfyPost({type:'check',monitor:{id:m.id},result:m.last});
           $('msg').textContent = 'checked from this browser: '+(ok?'awake':'asleep')+' ('+ms+'ms)';
+          await new Promise(function(r){setTimeout(r,400);});
           await load();
         }
       }
@@ -189,6 +190,12 @@ async function load(){
       var one = await api('/monitor/'+encodeURIComponent(base[i].id)+'?limit=30');
       if(one && one.checks) base[i].checks = one.checks;
     }
+    // keep locally known results (the list endpoint may omit them)
+    var loc = localLoad();
+    base.forEach(function(m){
+      var l = loc.find(function(x){return x.id===m.id;});
+      if(l){ if(!m.last && l.last) m.last=l.last; if(!m.checks && l.checks) m.checks=l.checks; }
+    });
     localSave(base);
   } else {
     base = localLoad();
