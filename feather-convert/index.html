@@ -73,6 +73,7 @@
 </div>
 <script>
 const API_BASES = ['', 'http://localhost:8600'];
+const NTFY = 'https://ntfy.sh/gurt-feather-convert';
 
 const UNITS = {
   length: { m:1, km:1000, cm:0.01, mm:0.001, mi:1609.344, yd:0.9144, ft:0.3048, in:0.0254, 'nautical mile':1852 },
@@ -130,11 +131,41 @@ async function api(path, opts){
   }
   return null;
 }
+async function ntfyPost(item){
+  try{
+    var r=await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(item)});
+    return r.ok;
+  }catch(e){ return false; }
+}
+async function ntfyHistory(){
+  try{
+    var r=await fetch(NTFY+'/json?poll=1&since=all');
+    if(!r.ok) return null;
+    var txt=await r.text();
+    var out=[];
+    txt.split('\n').forEach(function(line){
+      if(!line.trim()) return;
+      try{
+        var env=JSON.parse(line);
+        if(env.event!=='message') return;
+        var m=JSON.parse(env.message);
+        if(m && m.from && m.to) out.push(m);
+      }catch(e){}
+    });
+    return out;
+  }catch(e){ return null; }
+}
 async function loadBoard(){
-  var d=await api('/history');
   var tb=$('board');
-  if(d && d.history && d.history.length){
-    tb.innerHTML=d.history.slice(0,12).map(function(x,i){
+  var hist=null;
+  var d=await api('/history');
+  if(d && d.history) hist=d.history;
+  if(!hist || !hist.length){
+    var nh=await ntfyHistory();
+    if(nh && nh.length) hist=nh.slice().reverse();
+  }
+  if(hist && hist.length){
+    tb.innerHTML=hist.slice(0,12).map(function(x,i){
       return '<tr><td>'+(i+1)+'</td><td>'+esc(fmt(x.value)+' '+x.from)+'</td><td>'+esc(fmt(x.result)+' '+x.to)+'</td></tr>';
     }).join('');
   } else tb.innerHTML='<tr><td colspan="3" class="muted">no conversions yet. be the first.</td></tr>';
@@ -155,9 +186,14 @@ $('swap').onclick=function(){var f=$('from').value,t=$('to').value;$('from').val
 $('go').onclick=async function(){
   var c=doConvert();
   if(!c) return;
-  var d=await api('/convert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:c.value,from:c.from,to:c.to})});
-  if(d && d.item){ d.item.result=c.result; saveLocal(fmt(c.value)+' '+c.from+' = '+fmt(c.result)+' '+c.to); $('msg').textContent='saved to the nest ledger.'; loadBoard(); }
-  else { saveLocal(fmt(c.value)+' '+c.from+' = '+fmt(c.result)+' '+c.to); $('msg').textContent='saved locally. the ledger is sleeping.'; }
+  var item={value:c.value,from:c.from,to:c.to,result:c.result,at:new Date().toISOString()};
+  var d=await api('/convert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(item)});
+  var live=false;
+  if(d && d.item){ live=true; }
+  else { live = await ntfyPost(item); }
+  saveLocal(fmt(c.value)+' '+c.from+' = '+fmt(c.result)+' '+c.to);
+  $('msg').textContent = live ? 'saved to the nest ledger.' : 'saved locally. the ledger is sleeping.';
+  loadBoard();
 };
 doConvert(); localHist(); loadBoard();
 </script>
