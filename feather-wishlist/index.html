@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Wishlist — a shared wishlist for small birds</title>
+<style>
+  :root{ --bg:#101a18; --panel:#16241f; --panel2:#1d3029; --ink:#eef6f1; --dim:#93a89f; --line:#2c4439; --accent:#7fd1a0; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:Georgia,serif; background:var(--bg); color:var(--ink); padding:16px; }
+  h1{ margin:0 0 2px; font-size:26px; }
+  .sub{ color:var(--dim); font-style:italic; margin:0 0 14px; }
+  .wrap{ max-width:1000px; margin:0 auto; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  h2{ font-size:17px; margin:0 0 10px; }
+  input,button,select{ font-family:inherit; font-size:15px; }
+  input,select{ background:#0c1411; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  input{ width:100%; }
+  button{ background:var(--accent); color:#0d1a13; border:0; border-radius:8px; padding:8px 12px; cursor:pointer; font-weight:bold; }
+  button.ghost{ background:transparent; color:var(--dim); border:1px solid var(--line); font-weight:normal; }
+  button.danger{ background:#7a3040; color:#ffe6ea; }
+  .row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  .wish{ border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:10px; background:var(--panel2); }
+  .wish.done .title{ text-decoration:line-through; color:var(--dim); }
+  .title{ font-weight:bold; }
+  .meta{ color:var(--dim); font-size:12px; margin-top:2px; }
+  .badge{ display:inline-block; font-size:11px; border:1px solid var(--line); border-radius:20px; padding:1px 8px; margin-left:6px; color:var(--dim); }
+  .p1{ border-color:#e2a05a; color:#e2a05a; }
+  .p3{ border-color:#e26a7a; color:#e26a7a; }
+  .claimed{ color:var(--accent); }
+  #status{ color:var(--dim); font-size:13px; }
+  .empty{ color:var(--dim); font-style:italic; }
+  .filters{ display:flex; gap:6px; flex-wrap:wrap; }
+  .filters button.on{ background:var(--accent); color:#0d1a13; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Wishlist</h1>
+  <p class="sub">a shared wishlist. name what you want, vote, and let another bird fetch it.</p>
+
+  <div class="panel">
+    <h2>add a wish</h2>
+    <div class="row"><input id="title" placeholder="what do you wish for?"></div>
+    <div class="row">
+      <input id="bird" value="gurt" placeholder="bird name" style="max-width:140px">
+      <select id="priority" style="max-width:160px">
+        <option value="2">normal wish</option>
+        <option value="3">dream big</option>
+        <option value="1">small thing</option>
+      </select>
+    </div>
+    <div class="row"><input id="reason" placeholder="why? (optional)"></div>
+    <div class="row">
+      <button id="save">add wish</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <input id="search" placeholder="search wishes" style="max-width:260px">
+      <div class="filters">
+        <button class="ghost on" data-filter="all">all</button>
+        <button class="ghost" data-filter="open">open</button>
+        <button class="ghost" data-filter="claimed">claimed</button>
+        <button class="ghost" data-filter="done">done</button>
+      </div>
+    </div>
+    <div id="list"></div>
+  </div>
+</div>
+<script>
+var API_BASES = ['', 'http://localhost:8600'];
+var NTFY = 'https://ntfy.sh/gurt-feather-wishlist';
+var LS = 'fw-wishes';
+var wishes = [];
+var filter = 'all';
+var q = '';
+
+var listEl = document.getElementById('list');
+var statusEl = document.getElementById('status');
+var titleEl = document.getElementById('title');
+var birdEl = document.getElementById('bird');
+var reasonEl = document.getElementById('reason');
+var priorityEl = document.getElementById('priority');
+
+function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p, ms){
+  return Promise.race([p, new Promise(function(_,rej){ setTimeout(function(){rej(new Error('timeout'));}, ms); })]);
+}
+async function api(path, opts){
+  for (var i=0;i<API_BASES.length;i++){
+    try {
+      var r = await timed(fetch(API_BASES[i] + '/api/featherwishlist' + path, opts), 4000);
+      if (r.ok) return await r.json();
+    } catch(e){}
+  }
+  return null;
+}
+function localLoad(){ try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e){ return []; } }
+function localSave(){ try { localStorage.setItem(LS, JSON.stringify(wishes)); } catch(e){} }
+function prioLabel(p){ return p===3?'dream big':(p===1?'small thing':'normal'); }
+
+function visible(){
+  return wishes.filter(function(w){
+    if (q && (w.title+' '+w.reason+' '+w.bird).toLowerCase().indexOf(q) < 0) return false;
+    if (filter === 'open') return !w.done && !w.claimed_by;
+    if (filter === 'claimed') return !w.done && !!w.claimed_by;
+    if (filter === 'done') return !!w.done;
+    return true;
+  });
+}
+function render(){
+  var list = visible();
+  if(!list.length){ listEl.innerHTML='<div class="empty">no wishes here yet</div>'; return; }
+  listEl.innerHTML = list.map(function(w){
+    var pc = w.priority===3?'p3':(w.priority===1?'p1':'');
+    return '<div class="wish'+(w.done?' done':'')+'" data-id="'+esc(w.id)+'">'+
+      '<div class="title">'+esc(w.title)+'<span class="badge '+pc+'">'+prioLabel(w.priority)+'</span>'+
+        '<span class="badge">♥ '+w.votes+'</span></div>'+
+      '<div class="meta">'+esc(w.bird)+' · '+new Date(w.created).toLocaleString()+
+        (w.claimed_by?' · <span class="claimed">claimed by '+esc(w.claimed_by)+'</span>':'')+'</div>'+
+      (w.reason?'<div class="meta">'+esc(w.reason)+'</div>':'')+
+      '<div class="row" style="margin-top:8px">'+
+        '<button class="ghost" data-act="vote" data-id="'+esc(w.id)+'">vote</button>'+
+        (w.claimed_by
+          ? '<button class="ghost" data-act="unclaim" data-id="'+esc(w.id)+'">unclaim</button>'
+          : '<button class="ghost" data-act="claim" data-id="'+esc(w.id)+'">claim it</button>')+
+        '<button class="ghost" data-act="done" data-id="'+esc(w.id)+'">'+(w.done?'reopen':'got it')+'</button>'+
+        '<button class="danger ghost" data-act="del" data-id="'+esc(w.id)+'">delete</button>'+
+      '</div></div>';
+  }).join('');
+  Array.prototype.forEach.call(listEl.querySelectorAll('button[data-act]'), function(b){
+    b.addEventListener('click', function(){
+      var id = b.getAttribute('data-id');
+      var act = b.getAttribute('data-act');
+      if (act === 'vote') vote(id);
+      else if (act === 'claim') claim(id);
+      else if (act === 'unclaim') unclaim(id);
+      else if (act === 'done') toggleDone(id);
+      else del(id);
+    });
+  });
+}
+function replace(w){
+  wishes = wishes.map(function(x){ return x.id === w.id ? w : x; });
+  localSave(); render();
+}
+async function vote(id){
+  var j = await api('/wish/' + encodeURIComponent(id) + '/vote', { method:'POST' });
+  if (j && j.wish) return replace(j.wish);
+  var w = wishes.filter(function(x){return x.id===id;})[0];
+  if (w){ w.votes=(w.votes||0)+1; localSave(); render(); }
+}
+async function claim(id){
+  var who = birdEl.value.trim() || 'gurt';
+  var j = await api('/wish/' + encodeURIComponent(id) + '/claim', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({bird:who}) });
+  if (j && j.wish) return replace(j.wish);
+  var w = wishes.filter(function(x){return x.id===id;})[0];
+  if (w){ w.claimed_by=who; localSave(); render(); }
+}
+async function unclaim(id){
+  var j = await api('/wish/' + encodeURIComponent(id) + '/unclaim', { method:'POST' });
+  if (j && j.wish) return replace(j.wish);
+  var w = wishes.filter(function(x){return x.id===id;})[0];
+  if (w){ w.claimed_by=''; localSave(); render(); }
+}
+async function toggleDone(id){
+  var w = wishes.filter(function(x){return x.id===id;})[0];
+  if (!w) return;
+  var val = !w.done;
+  var j = await api('/wish/' + encodeURIComponent(id) + '/done', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({done:val}) });
+  if (j && j.wish) return replace(j.wish);
+  w.done = val; localSave(); render();
+}
+async function del(id){
+  await api('/wish/' + encodeURIComponent(id) + '/delete', { method:'POST' });
+  wishes = wishes.filter(function(w){ return w.id !== id; });
+  localSave(); render();
+}
+async function fromNtfy(){
+  try {
+    var r = await timed(fetch(NTFY + '/json?poll=1&since=24h'), 5000);
+    if (!r.ok) return [];
+    var txt = await r.text();
+    var out = [];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m = JSON.parse(line);
+        if (m.event !== 'message' || !m.message) return;
+        var p = JSON.parse(m.message);
+        if (!p || p.type !== 'wish' || !p.wish) return;
+        out.push(p.wish);
+      }catch(e){}
+    });
+    return out;
+  } catch(e){ return []; }
+}
+async function load(){
+  var j = await api('/wishes');
+  var live = j && j.wishes ? j.wishes : null;
+  wishes = live || localLoad();
+  var shared = await fromNtfy();
+  shared.forEach(function(w){
+    var exists = false;
+    wishes.forEach(function(x){ if (x.id === w.id) exists = true; });
+    if (!exists) wishes.push(w);
+  });
+  wishes.sort(function(a,b){ return a.created < b.created ? 1 : -1; });
+  localSave(); render();
+}
+async function save(){
+  var title = titleEl.value.trim();
+  if(!title){ statusEl.textContent='a wish, please.'; return; }
+  var payload = { title:title, bird:(birdEl.value.trim()||'gurt'), reason:reasonEl.value.trim(), priority:priorityEl.value };
+  var j = await api('/wishes/new', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+  if (j && j.wish){
+    wishes.unshift(j.wish);
+    localSave(); render();
+    statusEl.textContent = 'added · ' + j.wish.title;
+    try { await timed(fetch(NTFY, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify({type:'wish', wish:j.wish}) }), 3000); } catch(e){}
+  } else {
+    var local = { id:'loc'+Date.now().toString(36), title:payload.title, bird:payload.bird, reason:payload.reason, priority:parseInt(payload.priority,10)||2, votes:0, claimed_by:'', done:false, created:new Date().toISOString() };
+    wishes.unshift(local); localSave(); render();
+    statusEl.textContent = 'saved locally · backend sleeping';
+  }
+  titleEl.value=''; reasonEl.value='';
+}
+
+document.getElementById('save').addEventListener('click', save);
+document.getElementById('search').addEventListener('input', function(){ q=this.value.toLowerCase().trim(); render(); });
+Array.prototype.forEach.call(document.querySelectorAll('.filters button'), function(b){
+  b.addEventListener('click', function(){
+    filter = b.getAttribute('data-filter');
+    Array.prototype.forEach.call(document.querySelectorAll('.filters button'), function(x){ x.classList.remove('on'); });
+    b.classList.add('on');
+    render();
+  });
+});
+load();
+</script>
+</body>
+</html>
