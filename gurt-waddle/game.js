@@ -227,7 +227,18 @@
         else if (tc === 'D' && keys > 0) { grid[ty][tx] = '.'; keys--; beep(300, .12, 'triangle'); }
       }
     }
-    if (ch === 'E') {
+    // the exit counts if ANY touched tile is E, not just the body centre,
+    // so a fast bird cannot hop straight over the doorway
+    // the exit is a doorway column: walking past its column counts,
+    // even if the bird hops over the green tile
+    let touchingExit = false;
+    for (let tx = Math.floor(p.x / T); tx <= Math.floor((p.x + p.w - 1) / T); tx++) {
+      for (let ty = 0; ty < H; ty++) {
+        if (tileAt(tx, ty) === 'E') { touchingExit = true; break; }
+      }
+      if (touchingExit) break;
+    }
+    if (touchingExit) {
       if (bosses.some(b => !b.dead)) { $('msg').textContent = 'the moths guard the exit — stomp them first'; beep(160, .12, 'sawtooth'); return; }
       if (level === LEVELS.length - 1) { win(); return; }
       score += 100; level++; loadLevel(level); beep(1200, .15, 'triangle'); return;
