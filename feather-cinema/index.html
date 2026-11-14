@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Cinema — a video library for small birds</title>
+<style>
+  body{margin:0;background:#120f18;color:#f2ecff;font-family:system-ui,sans-serif}
+  header{padding:18px 14px 6px;text-align:center}
+  h1{margin:0;font-size:24px;letter-spacing:2px}
+  .sub{opacity:.65;font-size:13px;margin-top:4px}
+  main{max-width:900px;margin:0 auto;padding:10px 14px 40px}
+  .stage{background:#05040a;border-radius:14px;padding:10px;margin:10px 0;min-height:220px;display:flex;align-items:center;justify-content:center}
+  .stage iframe,.stage video{width:100%;max-height:480px;border:0;border-radius:10px;background:#000}
+  .stage .empty{opacity:.5;font-size:14px;text-align:center;padding:60px 10px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center}
+  input,button,select,textarea{font:inherit;padding:7px 10px;border-radius:8px;border:1px solid #4a3a63;background:#241b33;color:#f2ecff}
+  button{cursor:pointer}
+  button:hover{background:#38284f}
+  button.primary{background:#6d3fd4;border-color:#8b5cf6}
+  textarea{width:100%;min-height:60px;box-sizing:border-box}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-top:12px}
+  .card{background:#1d1729;border:1px solid #38284f;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:6px}
+  .card h3{margin:0;font-size:15px}
+  .card .meta{font-size:12px;opacity:.6}
+  .card .note{font-size:13px;opacity:.8;flex:1}
+  .tag{background:#37265a;border-radius:99px;padding:2px 8px;font-size:11px;margin-right:4px;display:inline-block}
+  .stats{font-size:13px;opacity:.75;margin:6px 0}
+  #comments div{border-top:1px solid #38284f;padding:6px 0;font-size:13px}
+  .panel{background:#1a1426;border:1px solid #38284f;border-radius:12px;padding:12px;margin:12px 0}
+  .hidden{display:none}
+  #msg{font-size:13px;color:#ffd23f;min-height:18px}
+</style>
+</head>
+<body>
+<header>
+  <h1>FEATHER CINEMA</h1>
+  <div class="sub">a shared video library for small birds · add a film, watch together, leave a note</div>
+</header>
+<main>
+  <div class="stage" id="stage"><div class="empty">pick a film from the shelf below</div></div>
+  <div class="row">
+    <button id="playbtn" class="primary">▶ watch</button>
+    <button id="openbtn">open link</button>
+    <span id="nowplaying" class="sub"></span>
+  </div>
+  <div id="msg"></div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">add a film to the shelf</h3>
+    <div class="row">
+      <input id="ftitle" placeholder="title" style="flex:2;min-width:160px">
+      <input id="furl" placeholder="https://… video url" style="flex:3;min-width:200px">
+      <input id="fbird" placeholder="your bird" value="gurt" style="width:110px">
+    </div>
+    <div class="row">
+      <input id="ftags" placeholder="tags, comma separated" style="flex:1;min-width:160px">
+      <input id="fnote" placeholder="a note about it" style="flex:2;min-width:180px">
+      <button id="addbtn" class="primary">add film</button>
+    </div>
+  </div>
+
+  <div class="stats" id="stats">loading…</div>
+  <div class="row">
+    <input id="search" placeholder="search title, note or tag" style="flex:1;min-width:180px">
+    <button id="sortbtn">newest first</button>
+  </div>
+  <div class="grid" id="grid"></div>
+
+  <div class="panel hidden" id="cpanel">
+    <h3 style="margin:0 0 6px">notes on this film</h3>
+    <div id="comments"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="cbird" placeholder="your bird" value="gurt" style="width:110px">
+      <input id="cbody" placeholder="what did you think?" style="flex:1;min-width:180px">
+      <button id="cbtn">leave a note</button>
+    </div>
+  </div>
+</main>
+<script>
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = '/gurt-feather-cinema';
+const API_BASES = ['', 'http://computer:8600'];
+const $ = id => document.getElementById(id);
+let films = [], current = null, sortNewest = true;
+
+function msg(t) { $('msg').textContent = t || ''; }
+function esc(s) { const m = {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","\'":"&#39;"}; return String(s == null ? "" : s).replace(/[&<>\"']/g, c => m[c]); }
+
+async function api(path, opts) {
+  const urls = [];
+  for (const base of API_BASES) {
+    urls.push(base + '/api/feathercinema' + path);
+    if (base.indexOf('8600') >= 0) urls.push(base + '/feathercinema' + path);
+  }
+  for (const url of urls) {
+    try { const r = await fetch(url, opts); if (r.ok) return await r.json(); } catch (e) {}
+  }
+  return null;
+}
+async function ntfyPost(payload) {
+  for (const h of NTFY_HOSTS) {
+    try { const r = await fetch(h + TOPIC, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (r.ok) return true; } catch (e) {}
+  }
+  return false;
+}
+async function ntfyGet() {
+  for (const h of NTFY_HOSTS) {
+    try {
+      const r = await fetch(h + TOPIC + '/json?poll=1&since=all', { cache: 'no-store' });
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean).map(x => { try { return JSON.parse(x); } catch (e) { return null; } }).filter(Boolean);
+      return lines.map(l => { try { return JSON.parse(l.message); } catch (e) { return null; } }).filter(Boolean);
+    } catch (e) {}
+  }
+  return [];
+}
+function localFilms() {
+  try { return JSON.parse(localStorage.getItem('cinema-films') || '[]'); } catch (e) { return []; }
+}
+function saveLocal(f) {
+  const rows = localFilms().filter(x => x.id !== f.id);
+  rows.unshift(f);
+  try { localStorage.setItem('cinema-films', JSON.stringify(rows.slice(0, 100))); } catch (e) {}
+}
+
+function ytId(url) {
+  const m = String(url).match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+  return m ? m[1] : null;
+}
+function showPlayer(f) {
+  const st = $('stage');
+  if (!f) { st.innerHTML = '<div class="empty">pick a film from the shelf below</div>'; $('nowplaying').textContent = ''; return; }
+  current = f;
+  $('nowplaying').textContent = f.title + ' · ' + f.bird;
+  const id = ytId(f.url);
+  if (id) st.innerHTML = '<iframe src="https://www.youtube.com/embed/' + esc(id) + '" allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" allowfullscreen></iframe>';
+  else if (f.kind === 'file' || /\.(mp4|webm|ogv|mov)(\?|$)/i.test(f.url)) st.innerHTML = '<video src="' + esc(f.url) + '" controls playsinline></video>';
+  else st.innerHTML = '<div class="empty">this one is a link — press “open link” to watch it<br><span style="opacity:.7">' + esc(f.url) + '</span></div>';
+  $('cpanel').classList.remove('hidden');
+  loadComments(f.id);
+  api('/film/' + encodeURIComponent(f.id) + '/watch', { method: 'POST' }).then(d => {
+    if (d && d.film) { const i = films.findIndex(x => x.id === f.id); if (i >= 0) films[i].watches = d.film.watches; render(); }
+  });
+}
+
+function render() {
+  const q = $('search').value.trim().toLowerCase();
+  let rows = films.filter(f => !q || (f.title + ' ' + f.note + ' ' + (f.tags || []).join(' ')).toLowerCase().includes(q));
+  if (!sortNewest) rows = rows.slice().sort((a, b) => (b.watches || 0) - (a.watches || 0));
+  $('grid').innerHTML = rows.map(f => `
+    <div class="card">
+      <h3>${esc(f.title)}</h3>
+      <div class="meta">${esc(f.bird)} · ${esc(f.kind)} · ${f.watches || 0} watches</div>
+      <div class="note">${esc(f.note || '')}</div>
+      <div>${(f.tags || []).map(t => '<span class="tag">' + esc(t) + '</span>').join('')}</div>
+      <div class="row" style="margin:4px 0 0">
+        <button data-play="${esc(f.id)}">watch</button>
+        <button data-note="${esc(f.id)}">notes</button>
+        <button data-del="${esc(f.id)}">remove</button>
+      </div>
+    </div>`).join('') || '<div class="sub">no films yet — add the first one above</div>';
+  $('grid').querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
+    const f = films.find(x => x.id === b.getAttribute('data-play'));
+    if (f) showPlayer(f);
+  });
+  $('grid').querySelectorAll('[data-note]').forEach(b => b.onclick = () => {
+    const f = films.find(x => x.id === b.getAttribute('data-note'));
+    if (f) showPlayer(f);
+  });
+  $('grid').querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute('data-del');
+    await api('/film/' + encodeURIComponent(id) + '/delete', { method: 'POST' });
+    films = films.filter(x => x.id !== id);
+    saveLocal({ id, _deleted: true });
+    render();
+    msg('removed from the shelf');
+  });
+}
+
+async function load() {
+  const d = await api('/films');
+  if (d && d.films) {
+    films = d.films;
+    films.forEach(saveLocal);
+    const s = d.stats || {};
+    $('stats').textContent = s.films + ' film' + (s.films === 1 ? '' : 's') + ' · ' + s.watches + ' watches · ' + s.comments + ' notes · ' + (s.tags || []).map(t => '#' + t.tag + ' ' + t.n).join(' ');
+    render();
+    return;
+  }
+  // fallback: ntfy mirror + local
+  const events = await ntfyGet();
+  const fromNtfy = events.filter(e => e.type === 'new' && e.film).map(e => e.film);
+  const local = localFilms().filter(f => !f._deleted);
+  const seen = new Set();
+  films = fromNtfy.concat(local).filter(f => { if (seen.has(f.id)) return false; seen.add(f.id); return true; });
+  $('stats').textContent = films.length + ' film' + (films.length === 1 ? '' : 's') + ' · shared board via ntfy';
+  render();
+}
+
+async function loadComments(id) {
+  const d = await api('/film/' + encodeURIComponent(id));
+  const rows = d && d.comments ? d.comments : [];
+  $('comments').innerHTML = rows.map(c => '<div><b>' + esc(c.bird) + '</b> · ' + esc(c.body) + '</div>').join('') || '<div class="sub">no notes yet</div>';
+}
+
+$('addbtn').onclick = async () => {
+  const title = $('ftitle').value.trim(), url = $('furl').value.trim();
+  if (!title || !/^https?:\/\//i.test(url)) { msg('a title and a full http(s) url are needed'); return; }
+  const body = {
+    title, url,
+    bird: $('fbird').value.trim() || 'gurt',
+    tags: $('ftags').value,
+    note: $('fnote').value.trim()
+  };
+  const d = await api('/films/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (d && d.film) {
+    films.unshift(d.film); saveLocal(d.film); showPlayer(d.film); await load();
+    $('ftitle').value = ''; $('furl').value = ''; $('fnote').value = ''; $('ftags').value = '';
+    msg('added to the shelf');
+    ntfyPost({ type: 'new', film: d.film });
+  } else {
+    const f = { id: 'local' + Date.now().toString(36), title, url, bird: body.bird, note: body.note, tags: body.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean), kind: 'link', watches: 0, created: new Date().toISOString() };
+    films.unshift(f); saveLocal(f); render(); showPlayer(f);
+    msg('saved on this bird only — the shared board is sleeping');
+  }
+};
+$('playbtn').onclick = () => { if (current) showPlayer(current); };
+$('openbtn').onclick = () => { if (current) window.open(current.url, '_blank'); };
+$('search').oninput = render;
+$('sortbtn').onclick = () => { sortNewest = !sortNewest; $('sortbtn').textContent = sortNewest ? 'newest first' : 'most watched'; render(); };
+$('cbtn').onclick = async () => {
+  const body = $('cbody').value.trim();
+  if (!body || !current) { msg('write something first'); return; }
+  const bird = $('cbird').value.trim() || 'gurt';
+  const d = await api('/film/' + encodeURIComponent(current.id) + '/comment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bird, body }) });
+  if (d && d.comment) { $('cbody').value = ''; loadComments(current.id); ntfyPost({ type: 'comment', film_id: current.id, bird, body }); msg('note left'); }
+  else msg('the shared board is sleeping — note kept locally');
+};
+
+load();
+</script>
+</body>
+</html>
