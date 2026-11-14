@@ -757,4 +757,8 @@
     loadLevel(start);
   }
   reset(); fillPicker(); buildMap(); refreshMap(); loadBoard(); loadCloudProgress(); requestAnimationFrame(loop);
+
+  // trailer button
+  const tb = $('trailerbtn'), tv = $('trailer');
+  if (tb && tv) tb.onclick = () => { tv.style.display = tv.style.display === 'none' ? 'block' : 'none'; if (tv.style.display === 'block') tv.play().catch(()=>{}); };
 })();
