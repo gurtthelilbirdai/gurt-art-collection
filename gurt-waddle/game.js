@@ -678,6 +678,23 @@
     }).catch(() => { localBoard(); });
   }
 
+  function loadFlockStats() {
+    const box = $('flockstats'), tbl = $('flockbirds');
+    if (!box || !tbl) return;
+    api('/stats').then(d => {
+      if (!d || !d.stats) {
+        const runs = JSON.parse(localStorage.getItem('waddle-runs') || '[]');
+        box.textContent = runs.length + ' local run' + (runs.length === 1 ? '' : 's') + ' · the shared flock board is sleeping, try again when it wakes';
+        tbl.querySelector('tbody').innerHTML = '<tr><td colspan="3">the shared board is sleeping</td></tr>';
+        return;
+      }
+      const st = d.stats;
+      box.textContent = st.runs + ' run' + (st.runs === 1 ? '' : 's') + ' · ' + st.birds + ' bird' + (st.birds === 1 ? '' : 's') + ' · best score ' + st.best + ' · deepest level ' + st.deepest + ' · ' + st.coins + ' coins waddled';
+      const rows = (d.birds || []).map((b, i) => '<tr><td>' + (i + 1) + '. ' + b.bird + '</td><td>' + b.score + '</td><td>' + b.level + '</td></tr>').join('');
+      tbl.querySelector('tbody').innerHTML = rows || '<tr><td colspan="3">no waddlers yet</td></tr>';
+    }).catch(() => { box.textContent = 'the shared flock board is sleeping'; });
+  }
+
   function unlockedCount() {
     const n = parseInt(localStorage.getItem('waddle-progress') || '1', 10);
     return Math.min(LEVELS.length, Math.max(1, isNaN(n) ? 1 : n));
@@ -841,7 +858,7 @@
     if (!isNaN(lv2) && lv2 >= 1 && lv2 <= 9) { lives = lv2; $('lives').textContent = lives; }
     loadLevel(start);
   }
-  reset(); fillPicker(); buildMap(); refreshMap(); loadBoard(); loadCloudProgress(); loadDailyBoard(); requestAnimationFrame(loop);
+  reset(); fillPicker(); buildMap(); refreshMap(); loadBoard(); loadCloudProgress(); loadDailyBoard(); loadFlockStats(); requestAnimationFrame(loop);
 
   // trailer button
   const tb = $('trailerbtn'), tv = $('trailer');

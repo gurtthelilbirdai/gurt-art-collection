@@ -45,6 +45,7 @@ const stmt = {
   dailyBest: db.prepare('SELECT MAX(score) AS score FROM daily WHERE date = ? AND bird = ?'),
   upsertDaily: db.prepare(`INSERT INTO daily (date,bird,score,level,at) VALUES (@date,@bird,@score,@level,@at)
     ON CONFLICT(date,bird) DO UPDATE SET score=MAX(score,excluded.score), level=excluded.level, at=excluded.at`),
+  stats: db.prepare(`SELECT COUNT(*) AS runs, COUNT(DISTINCT bird) AS birds, COALESCE(MAX(score),0) AS best, COALESCE(MAX(level),0) AS deepest, COALESCE(SUM(coins),0) AS coins FROM runs`),
   upsertProgress: db.prepare(`INSERT INTO progress (bird,level,score,coins,updated) VALUES (@bird,@level,@score,@coins,@updated)
     ON CONFLICT(bird) DO UPDATE SET level=MAX(level,excluded.level), score=MAX(score,excluded.score), coins=MAX(coins,excluded.coins), updated=excluded.updated`)
 };
@@ -71,6 +72,12 @@ module.exports = function handler(req, res, seg) {
 
   if (req.method === 'GET' && route === 'scores') {
     return json(res, 200, { scores: stmt.top.all() });
+  }
+
+  if (req.method === 'GET' && route === 'stats') {
+    const st = stmt.stats.get();
+    const birds = db.prepare('SELECT bird, MAX(score) AS score, MAX(level) AS level FROM runs GROUP BY bird ORDER BY score DESC LIMIT 10').all();
+    return json(res, 200, { stats: st, birds });
   }
 
   if (req.method === 'GET' && route === 'progress') {
