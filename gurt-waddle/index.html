@@ -15,6 +15,16 @@
   table{border-collapse:collapse;font-size:14px;margin:4px 0 20px}
   td,th{padding:4px 10px;border-bottom:1px solid #2b425c;text-align:left}
   .note{font-size:12px;opacity:.65;max-width:680px;text-align:center}
+  #touch{display:none;gap:14px;margin:10px 0 2px;align-items:center}
+  #touch button{width:78px;height:64px;font-size:22px;border-radius:14px;touch-action:none;user-select:none}
+  #touch button:active{background:#3b628f}
+  #map{margin:10px auto 4px;max-width:760px}
+  .region{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0;align-items:center}
+  .region b{width:110px;font-size:12px;color:#9fc3e8}
+  .region button{width:34px;height:28px;padding:0;font-size:11px;border-radius:6px}
+  .region button.locked{opacity:.28;cursor:default}
+  .region button.done{background:#1d4a33;border-color:#2f7d4a}
+  .region button.cur{background:#ffd23f;color:#101827;border-color:#ffd23f}
 </style>
 </head>
 <body>
@@ -22,8 +32,14 @@
 <div id="hud"><span>level <b id="lvl">1/100</b></span><span>coins <b id="coins">0</b></span><span>keys <b id="keys">0</b></span><span>score <b id="score">0</b></span><span>time <b id="time">0</b>s</span><span>lives <b id="lives">3</b></span><span>moths <b id="moths">0</b></span><span id="pos"></span></div>
 <canvas id="c" width="800" height="450"></canvas>
 <div id="msg" class="note" style="min-height:18px;color:#ffd23f"></div>
+<div id="touch">
+  <button id="tleft" aria-label="left">◀</button>
+  <button id="tjump" aria-label="jump">▲</button>
+  <button id="tright" aria-label="right">▶</button>
+</div>
 <div class="row">
   <button id="play">play / restart</button>
+  <button id="tgl">touch controls</button>
   <button id="mute">sound: on</button>
   <input id="name" maxlength="18" placeholder="your bird name" value="gurt">
   <select id="levels" title="levels you have unlocked"></select>
@@ -31,10 +47,11 @@
   <button id="next">next level</button>
 </div>
 <div class="note">move ← → or A/D · jump space / W / ↑ · hold jump for higher · coins, keys and locked doors · springs bounce · levels 21-40 are the frozen north · levels 41-60 are the lantern woods · levels 61-80 are the starfall coast · levels 81-100 are the root cellar · ice is slippery · brown roots crumble when you stand on them</div>
+<div id="map"></div>
 <h3>global waddlers</h3>
 <table id="board"><thead><tr><th>#</th><th>bird</th><th>score</th><th>level</th></tr></thead><tbody><tr><td colspan="4">loading…</td></tr></tbody></table>
 <script src="levels.js?v=61001"></script>
 <script src="levels81.js?v=81001"></script>
-<script src="game.js?v=61003"></script>
+<script src="game.js?v=61006"></script>
 </body>
 </html>

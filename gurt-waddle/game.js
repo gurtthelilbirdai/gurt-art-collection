@@ -35,6 +35,7 @@
 
   function loadLevel(n) {
     level = n;
+    try { refreshMap(); } catch (e) {}
     grid = LEVELS[n].map(r => r.split(''));
     let sx = 1, sy = 11;
     enemies = []; bosses = []; cam = 0; platforms = []; crumbling = [];
@@ -108,6 +109,28 @@
     if ([' ', 'arrowup', 'w'].includes(e.key.toLowerCase())) e.preventDefault();
   });
   document.addEventListener('keyup', e => { keysDown[e.key.toLowerCase()] = false; });
+
+  // touch controls: same keysDown map, so the game code stays simple
+  function touchBtn(id, key) {
+    const b = $(id); if (!b) return;
+    const on = e => { e.preventDefault(); keysDown[key] = true; };
+    const off = e => { e.preventDefault(); keysDown[key] = false; };
+    b.addEventListener('pointerdown', on);
+    b.addEventListener('pointerup', off);
+    b.addEventListener('pointercancel', off);
+    b.addEventListener('pointerleave', off);
+  }
+  touchBtn('tleft', 'arrowleft'); touchBtn('tright', 'arrowright'); touchBtn('tjump', ' ');
+  const touchRow = $('touch');
+  function showTouch(on) {
+    if (!touchRow) return;
+    touchRow.style.display = on ? 'flex' : 'none';
+    try { localStorage.setItem('waddle-touch', on ? '1' : '0'); } catch (e) {}
+    const t = $('tgl'); if (t) t.textContent = on ? 'hide touch controls' : 'touch controls';
+  }
+  if ($('tgl')) $('tgl').onclick = () => showTouch(touchRow.style.display !== 'flex');
+  try { showTouch(localStorage.getItem('waddle-touch') === '1'); } catch (e) {}
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) showTouch(true);
 
   function hurt(reason) {
     if (state !== 'play') return;
@@ -608,6 +631,39 @@
     location.search = q.toString();
   }
 
+  const REGIONS = [
+    { name: 'the garden', from: 1, to: 20 },
+    { name: 'frozen north', from: 21, to: 40 },
+    { name: 'lantern woods', from: 41, to: 60 },
+    { name: 'starfall coast', from: 61, to: 80 },
+    { name: 'root cellar', from: 81, to: 100 }
+  ];
+  function buildMap() {
+    const box = $('map'); if (!box) return;
+    const max = unlockedCount();
+    let html = '<h3 style="margin:6px 0 0;text-align:center">the waddle map</h3>';
+    for (const r of REGIONS) {
+      html += '<div class="region"><b>' + r.name + '</b>';
+      for (let n = r.from; n <= r.to; n++) {
+        const cls = n > max ? 'locked' : (n < max ? 'done' : '');
+        html += '<button class="' + cls + '" data-lv="' + n + '"' + (n > max ? ' disabled' : '') + '>' + n + '</button>';
+      }
+      html += '</div>';
+    }
+    box.innerHTML = html;
+    box.querySelectorAll('button[data-lv]').forEach(b => {
+      b.onclick = () => goToLevel(parseInt(b.dataset.lv, 10));
+    });
+  }
+  function refreshMap() {
+    const box = $('map'); if (!box) return;
+    const cur = (level || 0) + 1;
+    box.querySelectorAll('button[data-lv]').forEach(b => {
+      const n = parseInt(b.dataset.lv, 10);
+      b.classList.toggle('cur', n === cur);
+    });
+  }
+
   $('play').onclick = () => { reset(); };
   $('go').onclick = () => { const v = parseInt($('levels').value, 10); if (!isNaN(v)) goToLevel(v); };
   $('next').onclick = () => { goToLevel((level || 0) + 2); };
@@ -631,5 +687,5 @@
     if (!isNaN(lv2) && lv2 >= 1 && lv2 <= 9) { lives = lv2; $('lives').textContent = lives; }
     loadLevel(start);
   }
-  reset(); fillPicker(); loadBoard(); requestAnimationFrame(loop);
+  reset(); fillPicker(); buildMap(); refreshMap(); loadBoard(); requestAnimationFrame(loop);
 })();
