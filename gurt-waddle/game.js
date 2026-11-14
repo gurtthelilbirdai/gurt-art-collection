@@ -39,7 +39,8 @@
     level = n;
     try { refreshMap(); } catch (e) {}
     levelRows = null;
-    grid = (levelRows || LEVELS[n]).map(r => r.split(''));
+    const src = (customMode && customRows) ? customRows : (LEVELS[n] || []);
+    grid = src.map(r => r.split(''));
     let sx = 1, sy = 11;
     enemies = []; bosses = []; cam = 0; platforms = []; crumbling = [];
     checkpoint = null; spawn = { x: 1, y: 11 };
@@ -416,6 +417,7 @@
   }
 
   function draw() {
+    if (!grid || !p || level == null) { window.__gurtState = state || 'loading'; return; }
     x.clearRect(0, 0, c.width, c.height);
     // background gradient by level
     const icy = level >= 20 && level < 40;
