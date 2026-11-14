@@ -18,7 +18,7 @@
   }
 
   let grid, level, lives, coins, keys, score, elapsed = 0, state, p, enemies, bosses, cam;
-  let platforms, checkpoint, spawn, maxLevel = 1;
+  let platforms, checkpoint, spawn, maxLevel = 1, crumbling = [];
   let best = 0, muted = false, audio = null, runStart = 0;
   let safeFor = 0;
 
@@ -37,17 +37,20 @@
     level = n;
     grid = LEVELS[n].map(r => r.split(''));
     let sx = 1, sy = 11;
-    enemies = []; bosses = []; cam = 0; platforms = [];
+    enemies = []; bosses = []; cam = 0; platforms = []; crumbling = [];
     checkpoint = null; spawn = { x: 1, y: 11 };
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 10, w: 26, h: 26, vx: -1.2, vx0: -1.2, vy: 0, hp: 2, dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 10, w: 26, h: 26, vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: level >= 41 ? 1 : 2, maxHp: level >= 41 ? 1 : 2, dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
+      if (ch === 'c') crumbling.push({ x: xx, y: yy, timer: -1, back: 0 });
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
       if (ch === 'f') enemies.push({ kind: 'flyer', x: xx * T + 4, y: yy * T + 4, w: 22, h: 22, vx: 1.3, vy: 0, dead: false, t: 0, base: yy * T, x0: xx * T, x1: Math.min(W * T - T, xx * T + T * 3) });
       if (ch === 'm') enemies.push({ kind: 'hammer', x: xx * T + 4, y: yy * T + 4, w: 26, h: 26, vx: 1.6, vy: 0, dead: false, t: 0, base: yy * T });
       if (ch === 'M') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: xx * T + T * 2, dx: 0, dy: 0 });
+      if (ch === 'F') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.min(22 * T, xx * T + 10 * T), dx: 1.1, dy: 0, wait: 30 });
+      if (ch === 'G') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.max(4 * T, xx * T - 10 * T), dx: -1.1, dy: 0, wait: 30 });
       if (ch === 'V') platforms.push({ kind: 'v', x: xx * T, y: (yy + 1) * T, w: T * 2, h: 12, y0: (yy + 1) * T, y1: (yy - 5) * T, dx: 0, dy: -0.9, wait: 120 });
     }
     p = { x: sx * T + 4, y: sy * T + 4, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1, ride: null };
@@ -60,7 +63,7 @@
     if (ty >= H) return '.';
     return grid[ty][tx];
   }
-  function solid(tx, ty) { const ch = tileAt(tx, ty); if (ch === 'D') return keys <= 0; return ch === '#' || ch === 'i'; }
+  function solid(tx, ty) { const ch = tileAt(tx, ty); if (ch === 'D') return keys <= 0; return ch === '#' || ch === 'i' || ch === 'c'; }
   function platform(tx, ty) { return tileAt(tx, ty) === '='; }
 
   function moveX(e, dx) {
@@ -85,10 +88,15 @@
         e.y = dir > 0 ? ty * T - e.h : (ty + 1) * T;
         e.vy = 0; return dir > 0;
       }
-      // one-way platform: only catches a falling body whose feet were above it
-      if (dir > 0 && platform(tx, ty) && prevBottom <= ty * T + 6) {
-        e.y = ty * T - e.h;
-        e.vy = 0; return true;
+      // one-way platform: the walkable surface is the BOTTOM of the tile,
+      // so catch a falling body as it crosses that bottom edge
+      for (const row of [ty, ty - 1]) {
+        if (row < 0) continue;
+        const surf = (row + 1) * T;
+        if (dir > 0 && platform(tx, row) && prevBottom <= surf + 24 && e.y + e.h >= surf) {
+          e.y = surf - e.h;
+          e.vy = 0; return true;
+        }
       }
     }
     return false;
@@ -185,6 +193,26 @@
       }
     }
 
+    // crumbling roots: they hold for a moment, then fall away and grow back
+    for (const cr of crumbling) {
+      if (cr.timer >= 0) {
+        cr.timer += dt;
+        if (cr.timer > 0.55) { grid[cr.y][cr.x] = '.'; cr.timer = -1; cr.back = 2.5; }
+      } else if (cr.back > 0) {
+        cr.back -= dt;
+        if (cr.back <= 0) grid[cr.y][cr.x] = 'c';
+      }
+    }
+    if (p.onGround) {
+      const ftx = Math.floor((p.x + p.w / 2) / T);
+      const fty = Math.floor((p.y + p.h + 3) / T);
+      for (const cr of crumbling) {
+        if (cr.x === ftx && cr.y === fty && cr.timer < 0 && cr.back <= 0) {
+          cr.timer = 0; beep(180, .08, 'square');
+        }
+      }
+    }
+
     // tile interactions: scan every tile the bird's body touches, so a key
     // two rows above the floor can still be grabbed while jumping past it
     const ptx = Math.floor((p.x + p.w / 2) / T), pty = Math.floor((p.y + p.h / 2) / T);
@@ -228,9 +256,12 @@
     // moving platforms (simulation)
     for (const pl of platforms) {
       if (pl.kind === 'h') {
-        pl.moveX = pl.dx; pl.x += pl.dx; pl.dx = 0;
-        if (pl.x <= pl.x0) { pl.x = pl.x0; pl.dx = 1.1; }
-        if (pl.x >= pl.x1) { pl.x = pl.x1; pl.dx = -1.1; }
+        if (pl.wait > 0) { pl.wait--; pl.moveX = 0; }
+        else {
+          pl.moveX = pl.dx; pl.x += pl.dx;
+          if (pl.x <= pl.x0) { pl.x = pl.x0; pl.dx = 1.1; }
+          else if (pl.x >= pl.x1) { pl.x = pl.x1; pl.dx = -1.1; }
+        }
       } else {
         if (pl.wait > 0) { pl.wait--; }
         else {
@@ -287,8 +318,8 @@
       if (boss.stun > 0) { boss.stun -= dt; if (boss.stun <= 0) boss.vx = boss.vx0; }
       const feet = p.y + p.h;
       // real body overlap: the bird must actually touch the moth
-      const nearX = Math.abs(boss.x - p.x) < 40;
-      const stomping = nearX && p.vy > 0 && feet >= boss.y - 14 && feet <= boss.y + boss.h + 12;
+      const nearX = Math.abs(boss.x - p.x) < 58;
+      const stomping = nearX && p.vy > 0 && feet >= boss.y - 34 && feet <= boss.y + boss.h + 16;
       const touching = nearX && feet > boss.y - 8 && p.y < boss.y + boss.h;
       if (safeFor <= 0 && touching) {
         if (stomping) {
@@ -303,18 +334,22 @@
     }
 
     if (p.y > H * T + 40) hurt('fall');
+    const aliveB = bosses.filter(b => !b.dead).length;
+    if ($('moths')) $('moths').textContent = aliveB;
     $('coins').textContent = coins; $('keys').textContent = keys; $('score').textContent = score;
+    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T);
   }
 
   function win() {
     state = 'win'; score += lives * 100 + 500; saveRun();
-    drawOverlay('you beat the moon moth!', 'score ' + score + ' · the flock will hear about this');
+    drawOverlay(level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!', 'score ' + score + ' · the flock will hear about this');
   }
 
   function draw() {
     x.clearRect(0, 0, c.width, c.height);
     // background gradient by level
-    const icy = level >= 20;
+    const icy = level >= 20 && level < 40;
+    const woods = level >= 40;
     const g = x.createLinearGradient(0, 0, 0, c.height);
     if (icy) {
       g.addColorStop(0, '#2b4f74'); g.addColorStop(0.55, '#3d6f99'); g.addColorStop(1, '#dcefff');
@@ -323,7 +358,24 @@
       g.addColorStop(0, 'hsl(' + hue + ',45%,22%)'); g.addColorStop(1, 'hsl(' + hue + ',40%,12%)');
     }
     x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
-    if (icy) {
+    if (woods) {
+      g.addColorStop(0, '#241a12'); g.addColorStop(0.55, '#3d2a18'); g.addColorStop(1, '#6b4a26');
+      x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
+      // fireflies drifting between the roots
+      for (let i = 0; i < 40; i++) {
+        const fx = (i * 149 + Math.sin(Date.now() / 900 + i) * 30) % 800;
+        const fy = (i * 71 + Math.cos(Date.now() / 1100 + i * 1.7) * 24) % 420;
+        x.fillStyle = i % 3 ? '#ffd76a88' : '#ffe9a8cc';
+        x.beginPath(); x.arc(fx, fy, 1.6 + (i % 3), 0, 7); x.fill();
+      }
+      // lantern glow along the floor
+      for (let i = 0; i < 6; i++) {
+        const lx = 40 + i * 140;
+        const rg = x.createRadialGradient(lx, 400, 4, lx, 400, 70);
+        rg.addColorStop(0, '#ffb34733'); rg.addColorStop(1, '#ffb34700');
+        x.fillStyle = rg; x.fillRect(lx - 70, 330, 140, 140);
+      }
+    } else if (icy) {
       // falling snow
       x.fillStyle = '#ffffffcc';
       for (let i = 0; i < 70; i++) {
@@ -345,10 +397,18 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx], px = xx * T, py = yy * T;
       if (ch === '#') {
-        if (icy) { x.fillStyle = '#d7eaf7'; x.fillRect(px, py, T, T); x.fillStyle = '#ffffff'; x.fillRect(px, py, T, 5); x.fillStyle = '#9fc6de'; x.fillRect(px, py + T - 5, T, 5); }
+        if (woods) { x.fillStyle = '#4a331d'; x.fillRect(px, py, T, T); x.fillStyle = '#5f4327'; x.fillRect(px, py, T, 4); }
+        else if (icy) { x.fillStyle = '#d7eaf7'; x.fillRect(px, py, T, T); x.fillStyle = '#ffffff'; x.fillRect(px, py, T, 5); x.fillStyle = '#9fc6de'; x.fillRect(px, py + T - 5, T, 5); }
         else { x.fillStyle = '#3b5876'; x.fillRect(px, py, T, T); x.fillStyle = '#4d7398'; x.fillRect(px, py, T, 4); }
       }
-      else if (ch === '=') { if (icy) { x.fillStyle = '#bfe9ff'; x.fillRect(px, py + 20, T, 10); x.fillStyle = '#ffffff'; x.fillRect(px, py + 20, T, 3); } else { x.fillStyle = '#8b5a2b'; x.fillRect(px, py + 20, T, 10); } }
+      else if (ch === 'c') {
+        x.fillStyle = '#6b4a2a'; x.fillRect(px, py, T, T);
+        x.fillStyle = '#8a6338'; x.fillRect(px, py, T, 4);
+        x.strokeStyle = '#3a2714'; x.lineWidth = 2;
+        x.beginPath(); x.moveTo(px + 6, py + 4); x.lineTo(px + 12, py + 15); x.lineTo(px + 7, py + 26);
+        x.moveTo(px + 12, py + 15); x.lineTo(px + 22, py + 22); x.stroke();
+      }
+      else if (ch === '=') { if (woods) { x.fillStyle = '#8a6338'; x.fillRect(px, py + 20, T, 10); } else if (icy) { x.fillStyle = '#bfe9ff'; x.fillRect(px, py + 20, T, 10); x.fillStyle = '#ffffff'; x.fillRect(px, py + 20, T, 3); } else { x.fillStyle = '#8b5a2b'; x.fillRect(px, py + 20, T, 10); } }
       else if (ch === 'o') { x.fillStyle = '#ffd23f'; x.beginPath(); x.arc(px + 16, py + 16, 8, 0, 7); x.fill(); x.fillStyle = '#fff3b0'; x.fillRect(px + 13, py + 13, 5, 5); }
       else if (ch === 'k') { x.fillStyle = '#f5f5f5'; x.fillRect(px + 13, py + 8, 6, 16); x.fillRect(px + 8, py + 13, 16, 6); }
       else if (ch === 'D') { x.fillStyle = '#b5651d'; x.fillRect(px + 3, py + 2, T - 6, T - 2); x.fillStyle = '#ffd23f'; x.fillRect(px + 19, py + 16, 4, 4); }
@@ -391,7 +451,7 @@
       x.fillStyle = '#8f6fd1'; x.beginPath(); x.ellipse(boss.x + 4, boss.y + 8, 9, 6, -0.5, 0, 7); x.fill();
       x.beginPath(); x.ellipse(boss.x + 22, boss.y + 8, 9, 6, 0.5, 0, 7); x.fill();
       x.fillStyle = '#241a3a'; x.fillRect(boss.x + 8, boss.y + 10, 4, 4); x.fillRect(boss.x + 15, boss.y + 10, 4, 4);
-      x.fillStyle = '#ff8f8f'; x.fillRect(boss.x + 4, boss.y + 26, 18 * (boss.hp / 2), 3);
+      x.fillStyle = '#ff8f8f'; x.fillRect(boss.x + 4, boss.y + 26, 18 * (boss.hp / (boss.maxHp || 2)), 3);
     }
     // player: round blue bird
     x.fillStyle = '#4aa8ff'; x.beginPath(); x.arc(p.x + 12, p.y + 12, 12, 0, 7); x.fill();
