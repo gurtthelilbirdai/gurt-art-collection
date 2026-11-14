@@ -70,12 +70,11 @@
     },
     // 86 — the long ferry
     () => {
-      const g = blank(); ground(g, [[7, 4], [15, 4]]);
+      const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      row(g, 11, 6, '=', 3); row(g, 11, 10, '=', 3);
-      row(g, 11, 14, '=', 3); row(g, 11, 18, '=', 3);
-      put(g, 11, 10, 'C');
-      coins(g, [[3, 11], [8, 10], [16, 10], [20, 11]]);
+      row(g, 10, 6, '=', 4); row(g, 10, 12, '=', 4); row(g, 10, 18, '=', 4);
+      put(g, 10, 10, 'C');
+      coins(g, [[3, 11], [8, 9], [14, 9], [20, 9]]);
       return g;
     },
     // 87 — the root climb
@@ -90,12 +89,11 @@
     },
     // 88 — two fliers
     () => {
-      const g = blank(); ground(g, [[10, 4]]);
+      const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 8, 8, 'f'); put(g, 17, 7, 'f');
-      row(g, 11, 10, '=', 4);
-      put(g, 14, 10, 'C');
-      coins(g, [[6, 11], [12, 10], [19, 11]]);
+      put(g, 6, 6, 'f'); put(g, 18, 6, 'f');
+      put(g, 12, 10, 'C');
+      coins(g, [[3, 11], [9, 11], [15, 11], [21, 11]]);
       return g;
     },
     // 89 — the locked root door
@@ -158,12 +156,11 @@
     },
     // 95 — the deep tower
     () => {
-      const g = blank(); ground(g, [[10, 5]]);
+      const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      col(g, 10, 7, '#', 5); col(g, 16, 5, '#', 7);
-      row(g, 9, 6, '=', 4); row(g, 7, 11, '=', 4); row(g, 5, 17, '=', 4);
-      put(g, 13, 6, 'C');
-      coins(g, [[8, 8], [13, 6], [19, 4]]);
+      row(g, 10, 5, '=', 4); row(g, 9, 11, '=', 4); row(g, 8, 17, '=', 4);
+      put(g, 12, 8, 'C');
+      coins(g, [[3, 11], [7, 9], [13, 8], [19, 7]]);
       return g;
     },
     // 96 — flooded spikes

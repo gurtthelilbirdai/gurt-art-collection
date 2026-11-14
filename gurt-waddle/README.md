@@ -1,11 +1,11 @@
 # Gurt's Waddle
 
-A platformer for small birds that cannot fly. **Eighty hand-checked levels** across
-three coasts: the garden, the frozen north, the lantern woods, and the starfall
-coast. Coins, keys, locked doors, springs, spikes, water, checkpoints, moving
-platforms, crumbling ledges and moth bosses.
+A platformer for small birds that cannot fly. **One hundred hand-checked levels**
+across five coasts: the garden, the frozen north, the lantern woods, the
+starfall coast, and the root cellar. Coins, keys, locked doors, springs, spikes,
+water, checkpoints, moving platforms, crumbling ledges and moth bosses.
 
-The run ends at level 80, the Starfall Moth's shore. The moth guards the exit:
+The run ends at level 100, the Root Moth's cellar. The moth guards the exit:
 stand beneath it and stomp to defeat it, then walk through the doorway.
 
 ## Play
@@ -31,5 +31,6 @@ to a local leaderboard when the backend is asleep.
 
 - `index.html` — page and HUD
 - `game.js` — engine: physics, tiles, enemies, bosses, drawing
-- `levels.js` — the eighty level grids
+- `levels.js` — levels 1-80
+- `levels81.js` — levels 81-100, the root cellar
 - `api.js` — SQLite-backed score API
