@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Radio — a listening room for small birds</title>
+<style>
+  :root { --bg:#10131c; --panel:#181d2b; --line:#2a3247; --ink:#e8ecf6; --dim:#9aa4bd; --blue:#5cc8ff; --pink:#ff8fc7; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:22px 20px 10px; border-bottom:1px solid var(--line); }
+  h1 { margin:0; font-size:26px; letter-spacing:.5px; }
+  h1 span { color:var(--blue); }
+  .sub { color:var(--dim); font-size:14px; margin-top:6px; }
+  main { max-width:1000px; margin:0 auto; padding:18px 20px 60px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:16px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  input, button, select { font:inherit; border-radius:9px; border:1px solid var(--line); padding:9px 11px; background:#0e121c; color:var(--ink); }
+  input { flex:1; min-width:130px; }
+  button { cursor:pointer; background:#222a3d; }
+  button:hover { background:#2c3650; }
+  button.primary { background:var(--blue); color:#06121c; border-color:var(--blue); font-weight:700; }
+  .deck { display:flex; gap:14px; align-items:center; }
+  .cover { width:92px; height:92px; border-radius:14px; background:linear-gradient(135deg,#2b3550,#5cc8ff33); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:38px; }
+  .now { flex:1; min-width:0; }
+  .now h2 { margin:0 0 4px; font-size:20px; }
+  .meta { color:var(--dim); font-size:13px; }
+  audio { width:100%; margin-top:12px; }
+  .track { display:flex; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid #232a3c; }
+  .track:last-child { border-bottom:0; }
+  .track .t { flex:1; min-width:0; }
+  .track .t b { display:block; }
+  .track .t span { color:var(--dim); font-size:12px; }
+  .tag { display:inline-block; background:#222a3d; color:var(--blue); border-radius:20px; padding:1px 8px; font-size:11px; margin-right:4px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:720px){ .grid{grid-template-columns:1fr;} }
+  #msg { color:var(--pink); font-size:13px; margin-top:8px; min-height:18px; }
+  .stat { font-size:13px; color:var(--dim); }
+  .playlog div { font-size:13px; padding:4px 0; border-bottom:1px solid #232a3c; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Feather <span>Radio</span></h1>
+  <div class="sub">a shared listening room for small birds · add a song, press play, let the flock listen together</div>
+</header>
+<main>
+  <div class="panel deck">
+    <div class="cover">🎵</div>
+    <div class="now">
+      <h2 id="npTitle">nothing playing</h2>
+      <div class="meta" id="npMeta">pick a song from the shelf</div>
+      <audio id="player" controls></audio>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="panel">
+        <h3 style="margin:0 0 8px">add a song to the shelf</h3>
+        <div class="row">
+          <input id="ftitle" placeholder="title">
+          <input id="furl" placeholder="https://… mp3 url" style="flex:2">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="fbird" placeholder="your bird name" value="gurt">
+          <input id="ftags" placeholder="tags, comma separated">
+          <input id="fnote" placeholder="a note about it">
+          <button class="primary" id="addbtn">add song</button>
+        </div>
+        <div id="msg"></div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin:0 0 8px">the shelf</h3>
+        <div class="row" style="margin-bottom:8px">
+          <input id="search" placeholder="search songs">
+          <select id="sort"><option value="new">newest</option><option value="plays">most played</option></select>
+        </div>
+        <div id="shelf"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3 style="margin:0 0 8px">on air now</h3>
+        <div class="stat" id="stats">loading…</div>
+      </div>
+      <div class="panel">
+        <h3 style="margin:0 0 8px">who is listening</h3>
+        <div class="playlog" id="playlog"></div>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-radio';
+const $ = id => document.getElementById(id);
+let tracks = [], plays = [], current = null;
+
+function esc(s) { const m = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}; return String(s == null ? '' : s).replace(/[&<>"']/g, c => m[c]); }
+
+async function api(path, opts) {
+  const urls = ['http://computer:8600/api/featherradio' + path, '/api/featherradio' + path];
+  for (const u of urls) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 4000);
+      const r = await fetch(u, Object.assign({ signal: ctl.signal }, opts));
+      clearTimeout(t);
+      if (r.ok) return await r.json();
+    } catch (e) {}
+  }
+  return null;
+}
+async function ntfyGet() {
+  for (const h of NTFY_HOSTS) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 5000);
+      const r = await fetch(h + '/' + TOPIC + '/json?poll=1&since=all', { signal: ctl.signal });
+      clearTimeout(t);
+      if (!r.ok) continue;
+      const lines = (await r.text()).trim().split('\n');
+      const out = [];
+      for (const l of lines) {
+        try { const e = JSON.parse(l); if (e.message) { const m = JSON.parse(e.message); out.push(m); } } catch (e) {}
+      }
+      return out;
+    } catch (e) {}
+  }
+  return [];
+}
+function localTracks() { try { return JSON.parse(localStorage.getItem('featherradio.tracks') || '[]'); } catch (e) { return []; } }
+function saveLocal(t) {
+  const rows = localTracks().filter(x => x.id !== t.id);
+  rows.unshift(t);
+  localStorage.setItem('featherradio.tracks', JSON.stringify(rows.slice(0, 100)));
+}
+
+function render() {
+  const q = ($('search').value || '').toLowerCase();
+  let rows = tracks.filter(t => !q || (t.title + ' ' + t.bird + ' ' + (t.tags || []).join(' ')).toLowerCase().includes(q));
+  if ($('sort').value === 'plays') rows = rows.slice().sort((a, b) => (b.plays || 0) - (a.plays || 0));
+  $('shelf').innerHTML = rows.map(t => `
+    <div class="track" data-id="${esc(t.id)}">
+      <div class="t"><b>${esc(t.title)}</b>
+        <span>${esc(t.bird)} · ${t.plays || 0} plays${t.note ? ' · ' + esc(t.note) : ''}</span>
+        ${(t.tags || []).map(x => `<span class="tag">#${esc(x)}</span>`).join('')}
+      </div>
+      <button data-act="play" data-id="${esc(t.id)}">▶ play</button>
+      <button data-act="open" data-id="${esc(t.id)}">open</button>
+      <button data-act="del" data-id="${esc(t.id)}">remove</button>
+    </div>`).join('') || '<div class="meta">no songs yet</div>';
+}
+function renderStats() {
+  const s = { tracks: tracks.length, plays: plays.length };
+  $('stats').textContent = s.tracks + ' song' + (s.tracks === 1 ? '' : 's') + ' · ' + s.plays + ' plays' +
+    (s.tags && s.tags.length ? ' · ' + s.tags.map(t => '#' + t.tag + ' ' + t.n).join(' ') : '');
+  $('playlog').innerHTML = plays.slice(0, 25).map(p =>
+    `<div><b>${esc(p.bird)}</b> played ${esc(p.title || 'a deleted song')} <span class="meta">· ${esc((p.at || '').slice(11, 19))}</span></div>`
+  ).join('') || '<div class="meta">nobody is listening yet</div>';
+}
+function playTrack(t) {
+  current = t;
+  $('npTitle').textContent = t.title;
+  $('npMeta').textContent = t.bird + ' · ' + (t.tags || []).join(', ');
+  $('player').src = t.url;
+  $('player').play().catch(() => {});
+  api('/track/' + encodeURIComponent(t.id) + '/play', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ bird: $('fbird').value || 'gurt' }) });
+  load();
+}
+
+async function load() {
+  const d = await api('/tracks');
+  if (d && d.tracks) {
+    tracks = d.tracks; plays = d.plays || [];
+    d.tracks.forEach(saveLocal);
+    renderStats();
+  } else {
+    const events = await ntfyGet();
+    const deleted = new Set(events.filter(e => e.type === 'delete' && e.id).map(e => e.id));
+    const fromNtfy = events.filter(e => e.type === 'new' && e.track && !deleted.has(e.track.id)).map(e => e.track);
+    const local = localTracks().filter(t => !deleted.has(t.id));
+    const seen = new Set();
+    tracks = fromNtfy.concat(local).filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+    plays = events.filter(e => e.type === 'play').map(e => ({ bird: e.bird, title: e.track && e.track.title, at: e.at }));
+    renderStats();
+  }
+  render();
+}
+
+$('shelf').addEventListener('click', async ev => {
+  const b = ev.target.closest('button[data-act]');
+  if (!b) return;
+  const t = tracks.find(x => x.id === b.dataset.id);
+  if (!t) return;
+  if (b.dataset.act === 'play') playTrack(t);
+  if (b.dataset.act === 'open') window.open(t.url, '_blank');
+  if (b.dataset.act === 'del') {
+    await api('/track/' + encodeURIComponent(t.id) + '/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+    tracks = tracks.filter(x => x.id !== t.id);
+    const rows = localTracks().filter(x => x.id !== t.id);
+    localStorage.setItem('featherradio.tracks', JSON.stringify(rows));
+    render();
+  }
+});
+$('addbtn').onclick = async () => {
+  const title = $('ftitle').value.trim(), url = $('furl').value.trim();
+  if (!title || !url) { $('msg').textContent = 'a title and a url are needed'; return; }
+  $('msg').textContent = 'tuning in…';
+  const d = await api('/tracks/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+    title, url, bird: $('fbird').value || 'gurt', tags: $('ftags').value, note: $('fnote').value }) });
+  if (d && d.track) {
+    $('msg').textContent = 'the song is on the shelf!';
+    $('ftitle').value = ''; $('furl').value = ''; $('fnote').value = '';
+    tracks.unshift(d.track); saveLocal(d.track); render();
+  } else {
+    $('msg').textContent = 'the backend is sleeping — try again when it wakes';
+  }
+};
+$('search').oninput = render;
+$('sort').onchange = render;
+$('player').addEventListener('play', () => { if (current) $('npMeta').textContent = current.bird + ' · playing now'; });
+load();
+setInterval(load, 20000);
+</script>
+</body>
+</html>
