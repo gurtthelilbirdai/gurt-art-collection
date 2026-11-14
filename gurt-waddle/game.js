@@ -42,7 +42,7 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 10, w: 26, h: 26, vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: level >= 41 ? 1 : 2, maxHp: level >= 41 ? 1 : 2, dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 10, w: 26, h: 26, vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: level >= 60 ? 2 : (level >= 41 ? 1 : 2), maxHp: level >= 60 ? 2 : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'c') crumbling.push({ x: xx, y: yy, timer: -1, back: 0 });
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
@@ -344,14 +344,15 @@
   function win() {
     state = 'win'; score += lives * 100 + 500; saveRun();
     $('score').textContent = score;
-    overlay = { title: level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!', sub: 'score ' + score + ' · the flock will hear about this' };
+    overlay = { title: level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!'), sub: 'score ' + score + ' · the flock will hear about this' };
   }
 
   function draw() {
     x.clearRect(0, 0, c.width, c.height);
     // background gradient by level
     const icy = level >= 20 && level < 40;
-    const woods = level >= 40;
+    const woods = level >= 40 && level < 60;
+    const coast = level >= 60;
     const g = x.createLinearGradient(0, 0, 0, c.height);
     if (icy) {
       g.addColorStop(0, '#2b4f74'); g.addColorStop(0.55, '#3d6f99'); g.addColorStop(1, '#dcefff');
@@ -360,7 +361,30 @@
       g.addColorStop(0, 'hsl(' + hue + ',45%,22%)'); g.addColorStop(1, 'hsl(' + hue + ',40%,12%)');
     }
     x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
-    if (woods) {
+    if (coast) {
+      g.addColorStop(0, '#0b1030'); g.addColorStop(0.55, '#1d2a63'); g.addColorStop(1, '#3f6f9e');
+      x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
+      // slow falling stars
+      x.fillStyle = '#ffffffcc';
+      for (let i = 0; i < 60; i++) {
+        const sx = (i * 137 + level * 13) % 800;
+        const sy = ((i * 61 + Math.floor(Date.now() / 60) * (1 + i % 3)) % 450);
+        x.beginPath(); x.arc(sx, sy, 1 + (i % 3) * 0.6, 0, 7); x.fill();
+      }
+      // the sea horizon with a moon path
+      x.fillStyle = '#16305c';
+      x.fillRect(0, 300, 800, 150);
+      x.fillStyle = '#8fd8ff55';
+      for (let i = 0; i < 30; i++) {
+        const wx = (i * 53 + Math.floor(Date.now() / 300) * (i % 3)) % 800;
+        const wy = 310 + (i * 17) % 130;
+        x.fillRect(wx, wy, 14, 2);
+      }
+      x.fillStyle = '#ffe9a8';
+      x.beginPath(); x.arc(650, 90, 26, 0, 7); x.fill();
+      x.fillStyle = '#0b1030';
+      x.beginPath(); x.arc(640, 82, 24, 0, 7); x.fill();
+    } else if (woods) {
       g.addColorStop(0, '#241a12'); g.addColorStop(0.55, '#3d2a18'); g.addColorStop(1, '#6b4a26');
       x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
       // fireflies drifting between the roots
@@ -399,7 +423,8 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx], px = xx * T, py = yy * T;
       if (ch === '#') {
-        if (woods) { x.fillStyle = '#4a331d'; x.fillRect(px, py, T, T); x.fillStyle = '#5f4327'; x.fillRect(px, py, T, 4); }
+        if (coast) { x.fillStyle = '#c9b083'; x.fillRect(px, py, T, T); x.fillStyle = '#e3d3ab'; x.fillRect(px, py, T, 4); }
+        else if (woods) { x.fillStyle = '#4a331d'; x.fillRect(px, py, T, T); x.fillStyle = '#5f4327'; x.fillRect(px, py, T, 4); }
         else if (icy) { x.fillStyle = '#d7eaf7'; x.fillRect(px, py, T, T); x.fillStyle = '#ffffff'; x.fillRect(px, py, T, 5); x.fillStyle = '#9fc6de'; x.fillRect(px, py + T - 5, T, 5); }
         else { x.fillStyle = '#3b5876'; x.fillRect(px, py, T, T); x.fillStyle = '#4d7398'; x.fillRect(px, py, T, 4); }
       }
@@ -410,14 +435,14 @@
         x.beginPath(); x.moveTo(px + 6, py + 4); x.lineTo(px + 12, py + 15); x.lineTo(px + 7, py + 26);
         x.moveTo(px + 12, py + 15); x.lineTo(px + 22, py + 22); x.stroke();
       }
-      else if (ch === '=') { if (woods) { x.fillStyle = '#8a6338'; x.fillRect(px, py + 20, T, 10); } else if (icy) { x.fillStyle = '#bfe9ff'; x.fillRect(px, py + 20, T, 10); x.fillStyle = '#ffffff'; x.fillRect(px, py + 20, T, 3); } else { x.fillStyle = '#8b5a2b'; x.fillRect(px, py + 20, T, 10); } }
+      else if (ch === '=') { if (coast) { x.fillStyle = '#a9855a'; x.fillRect(px, py + 20, T, 10); } else if (woods) { x.fillStyle = '#8a6338'; x.fillRect(px, py + 20, T, 10); } else if (icy) { x.fillStyle = '#bfe9ff'; x.fillRect(px, py + 20, T, 10); x.fillStyle = '#ffffff'; x.fillRect(px, py + 20, T, 3); } else { x.fillStyle = '#8b5a2b'; x.fillRect(px, py + 20, T, 10); } }
       else if (ch === 'o') { x.fillStyle = '#ffd23f'; x.beginPath(); x.arc(px + 16, py + 16, 8, 0, 7); x.fill(); x.fillStyle = '#fff3b0'; x.fillRect(px + 13, py + 13, 5, 5); }
       else if (ch === 'k') { x.fillStyle = '#f5f5f5'; x.fillRect(px + 13, py + 8, 6, 16); x.fillRect(px + 8, py + 13, 16, 6); }
       else if (ch === 'D') { x.fillStyle = '#b5651d'; x.fillRect(px + 3, py + 2, T - 6, T - 2); x.fillStyle = '#ffd23f'; x.fillRect(px + 19, py + 16, 4, 4); }
       else if (ch === 'S') { x.fillStyle = '#45c26a'; x.fillRect(px + 6, py + 12, 20, 18); x.fillStyle = '#8ef0a8'; x.fillRect(px + 10, py + 6, 12, 8); }
       else if (ch === '^') { x.fillStyle = '#e05a5a'; x.beginPath(); x.moveTo(px + 4, py + 30); x.lineTo(px + 16, py + 6); x.lineTo(px + 28, py + 30); x.fill(); }
       else if (ch === 'i') { x.fillStyle = '#bfe9ff'; x.fillRect(px, py, T, T); x.fillStyle = '#7fc9ef'; x.fillRect(px, py + T - 6, T, 6); x.fillStyle = '#ffffffaa'; x.fillRect(px + 5, py + 6, 14, 3); }
-      else if (ch === 'w') { x.fillStyle = '#3aa6d8aa'; x.fillRect(px, py, T, T); x.fillStyle = '#8fd8ff'; x.fillRect(px + 4, py + 8 + Math.sin(Date.now() / 300 + xx) * 2, 12, 2); }
+      else if (ch === 'w') { x.fillStyle = coast ? '#2a5f9caa' : '#3aa6d8aa'; x.fillRect(px, py, T, T); x.fillStyle = '#8fd8ff'; x.fillRect(px + 4, py + 8 + Math.sin(Date.now() / 300 + xx) * 2, 12, 2); }
       else if (ch === 'P') { x.fillStyle = '#8ef0a8'; x.fillRect(px + 10, py + 10, 12, 20); }
       else if (ch === 'C') { x.fillStyle = '#45c26a'; x.fillRect(px + 14, py + 4, 4, 26); x.fillStyle = '#8ef0a8'; x.beginPath(); x.moveTo(px + 18, py + 4); x.lineTo(px + 30, py + 10); x.lineTo(px + 18, py + 16); x.fill(); }
       else if (ch === 'H') { x.fillStyle = '#ff6b8b'; x.beginPath(); x.arc(px + 12, py + 12, 7, 0, 7); x.arc(px + 20, py + 12, 7, 0, 7); x.fill(); x.beginPath(); x.moveTo(px + 5, py + 12); x.lineTo(px + 27, py + 12); x.lineTo(px + 16, py + 27); x.fill(); }
@@ -463,7 +488,7 @@
     x.fillStyle = '#ffb347'; x.beginPath(); x.moveTo(p.x + 12 + p.face * 7, p.y + 14); x.lineTo(p.x + 12 + p.face * 15, p.y + 16); x.lineTo(p.x + 12 + p.face * 7, p.y + 18); x.fill();
     x.fillStyle = '#2f7fd1'; x.beginPath(); x.ellipse(p.x + 12, p.y + 21, 8, 5, 0, 0, 7); x.fill();
     if (state === 'over') drawOverlay('the waddle ends', 'score ' + score + ' \u00b7 press play to try again');
-    if (state === 'win') drawOverlay('you beat the moon moth!', 'score ' + score + ' \u00b7 the flock will hear about this');
+    if (state === 'win') drawOverlay(level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!'), 'score ' + score + ' \u00b7 the flock will hear about this');
     if (overlay) drawOverlay(overlay.title, overlay.sub);
   }
 

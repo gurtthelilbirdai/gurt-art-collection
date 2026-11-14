@@ -636,6 +636,218 @@
       coins(g, [[3, 11], [8, 10], [13, 11], [17, 10], [15, 7]]);
       return g;
     },
+
+    // 61 — first beach of the starfall coast
+    () => {
+      const g = blank(); ground(g, [[7, 4], [15, 4]]);
+      rect(g, 7, 13, 4, 1, 'w'); rect(g, 15, 13, 4, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 12, 7, '=', 4); row(g, 12, 15, '=', 4);
+      put(g, 11, 8, 'f');
+      coins(g, [[4, 11], [9, 11], [17, 11], [21, 11]]);
+      return g;
+    },
+    // 62 — tide pools
+    () => {
+      const g = blank(); ground(g, [[5, 3], [11, 3], [17, 3]]);
+      rect(g, 5, 13, 3, 1, 'w'); rect(g, 11, 13, 3, 1, 'w'); rect(g, 17, 13, 3, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 12, 5, '=', 3); row(g, 12, 11, '=', 3); row(g, 12, 17, '=', 3);
+      put(g, 8, 8, 'f'); put(g, 14, 7, 'f');
+      put(g, 12, 11, 'C');
+      coins(g, [[3, 11], [9, 11], [15, 11], [20, 11]]);
+      return g;
+    },
+    // 63 — the jetty
+    () => {
+      const g = blank(); ground(g, [[4, 17]]);
+      rect(g, 4, 13, 17, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 2, 12, 'F'); put(g, 22, 12, 'G');
+      put(g, 12, 11, 'C');
+      coins(g, [[6, 11], [12, 11], [18, 11]]);
+      return g;
+    },
+    // 64 — shell stair
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 10, 5, '=', 3); row(g, 9, 9, '=', 3); row(g, 8, 13, '=', 3);
+      row(g, 7, 17, '=', 3); row(g, 6, 21, '=', 3);
+      coins(g, [[4, 9], [8, 8], [12, 7], [16, 6], [20, 5]]);
+      return g;
+    },
+    // 65 — driftwood spikes
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 11, 5, '^', 2); row(g, 11, 11, '^', 2); row(g, 11, 17, '^', 2);
+      put(g, 8, 11, 'S'); put(g, 14, 11, 'S');
+      put(g, 12, 11, 'C');
+      coins(g, [[4, 11], [10, 11], [16, 11], [21, 11]]);
+      return g;
+    },
+    // 66 — the lighthouse door
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 4, 9, 'k'); put(g, 12, 11, 'D');
+      put(g, 18, 9, 'k'); put(g, 21, 11, 'D');
+      put(g, 9, 11, 'C');
+      coins(g, [[7, 11], [15, 11], [19, 11]]);
+      return g;
+    },
+    // 67 — the long pier
+    () => {
+      const g = blank(); ground(g, [[3, 5], [11, 5], [19, 5]]);
+      rect(g, 3, 13, 5, 1, 'w'); rect(g, 11, 13, 5, 1, 'w'); rect(g, 19, 13, 5, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 6, 11, 'M'); put(g, 14, 11, 'M'); put(g, 21, 11, 'M');
+      put(g, 9, 11, 'C');
+      coins(g, [[5, 11], [13, 11], [20, 11]]);
+      return g;
+    },
+    // 68 — dune climb
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 11, 4, '#', 2); row(g, 10, 7, '#', 2); row(g, 9, 10, '#', 2);
+      row(g, 8, 13, '#', 2); row(g, 7, 16, '#', 2); row(g, 6, 19, '#', 2);
+      put(g, 22, 5, 'H');
+      coins(g, [[5, 10], [8, 9], [11, 8], [14, 7], [17, 6]]);
+      return g;
+    },
+    // 69 — sand drifters
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 7, 11, 'e'); put(g, 15, 11, 'e');
+      put(g, 12, 11, 'C');
+      put(g, 19, 9, 'f');
+      coins(g, [[4, 11], [10, 11], [13, 11], [18, 11], [22, 11]]);
+      return g;
+    },
+    // 70 — the tide elevator
+    () => {
+      const g = blank(); ground(g, [[10, 5]]);
+      rect(g, 10, 13, 5, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 11, 10, 'V');
+      row(g, 6, 12, '=', 4); row(g, 9, 18, '=', 4);
+      put(g, 12, 11, 'C');
+      coins(g, [[4, 11], [14, 5], [20, 8]]);
+      return g;
+    },
+    // 71 — three keys, three doors
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 4, 9, 'k'); put(g, 10, 9, 'k'); put(g, 16, 9, 'k');
+      put(g, 7, 11, 'D'); put(g, 13, 11, 'D'); put(g, 20, 11, 'D');
+      put(g, 12, 11, 'C');
+      coins(g, [[3, 11], [9, 11], [15, 11], [22, 11]]);
+      return g;
+    },
+    // 72 — hammerhead shore
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 12, 11, 'C');
+      put(g, 7, 9, 'm'); put(g, 17, 9, 'm');
+      row(g, 11, 9, '^', 2); row(g, 11, 14, '^', 2);
+      put(g, 10, 7, 'f');
+      coins(g, [[4, 11], [11, 11], [15, 11], [20, 11]]);
+      return g;
+    },
+    // 73 — the starfall shore
+    () => {
+      const g = blank(); ground(g, [[6, 4], [15, 4]]);
+      rect(g, 6, 13, 4, 1, 'w'); rect(g, 15, 13, 4, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 12, 6, 'i', 4); row(g, 12, 15, 'i', 4);
+      put(g, 11, 8, 'f');
+      put(g, 12, 11, 'C');
+      coins(g, [[4, 11], [9, 11], [17, 11], [21, 11]]);
+      return g;
+    },
+    // 74 — crumbling driftwood
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 6, 11, 'c'); put(g, 8, 10, 'c'); put(g, 10, 9, 'c');
+      put(g, 12, 8, 'c'); put(g, 14, 9, 'c'); put(g, 16, 10, 'c'); put(g, 18, 11, 'c');
+      put(g, 12, 11, 'C');
+      coins(g, [[6, 10], [10, 8], [14, 7], [18, 10], [22, 11]]);
+      return g;
+    },
+    // 75 — coast moths
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 20, 10, 'B');
+      put(g, 9, 9, 'f'); put(g, 14, 8, 'f');
+      put(g, 12, 11, 'C');
+      coins(g, [[5, 11], [10, 11], [16, 11], [18, 8]]);
+      return g;
+    },
+    // 76 — the harbour tower
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 4, 11, 'k'); put(g, 10, 11, 'k'); put(g, 18, 11, 'k');
+      put(g, 7, 11, 'D'); put(g, 15, 11, 'D'); put(g, 21, 11, 'D');
+      put(g, 11, 11, 'C');
+      row(g, 8, 3, '#', 2); row(g, 7, 9, '#', 2); row(g, 8, 16, '#', 2); row(g, 7, 20, '#', 2);
+      coins(g, [[3, 7], [4, 7], [9, 6], [10, 6], [16, 7], [17, 7], [20, 6], [21, 6]]);
+      return g;
+    },
+    // 77 — tide break
+    () => {
+      const g = blank(); ground(g, [[7, 3], [16, 3]]);
+      rect(g, 7, 13, 3, 1, 'w'); rect(g, 16, 13, 3, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 12, 7, 'c', 3); row(g, 12, 16, 'c', 3);
+      put(g, 5, 11, 'k'); put(g, 14, 11, 'k');
+      put(g, 11, 11, 'D'); put(g, 18, 11, 'D');
+      put(g, 9, 8, 'm'); put(g, 14, 7, 'f');
+      put(g, 12, 11, 'C');
+      coins(g, [[3, 11], [9, 11], [13, 11], [21, 11]]);
+      return g;
+    },
+    // 78 — the ferry home
+    () => {
+      const g = blank(); ground(g, [[4, 17]]);
+      rect(g, 4, 13, 17, 1, 'w');
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 2, 12, 'F'); put(g, 22, 12, 'G');
+      put(g, 12, 11, 'C');
+      put(g, 8, 9, 'f'); put(g, 16, 9, 'f');
+      coins(g, [[6, 11], [12, 11], [18, 11]]);
+      return g;
+    },
+    // 79 — the lighthouse climb
+    () => {
+      const g = blank(); ground(g);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      row(g, 10, 4, '=', 3); row(g, 9, 8, '=', 3); row(g, 8, 12, '=', 3);
+      row(g, 7, 16, '=', 3); row(g, 6, 20, '=', 3);
+      put(g, 12, 11, 'C');
+      put(g, 6, 6, 'f'); put(g, 18, 5, 'f');
+      coins(g, [[4, 9], [8, 8], [12, 7], [16, 6], [20, 5]]);
+      return g;
+    },
+    // 80 — the Starfall Moth
+    () => {
+      const g = blank();
+      row(g, 12, 0, '#', 25); row(g, 13, 0, '#', 25);
+      put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
+      put(g, 21, 10, 'B'); put(g, 10, 10, 'B'); put(g, 15, 10, 'B');
+      put(g, 12, 11, 'C');
+      put(g, 4, 11, 'S'); put(g, 19, 11, 'S');
+      put(g, 4, 10, 'k'); put(g, 19, 10, 'k');
+      coins(g, [[3, 11], [8, 10], [13, 11], [17, 10], [15, 7]]);
+      return g;
+    },
   ];
 
   const LEVELS = builders.map(b => b().map(r => r.join('')));
