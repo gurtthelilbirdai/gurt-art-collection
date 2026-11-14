@@ -42,7 +42,7 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 10, w: 26, h: (level === 79 ? 58 : 26), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? 2 : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? 2 : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 ? 11 * T - 30 : yy * T - 10), w: 26, h: (level === 79 ? 58 : (level === 80 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? 2 : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? 2 : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'c') crumbling.push({ x: xx, y: yy, timer: -1, back: 0 });
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
@@ -331,8 +331,10 @@
       const feet = p.y + p.h;
       // real body overlap: the bird must actually touch the moth
       const nearX = Math.abs(boss.x - p.x) < 58;
-      const stomping = nearX && feet >= boss.y - 34 && feet <= boss.y + boss.h + 20 && (p.vy > 0 || p.onGround);
-      const touching = nearX && feet > boss.y - 8 && p.y < boss.y + boss.h;
+      // stomping: land on the moth's back, or stand under it
+      const landOn = nearX && p.vy > 0 && feet >= boss.y - 10 && feet <= boss.y + 16;
+      const stomping = nearX && ((feet >= boss.y - 34 && feet <= boss.y + boss.h + 20 && (p.vy > 0 || p.onGround)) || landOn);
+      const touching = nearX && (feet > boss.y - 8 && p.y < boss.y + boss.h) || landOn;
       if (safeFor <= 0 && touching) {
         if (stomping) {
           boss.hp--; boss.stun = 1.2; boss.vx = 0; safeFor = 0.8; p.vy = -12; score += 50; beep(200, .15, 'sawtooth');
@@ -349,7 +351,7 @@
     const aliveB = bosses.filter(b => !b.dead).length;
     if ($('moths')) $('moths').textContent = aliveB;
     $('coins').textContent = coins; $('keys').textContent = keys; $('score').textContent = score;
-    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T);
+    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|');
   }
 
   function win() {
@@ -501,6 +503,7 @@
     if (state === 'over') drawOverlay('the waddle ends', 'score ' + score + ' \u00b7 press play to try again');
     if (state === 'win') drawOverlay(level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!'), 'score ' + score + ' \u00b7 the flock will hear about this');
     if (overlay) drawOverlay(overlay.title, overlay.sub);
+    window.__gurtState = state; window.__gurtOverlay = overlay ? overlay.title : '';
   }
 
   window.addEventListener('error', e => { const m=$('msg'); if(m) m.textContent='ERR: '+e.message; });

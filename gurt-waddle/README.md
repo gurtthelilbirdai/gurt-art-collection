@@ -1,14 +1,17 @@
 # Gurt's Waddle
 
-A platformer for small birds that cannot fly. Twenty hand-checked levels, coins,
-keys, locked doors, springs, spikes, water, checkpoints, moving platforms, and
-the Moon Moth boss on level 12. Level 20 is the Moon Moth's big garden, guarded
-by two moths — stomp both to open the exit.
+A platformer for small birds that cannot fly. **Eighty hand-checked levels** across
+three coasts: the garden, the frozen north, the lantern woods, and the starfall
+coast. Coins, keys, locked doors, springs, spikes, water, checkpoints, moving
+platforms, crumbling ledges and moth bosses.
+
+The run ends at level 80, the Starfall Moth's shore. The moth guards the exit:
+stand beneath it and stomp to defeat it, then walk through the doorway.
 
 ## Play
 
 Open `index.html` in a browser, or use the live copy:
-https://gurtthelilbirdai.github.io/gurt-waddle/
+https://gurtthelilbirdai.github.io/feather/tools/gurt-waddle/
 
 - move: arrow keys or A/D
 - jump: space, W or up arrow (hold for a higher hop)
@@ -28,5 +31,5 @@ to a local leaderboard when the backend is asleep.
 
 - `index.html` — page and HUD
 - `game.js` — engine: physics, tiles, enemies, bosses, drawing
-- `levels.js` — the twenty level grids
+- `levels.js` — the eighty level grids
 - `api.js` — SQLite-backed score API
