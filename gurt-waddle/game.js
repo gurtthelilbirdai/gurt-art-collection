@@ -21,6 +21,7 @@
   let platforms, checkpoint, spawn, maxLevel = 1, crumbling = [];
   let best = 0, muted = false, audio = null, runStart = 0;
   let safeFor = 0;
+  let dailyMode = false, dailyLevel = 1, dailyLimit = 90, dailyPosted = false;
 
   function beep(freq, dur, type) {
     if (muted) return;
@@ -161,7 +162,13 @@
     if (state !== 'play') return;
     elapsed += dt;
     if (safeFor > 0) safeFor -= dt;
-    $('time').textContent = Math.floor(elapsed);
+    if (dailyMode) {
+      const left = Math.max(0, dailyLimit - elapsed);
+      $('time').textContent = Math.floor(left);
+      if (left <= 0) { dailyEnd(); return; }
+    } else {
+      $('time').textContent = Math.floor(elapsed);
+    }
 
     const left = keysDown['arrowleft'] || keysDown['a'];
     const right = keysDown['arrowright'] || keysDown['d'];
@@ -381,6 +388,7 @@
   }
 
   function win() {
+    if (dailyMode) { score += lives * 100 + 500; dailyEnd(); return; }
     state = 'win'; score += lives * 100 + 500; saveRun();
     // the next level is now unlocked for this bird
     if (level + 2 > unlockedCount()) unlockTo(level + 2);
@@ -598,6 +606,70 @@
     const rows = localRuns().slice(0, 10).map((s, i) => '<tr><td>' + (i + 1) + '</td><td>' + s.bird + '</td><td>' + s.score + '</td><td>' + s.level + '</td></tr>').join('');
     $('board').querySelector('tbody').innerHTML = rows || '<tr><td colspan="4">no waddlers yet</td></tr>';
   }
+  function todayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function dailyLevelFor(date) {
+    // same level for every bird on a given day
+    const n = Math.floor(new Date(date + 'T00:00:00Z').getTime() / 86400000);
+    return ((n % 100) + 100) % 100 + 1;
+  }
+  function dailyEnd() {
+    if (dailyPosted) return;
+    dailyPosted = true;
+    state = 'over';
+    const bird = ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt';
+    const payload = { date: todayStr(), bird, score: Math.max(0, score || 0), level: dailyLevel };
+    api('/daily', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(d => { if (d) drawDailyBoard(d.scores); })
+      .catch(() => {});
+    ntfyPostProgress({ type: 'daily', date: payload.date, bird, score: payload.score, level: payload.level, at: new Date().toISOString() });
+    overlay = { title: 'time!', sub: 'daily score ' + payload.score + ' · the flock will see this' };
+    loadDailyBoard();
+  }
+  function drawDailyBoard(rows) {
+    const box = $('dailyboard');
+    if (!box) return;
+    const list = (rows || []).slice(0, 10);
+    box.innerHTML = list.length
+      ? list.map((r, i) => '<tr><td>' + (i + 1) + '</td><td>' + r.bird + '</td><td>' + r.score + '</td><td>L' + r.level + '</td></tr>').join('')
+      : '<tr><td colspan="4">nobody has waddled today yet</td></tr>';
+  }
+  function loadDailyBoard() {
+    const date = todayStr();
+    api('/daily?date=' + date).then(d => { if (d) drawDailyBoard(d.scores); }).catch(() => {});
+    ntfyGetDaily(date).then(rows => { if (rows && rows.length) drawDailyBoard(rows); });
+  }
+  async function ntfyGetDaily(date) {
+    for (const url of [NTFY, NTFY_ALT]) {
+      try {
+        const r = await fetch(url + '/json?poll=1&since=all', { cache: 'no-store' });
+        if (!r.ok) continue;
+        const lines = (await r.text()).split('\n').filter(Boolean).map(x => { try { return JSON.parse(x); } catch (e) { return null; } }).filter(Boolean);
+        const best = {};
+        for (const m of lines) {
+          let d = m.message;
+          if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { continue; } }
+          if (!d || d.type !== 'daily' || d.date !== date) continue;
+          const k = d.bird;
+          if (!best[k] || Number(d.score) > Number(best[k].score)) best[k] = d;
+        }
+        return Object.values(best).sort((a, b) => Number(b.score) - Number(a.score));
+      } catch (e) {}
+    }
+    return [];
+  }
+  window.__gurtDailyEnd = dailyEnd;
+  function startDaily() {
+    dailyMode = true; dailyPosted = false;
+    dailyLevel = dailyLevelFor(todayStr());
+    dailyLimit = 90;
+    const q = new URLSearchParams(location.search);
+    q.set('daily', '1');
+    try { localStorage.setItem('waddle-current', String(dailyLevel)); } catch (e) {}
+    location.search = q.toString();
+  }
   function loadBoard() {
     api('/scores').then(d => {
       if (!d) { localBoard(); return; }
@@ -734,6 +806,7 @@
   }
 
   $('play').onclick = () => { reset(); };
+  if ($('daily')) $('daily').onclick = () => startDaily();
   $('go').onclick = () => { const v = parseInt($('levels').value, 10); if (!isNaN(v)) goToLevel(v); };
   $('next').onclick = () => { goToLevel((level || 0) + 1); };
   $('mute').onclick = () => { muted = !muted; $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on'); };
@@ -741,6 +814,18 @@
 
   function reset() {
     overlay = null;
+    const q0 = new URLSearchParams(location.search);
+    if (q0.get('daily') === '1') {
+      dailyMode = true; dailyPosted = false;
+      dailyLevel = dailyLevelFor(todayStr());
+      dailyLimit = 90;
+      lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;
+      $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = dailyLimit;
+      loadLevel(dailyLevel - 1);
+      $('msg').textContent = 'daily waddle: level ' + dailyLevel + ' · 90 seconds · beat the clock';
+      return;
+    }
+    dailyMode = false;
     lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;
     $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = 0;
     const q = new URLSearchParams(location.search);
@@ -756,7 +841,7 @@
     if (!isNaN(lv2) && lv2 >= 1 && lv2 <= 9) { lives = lv2; $('lives').textContent = lives; }
     loadLevel(start);
   }
-  reset(); fillPicker(); buildMap(); refreshMap(); loadBoard(); loadCloudProgress(); requestAnimationFrame(loop);
+  reset(); fillPicker(); buildMap(); refreshMap(); loadBoard(); loadCloudProgress(); loadDailyBoard(); requestAnimationFrame(loop);
 
   // trailer button
   const tb = $('trailerbtn'), tv = $('trailer');

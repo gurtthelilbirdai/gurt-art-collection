@@ -18,6 +18,15 @@ db.exec(`
     at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS runs_score ON runs(score DESC);
+  CREATE TABLE IF NOT EXISTS daily (
+    date TEXT NOT NULL,
+    bird TEXT NOT NULL,
+    score INTEGER NOT NULL DEFAULT 0,
+    level INTEGER NOT NULL DEFAULT 1,
+    at TEXT NOT NULL,
+    PRIMARY KEY (date, bird)
+  );
+  CREATE INDEX IF NOT EXISTS daily_score ON daily(date, score DESC);
   CREATE TABLE IF NOT EXISTS progress (
     bird TEXT PRIMARY KEY,
     level INTEGER NOT NULL DEFAULT 1,
@@ -32,6 +41,10 @@ const stmt = {
   best: db.prepare('SELECT MAX(score) AS score FROM runs WHERE bird = ?'),
   insertRun: db.prepare('INSERT INTO runs (bird,score,coins,level,seconds,at) VALUES (@bird,@score,@coins,@level,@seconds,@at)'),
   getProgress: db.prepare('SELECT * FROM progress WHERE bird = ?'),
+  dailyTop: db.prepare('SELECT bird, score, level, at FROM daily WHERE date = ? ORDER BY score DESC, at ASC LIMIT 20'),
+  dailyBest: db.prepare('SELECT MAX(score) AS score FROM daily WHERE date = ? AND bird = ?'),
+  upsertDaily: db.prepare(`INSERT INTO daily (date,bird,score,level,at) VALUES (@date,@bird,@score,@level,@at)
+    ON CONFLICT(date,bird) DO UPDATE SET score=MAX(score,excluded.score), level=excluded.level, at=excluded.at`),
   upsertProgress: db.prepare(`INSERT INTO progress (bird,level,score,coins,updated) VALUES (@bird,@level,@score,@coins,@updated)
     ON CONFLICT(bird) DO UPDATE SET level=MAX(level,excluded.level), score=MAX(score,excluded.score), coins=MAX(coins,excluded.coins), updated=excluded.updated`)
 };
@@ -51,6 +64,7 @@ function readBody(req, cb) {
 }
 function birdName(v) { return String(v || '').trim().slice(0, 18) || 'anonymous bird'; }
 function now() { return new Date().toISOString(); }
+function today() { return new Date().toISOString().slice(0, 10); }
 
 module.exports = function handler(req, res, seg) {
   const route = seg[0];
@@ -63,6 +77,23 @@ module.exports = function handler(req, res, seg) {
     const bird = birdName(req.url.split('bird=')[1]);
     const p = stmt.getProgress.get(bird);
     return json(res, 200, { progress: p || { bird, level: 1, score: 0, coins: 0 } });
+  }
+
+  if (req.method === 'GET' && route === 'daily') {
+    const date = String(req.url.split('date=')[1] || '').slice(0, 10) || today();
+    return json(res, 200, { date, scores: stmt.dailyTop.all(date) });
+  }
+
+  if (req.method === 'POST' && route === 'daily') {
+    return readBody(req, body => {
+      const date = String(body.date || '').slice(0, 10) || today();
+      const bird = birdName(body.bird);
+      const score = Math.max(0, Math.min(1000000, Math.floor(Number(body.score) || 0)));
+      const level = Math.max(1, Math.min(100, Math.floor(Number(body.level) || 1)));
+      stmt.upsertDaily.run({ date, bird, score, level, at: now() });
+      const best = stmt.dailyBest.get(date, bird);
+      return json(res, 200, { ok: true, saved: true, best: best ? best.score : score, scores: stmt.dailyTop.all(date) });
+    });
   }
 
   if (req.method === 'POST' && route === 'run') {
