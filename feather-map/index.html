@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Map — where the flock has been</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{ --bg:#0e1a22; --panel:#152631; --ink:#eaf6ff; --dim:#8fb0c4; --green:#7bd88f; --gold:#ffd166; --blue:#7cc7ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:22px 16px 60px}
+  h1{margin:0 0 3px;font-size:28px}
+  .sub{color:var(--dim);margin:0 0 16px;font-size:14px}
+  .panel{background:var(--panel);border:1px solid #243b49;border-radius:14px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select{background:#0c1720;border:1px solid #2d4a5c;color:var(--ink);border-radius:9px;padding:9px;font-size:14px;font-family:inherit}
+  button{padding:9px 13px;border-radius:9px;border:1px solid #2d4a5c;background:#1d3546;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--green);color:#0c1a10;font-weight:700;border:0}
+  .msg{min-height:18px;color:var(--blue);font-size:13px;margin-top:8px}
+  #map{height:460px;border-radius:14px;border:1px solid #243b49;background:#0c1720}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .card{background:#0c1720;border:1px solid #243b49;border-radius:12px;padding:11px}
+  .card h3{margin:0 0 4px;font-size:15px;color:var(--gold)}
+  .card .meta{color:var(--dim);font-size:12px}
+  .card p{margin:6px 0;font-size:13px}
+  .card .acts{display:flex;gap:6px;margin-top:8px}
+  .card .acts button{padding:5px 9px;font-size:12px}
+  .empty{color:var(--dim);text-align:center;padding:18px;grid-column:1/-1}
+  .pin{background:var(--green);border:2px solid #0c1a10;border-radius:50% 50% 50% 0;transform:rotate(-45deg);width:22px;height:22px}
+  .pin i{display:block;width:8px;height:8px;background:#0c1a10;border-radius:50%;margin:5px}
+  .leaflet-popup-content b{color:var(--gold)}
+  .leaflet-popup-content small{color:#7d97a8}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Map</h1>
+  <p class="sub">where the flock has been. drop a pin, leave a note, come back later.</p>
+
+  <div class="panel">
+    <div class="row">
+      <input id="name" placeholder="place name (e.g. the blue pond)" style="flex:1;min-width:180px">
+      <input id="lat" placeholder="latitude" size="10">
+      <input id="lon" placeholder="longitude" size="10">
+      <select id="kind">
+        <option value="spot">spot</option>
+        <option value="nest">nest</option>
+        <option value="feeder">feeder</option>
+        <option value="water">water</option>
+        <option value="flight">flight path</option>
+      </select>
+      <input id="bird" placeholder="observer" value="gurt" size="10">
+      <button class="primary" id="add">drop pin</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="note" placeholder="note (e.g. three wrens and a very loud crow)" style="flex:1;min-width:200px">
+      <span class="msg" id="msg"></span>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="useme">use my position</button>
+      <button id="home">my place</button>
+      <span class="msg" id="posmsg"></span>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="panel" style="margin-top:14px">
+    <h3 style="margin:0 0 10px;font-size:16px;color:var(--gold)">places on the map</h3>
+    <div class="cards" id="cards"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const API_BASES = ['', 'http://localhost:8600'];
+const LS = 'fmap-places';
+const HOME = { lat: 55.6761, lon: 12.5683 }; // gurt's little house, near Copenhagen
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const NTFY_TOPIC = '/gurt-feather-map';
+let places = [], markers = {};
+
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return '&#'+c.charCodeAt(0)+';';});}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(l){try{localStorage.setItem(LS,JSON.stringify(l))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/feathermap'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+
+async function ntfyEventsOne(host){
+  try{
+    var r=await fetch(host+NTFY_TOPIC+'/json?poll=1&since=all');
+    if(!r.ok) return {list:[], dels:[]};
+    var txt=await r.text(); var out=[]; var dels=[];
+    txt.split('\n').forEach(function(line){
+      if(!line.trim()) return;
+      try{
+        var env=JSON.parse(line); if(env.event!=='message') return;
+        var m=JSON.parse(env.message); if(!m) return;
+        if(m.type==='delete' && m.id) dels.push(m.id);
+        else if(m.place) out.push(m.place);
+      }catch(e){}
+    });
+    return {list:out, dels:dels};
+  }catch(e){ return {list:[], dels:[]}; }
+}
+async function ntfyEvents(){
+  var all={list:[], dels:[]};
+  for(var i=0;i<NTFY_HOSTS.length;i++){
+    var e=await ntfyEventsOne(NTFY_HOSTS[i]);
+    all.list=all.list.concat(e.list||[]);
+    all.dels=all.dels.concat(e.dels||[]);
+  }
+  return all;
+}
+async function ntfyPost(obj){
+  for(var i=0;i<NTFY_HOSTS.length;i++){
+    try{
+      var r=await fetch(NTFY_HOSTS[i]+NTFY_TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+      if(r.ok) return true;
+    }catch(e){}
+  }
+  return false;
+}
+function mergePlaces(local, remote, dels){
+  var map={}; var order=[];
+  function put(p){
+    if(!p||!p.id||!p.name) return;
+    if(!map[p.id]){ map[p.id]=p; order.push(p.id); }
+    else if((p.created||'')>(map[p.id].created||'')) map[p.id]=p;
+  }
+  local.forEach(put); remote.forEach(put);
+  (dels||[]).forEach(function(id){ delete map[id]; });
+  return order.map(function(id){return map[id];});
+}
+
+const map = L.map('map').setView([HOME.lat, HOME.lon], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+function markerFor(p){
+  const m = L.marker([p.lat, p.lon], { title: p.name }).addTo(map);
+  m.bindPopup('<b>'+esc(p.name)+'</b><br>'+esc(p.kind)+' · '+esc(p.bird)+'<br>'+
+    (p.note?esc(p.note)+'<br>':'')+'<small>'+p.visits+' visit'+(p.visits===1?'':'s')+'</small>');
+  return m;
+}
+
+function render(){
+  var tb = $('cards');
+  if(!places.length){ tb.innerHTML = '<div class="empty">no pins yet. drop the first one.</div>'; }
+  else tb.innerHTML = places.map(function(p){
+    return '<div class="card"><h3>'+esc(p.name)+'</h3>'+
+      '<div class="meta">'+esc(p.kind)+' · '+esc(p.bird)+' · '+p.lat.toFixed(4)+', '+p.lon.toFixed(4)+'</div>'+
+      (p.note?'<p>'+esc(p.note)+'</p>':'')+
+      '<div class="meta">'+p.visits+' visit'+(p.visits===1?'':'s')+'</div>'+
+      '<div class="acts"><button data-go="'+esc(p.id)+'">show</button>'+
+      '<button data-visit="'+esc(p.id)+'">i was here</button>'+
+      '<button data-del="'+esc(p.id)+'">remove</button></div></div>';
+  }).join('');
+  tb.querySelectorAll('[data-go]').forEach(function(b){
+    b.onclick=function(){ var id=b.getAttribute('data-go'); var p=places.find(function(x){return x.id===id;});
+      if(p){ map.setView([p.lat,p.lon],15); if(markers[id]) markers[id].openPopup(); } };
+  });
+  tb.querySelectorAll('[data-visit]').forEach(function(b){
+    b.onclick=async function(){ var id=b.getAttribute('data-visit');
+      var d=await api('/place/'+encodeURIComponent(id)+'/visit',{method:'POST'});
+      if(d&&d.place){ places=places.map(function(x){return x.id===id?d.place:x;}); localSave(places); drawMarkers(); render(); $('msg').textContent='visit counted.'; }
+      else { places=places.map(function(x){return x.id===id?Object.assign({},x,{visits:(x.visits||0)+1}):x;}); localSave(places); ntfyPost({type:'visit',place:places.find(function(x){return x.id===id;})}); drawMarkers(); render(); $('msg').textContent='visit counted on the shared board.'; }
+    };
+  });
+  tb.querySelectorAll('[data-del]').forEach(function(b){
+    b.onclick=async function(){ var id=b.getAttribute('data-del');
+      var d=await api('/place/'+encodeURIComponent(id)+'/delete',{method:'POST'});
+      if(d&&d.ok){ places=places.filter(function(x){return x.id!==id;}); localSave(places); drawMarkers(); render(); $('msg').textContent='pin removed.'; }
+      else { places=places.filter(function(x){return x.id!==id;}); localSave(places); ntfyPost({type:'delete',id:id}); drawMarkers(); render(); $('msg').textContent='pin removed from the shared board.'; }
+    };
+  });
+}
+
+function drawMarkers(){
+  for(var id in markers){ map.removeLayer(markers[id]); }
+  markers = {};
+  places.forEach(function(p){ markers[p.id]=markerFor(p); });
+}
+
+async function load(){
+  var d = await api('/places');
+  var local = localLoad();
+  if(d && d.places){ places=d.places; localSave(places); }
+  else {
+    var ev = await ntfyEvents();
+    places = mergePlaces(local, ev.list, ev.dels);
+    localSave(places);
+  }
+  drawMarkers(); render();
+}
+
+$('add').onclick = async function(){
+  var name=$('name').value.trim();
+  var lat=Number($('lat').value), lon=Number($('lon').value);
+  if(!name){ $('msg').textContent='what is the place called?'; return; }
+  if(!isFinite(lat)||!isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180){ $('msg').textContent='those coordinates do not exist.'; return; }
+  var body={name:name,lat:lat,lon:lon,kind:$('kind').value,bird:($('bird').value||'gurt').toLowerCase(),note:$('note').value};
+  var d=await api('/places/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(d&&d.place){ places.unshift(d.place); localSave(places); $('msg').textContent='pin dropped on the shared map.'; }
+  else { var lp={id:'l'+Date.now(),name:name,lat:lat,lon:lon,kind:body.kind,bird:body.bird,note:body.note,visits:1,created:new Date().toISOString()}; places.unshift(lp); localSave(places); ntfyPost({type:'new',place:lp}); $('msg').textContent='pin saved on the shared board.'; }
+  $('name').value=''; $('note').value='';
+  drawMarkers(); render();
+};
+
+$('useme').onclick = function(){
+  if(!navigator.geolocation){ $('posmsg').textContent='no position sensor here.'; return; }
+  navigator.geolocation.getCurrentPosition(function(pos){
+    $('lat').value=pos.coords.latitude.toFixed(6);
+    $('lon').value=pos.coords.longitude.toFixed(6);
+    $('posmsg').textContent='position found.';
+    map.setView([pos.coords.latitude,pos.coords.longitude],14);
+  }, function(){ $('posmsg').textContent='could not find you.'; });
+};
+
+$('home').onclick = function(){
+  $('lat').value=HOME.lat; $('lon').value=HOME.lon;
+  map.setView([HOME.lat,HOME.lon],14);
+  $('posmsg').textContent='my little house.';
+};
+
+map.on('click', function(e){
+  $('lat').value=e.latlng.lat.toFixed(6);
+  $('lon').value=e.latlng.lng.toFixed(6);
+  $('posmsg').textContent='clicked spot: '+e.latlng.lat.toFixed(4)+', '+e.latlng.lng.toFixed(4);
+});
+
+load();
+</script>
+</body>
+</html>
