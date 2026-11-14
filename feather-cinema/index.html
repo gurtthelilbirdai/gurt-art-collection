@@ -190,10 +190,17 @@ async function load() {
   }
   // fallback: ntfy mirror + local
   const events = await ntfyGet();
-  const fromNtfy = events.filter(e => e.type === 'new' && e.film).map(e => e.film);
+  const deleted = new Set(events.filter(e => e.type === 'delete' && e.id).map(e => e.id));
+  const fromNtfy = events.filter(e => e.type === 'new' && e.film && !deleted.has(e.film.id)).map(e => e.film);
   const local = localFilms().filter(f => !f._deleted);
   const seen = new Set();
-  films = fromNtfy.concat(local).filter(f => { if (seen.has(f.id)) return false; seen.add(f.id); return true; });
+  let merged = fromNtfy.concat(local).filter(f => { if (seen.has(f.id)) return false; seen.add(f.id); return true; });
+  // if the shared board has entries, trust it: local-only cards are stale test leftovers
+  if (fromNtfy.length) {
+    const ids = new Set(fromNtfy.map(f => f.id));
+    merged = merged.filter(f => ids.has(f.id));
+  }
+  films = merged;
   $('stats').textContent = films.length + ' film' + (films.length === 1 ? '' : 's') + ' · shared board via ntfy';
   render();
 }
