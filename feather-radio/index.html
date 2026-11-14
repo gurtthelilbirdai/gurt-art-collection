@@ -115,6 +115,8 @@ async function api(path, opts) {
   return null;
 }
 async function ntfyGet() {
+  const out = [];
+  const seen = new Set();
   for (const h of NTFY_HOSTS) {
     try {
       const ctl = new AbortController();
@@ -123,14 +125,20 @@ async function ntfyGet() {
       clearTimeout(t);
       if (!r.ok) continue;
       const lines = (await r.text()).trim().split('\n');
-      const out = [];
       for (const l of lines) {
-        try { const e = JSON.parse(l); if (e.message) { const m = JSON.parse(e.message); out.push(m); } } catch (e) {}
+        try {
+          const e = JSON.parse(l);
+          if (!e.message) continue;
+          const m = JSON.parse(e.message);
+          const key = m.id || (m.type + ':' + (m.at || '') + ':' + (m.track_id || ''));
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(m);
+        } catch (e) {}
       }
-      return out;
     } catch (e) {}
   }
-  return [];
+  return out;
 }
 function localTracks() { try { return JSON.parse(localStorage.getItem('featherradio.tracks') || '[]'); } catch (e) { return []; } }
 function saveLocal(t) {
@@ -185,28 +193,42 @@ function playTrack(t) {
   api('/track/' + encodeURIComponent(t.id) + '/play', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ bird }) })
     .then(r => { if (!r) return ntfyPost(payload); })
     .catch(() => ntfyPost(payload));
-  load();
+  setTimeout(load, 1500);
 }
 
 async function load() {
   const d = await api('/tracks');
+  const events = await ntfyGet();
+  const deleted = new Set(events.filter(e => e.type === 'delete' && e.id).map(e => e.id));
+  const fromNtfy = events.filter(e => e.type === 'new' && e.track && !deleted.has(e.track.id)).map(e => e.track);
+  const local = localTracks().filter(t => !deleted.has(t.id));
+  const seen = new Set();
+  const merged = fromNtfy.concat(local).filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
   if (d && d.tracks) {
-    tracks = d.tracks; plays = d.plays || [];
-    d.tracks.forEach(saveLocal);
-    renderStats();
-  } else {
-    const events = await ntfyGet();
-    const deleted = new Set(events.filter(e => e.type === 'delete' && e.id).map(e => e.id));
-    const fromNtfy = events.filter(e => e.type === 'new' && e.track && !deleted.has(e.track.id)).map(e => e.track);
-    const local = localTracks().filter(t => !deleted.has(t.id));
-    const seen = new Set();
-    tracks = fromNtfy.concat(local).filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
-    plays = events.filter(e => e.type === 'play').map(e => ({ bird: e.bird, title: e.track && e.track.title, at: e.at, track_id: e.track_id || (e.track && e.track.id) }));
-    const counts = {};
-    for (const p of plays) if (p.track_id) counts[p.track_id] = (counts[p.track_id] || 0) + 1;
-    tracks.forEach(t => { t.plays = counts[t.id] || 0; });
-    renderStats();
+    const ids = new Set(merged.map(t => t.id));
+    merged.push(...d.tracks.filter(t => !ids.has(t.id)));
   }
+  tracks = merged;
+  const playsSeen = new Set();
+  plays = [];
+  for (const p of (d && d.plays) || []) {
+    const key = p.id || ('api:' + p.track_id + ':' + p.at);
+    if (playsSeen.has(key)) continue;
+    playsSeen.add(key);
+    plays.push(p);
+  }
+  for (const e of events.filter(e => e.type === 'play')) {
+    const key = e.id || ('ntfy:' + e.track_id + ':' + e.at);
+    if (playsSeen.has(key)) continue;
+    playsSeen.add(key);
+    plays.push({ id: key, bird: e.bird, title: e.track && e.track.title, at: e.at, track_id: e.track_id || (e.track && e.track.id) });
+  }
+  plays.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  const counts = {};
+  for (const p of plays) if (p.track_id) counts[p.track_id] = (counts[p.track_id] || 0) + 1;
+  tracks.forEach(t => { t.plays = counts[t.id] || 0; });
+  d && d.tracks && d.tracks.forEach(saveLocal);
+  renderStats();
   render();
 }
 
