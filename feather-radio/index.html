@@ -162,13 +162,29 @@ function renderStats() {
     `<div><b>${esc(p.bird)}</b> played ${esc(p.title || 'a deleted song')} <span class="meta">· ${esc((p.at || '').slice(11, 19))}</span></div>`
   ).join('') || '<div class="meta">nobody is listening yet</div>';
 }
+async function ntfyPost(payload) {
+  for (const h of NTFY_HOSTS) {
+    try {
+      const ctl = new AbortController();
+      const tt = setTimeout(() => ctl.abort(), 5000);
+      const r = await fetch(h + '/' + TOPIC, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload), signal: ctl.signal });
+      clearTimeout(tt);
+      if (r.ok) return true;
+    } catch (e) {}
+  }
+  return false;
+}
 function playTrack(t) {
   current = t;
   $('npTitle').textContent = t.title;
   $('npMeta').textContent = t.bird + ' · ' + (t.tags || []).join(', ');
   $('player').src = t.url;
   $('player').play().catch(() => {});
-  api('/track/' + encodeURIComponent(t.id) + '/play', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ bird: $('fbird').value || 'gurt' }) });
+  const bird = $('fbird').value || 'gurt';
+  const payload = { type:'play', id:'ply' + Date.now().toString(36) + Math.random().toString(36).slice(2,8), track_id: t.id, bird, at: new Date().toISOString(), track: t };
+  api('/track/' + encodeURIComponent(t.id) + '/play', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ bird }) })
+    .then(r => { if (!r) return ntfyPost(payload); })
+    .catch(() => ntfyPost(payload));
   load();
 }
 
