@@ -42,7 +42,7 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 ? 11 * T - 30 : yy * T - 10), w: 26, h: (level === 79 ? 58 : (level === 80 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? 2 : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? 2 : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 || level === 100 ? 11 * T - 30 : yy * T - 10), w: 26, h: (level === 79 ? 58 : (level === 80 || level === 100 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'c') crumbling.push({ x: xx, y: yy, timer: -1, back: 0 });
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
@@ -357,7 +357,7 @@
   function win() {
     state = 'win'; score += lives * 100 + 500; saveRun();
     $('score').textContent = score;
-    overlay = { title: level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!'), sub: 'score ' + score + ' · the flock will hear about this' };
+    overlay = { title: level >= 99 ? 'you beat the root moth!' : (level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!')), sub: 'score ' + score + ' · the flock will hear about this' };
   }
 
   function draw() {
@@ -365,7 +365,8 @@
     // background gradient by level
     const icy = level >= 20 && level < 40;
     const woods = level >= 40 && level < 60;
-    const coast = level >= 60;
+    const coast = level >= 60 && level < 80;
+    const cellar = level >= 80;
     const g = x.createLinearGradient(0, 0, 0, c.height);
     if (icy) {
       g.addColorStop(0, '#2b4f74'); g.addColorStop(0.55, '#3d6f99'); g.addColorStop(1, '#dcefff');
@@ -374,7 +375,23 @@
       g.addColorStop(0, 'hsl(' + hue + ',45%,22%)'); g.addColorStop(1, 'hsl(' + hue + ',40%,12%)');
     }
     x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
-    if (coast) {
+    if (cellar) {
+      g.addColorStop(0, '#0d1410'); g.addColorStop(0.55, '#1b2a1e'); g.addColorStop(1, '#3d5136');
+      x.fillStyle = g; x.fillRect(0, 0, 800, 450);
+      // glowing spores drifting in the damp
+      for (let i = 0; i < 50; i++) {
+        const sx = (i * 149 + Math.sin(Date.now() / 1400 + i) * 22) % 800;
+        const sy = (i * 83 + Math.cos(Date.now() / 1900 + i * 1.3) * 18) % 440;
+        x.fillStyle = i % 4 ? '#9fffaa55' : '#c8ffd980';
+        x.beginPath(); x.arc(sx, sy, 1.4 + (i % 3), 0, 7); x.fill();
+      }
+      // stone arches
+      x.fillStyle = '#0a0f0b66';
+      for (let i = 0; i < 4; i++) {
+        const ax = i * 220 - 30;
+        x.beginPath(); x.moveTo(ax, 450); x.lineTo(ax, 250); x.arc(ax + 55, 250, 55, Math.PI, 0); x.lineTo(ax + 110, 450); x.fill();
+      }
+    } else if (coast) {
       g.addColorStop(0, '#0b1030'); g.addColorStop(0.55, '#1d2a63'); g.addColorStop(1, '#3f6f9e');
       x.fillStyle = g; x.fillRect(0, 0, c.width, c.height);
       // slow falling stars
@@ -436,7 +453,23 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx], px = xx * T, py = yy * T;
       if (ch === '#') {
-        if (coast) { x.fillStyle = '#c9b083'; x.fillRect(px, py, T, T); x.fillStyle = '#e3d3ab'; x.fillRect(px, py, T, 4); }
+        if (cellar) {
+      g.addColorStop(0, '#0d1410'); g.addColorStop(0.55, '#1b2a1e'); g.addColorStop(1, '#3d5136');
+      x.fillStyle = g; x.fillRect(0, 0, 800, 450);
+      // glowing spores drifting in the damp
+      for (let i = 0; i < 50; i++) {
+        const sx = (i * 149 + Math.sin(Date.now() / 1400 + i) * 22) % 800;
+        const sy = (i * 83 + Math.cos(Date.now() / 1900 + i * 1.3) * 18) % 440;
+        x.fillStyle = i % 4 ? '#9fffaa55' : '#c8ffd980';
+        x.beginPath(); x.arc(sx, sy, 1.4 + (i % 3), 0, 7); x.fill();
+      }
+      // stone arches
+      x.fillStyle = '#0a0f0b66';
+      for (let i = 0; i < 4; i++) {
+        const ax = i * 220 - 30;
+        x.beginPath(); x.moveTo(ax, 450); x.lineTo(ax, 250); x.arc(ax + 55, 250, 55, Math.PI, 0); x.lineTo(ax + 110, 450); x.fill();
+      }
+    } else if (coast) { x.fillStyle = '#c9b083'; x.fillRect(px, py, T, T); x.fillStyle = '#e3d3ab'; x.fillRect(px, py, T, 4); }
         else if (woods) { x.fillStyle = '#4a331d'; x.fillRect(px, py, T, T); x.fillStyle = '#5f4327'; x.fillRect(px, py, T, 4); }
         else if (icy) { x.fillStyle = '#d7eaf7'; x.fillRect(px, py, T, T); x.fillStyle = '#ffffff'; x.fillRect(px, py, T, 5); x.fillStyle = '#9fc6de'; x.fillRect(px, py + T - 5, T, 5); }
         else { x.fillStyle = '#3b5876'; x.fillRect(px, py, T, T); x.fillStyle = '#4d7398'; x.fillRect(px, py, T, 4); }
@@ -501,7 +534,7 @@
     x.fillStyle = '#ffb347'; x.beginPath(); x.moveTo(p.x + 12 + p.face * 7, p.y + 14); x.lineTo(p.x + 12 + p.face * 15, p.y + 16); x.lineTo(p.x + 12 + p.face * 7, p.y + 18); x.fill();
     x.fillStyle = '#2f7fd1'; x.beginPath(); x.ellipse(p.x + 12, p.y + 21, 8, 5, 0, 0, 7); x.fill();
     if (state === 'over') drawOverlay('the waddle ends', 'score ' + score + ' \u00b7 press play to try again');
-    if (state === 'win') drawOverlay(level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!'), 'score ' + score + ' \u00b7 the flock will hear about this');
+    if (state === 'win') drawOverlay(level >= 99 ? 'you beat the root moth!' : (level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!')), 'score ' + score + ' \u00b7 the flock will hear about this');
     if (overlay) drawOverlay(overlay.title, overlay.sub);
     window.__gurtState = state; window.__gurtOverlay = overlay ? overlay.title : '';
   }
