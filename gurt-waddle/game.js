@@ -595,6 +595,7 @@
       body: JSON.stringify({ bird, score, coins, level: level + 1, seconds: Math.floor(elapsed) })
     }).then(d => { if (d && d.rank) { $('board').dataset.msg = 'rank ' + d.rank; } loadBoard(); });
     saveLocalRun({ bird, score, coins, level: level + 1, seconds: Math.floor(elapsed) });
+    ntfyPostProgress({ type: 'run', bird, score: Math.max(0, score || 0), coins: Math.max(0, coins || 0), level: level + 1, seconds: Math.floor(elapsed), at: new Date().toISOString() });
   }
   function localRuns() {
     try { return JSON.parse(localStorage.getItem('waddle-runs') || '[]'); } catch (e) { return []; }
@@ -678,21 +679,61 @@
     }).catch(() => { localBoard(); });
   }
 
+  async function ntfyGetRuns() {
+    for (const url of [NTFY, NTFY_ALT]) {
+      try {
+        const r = await fetch(url + '/json?poll=1&since=all', { cache: 'no-store' });
+        if (!r.ok) continue;
+        const lines = (await r.text()).split('\n').filter(Boolean).map(x => { try { return JSON.parse(x); } catch (e) { return null; } }).filter(Boolean);
+        const runs = [];
+        for (const m of lines) {
+          let d = m.message;
+          if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { continue; } }
+          if (!d || d.type !== 'run') continue;
+          runs.push({ bird: String(d.bird || 'bird').slice(0, 18), score: Number(d.score) || 0, coins: Number(d.coins) || 0, level: Number(d.level) || 1, seconds: Number(d.seconds) || 0, at: d.at || '' });
+        }
+        if (runs.length) return runs;
+      } catch (e) {}
+    }
+    return [];
+  }
+  function flockStatsFromRuns(runs) {
+    const birds = {};
+    let best = 0, deepest = 0, coins = 0;
+    for (const r of runs) {
+      coins += r.coins;
+      best = Math.max(best, r.score);
+      deepest = Math.max(deepest, r.level);
+      const b = birds[r.bird] || (birds[r.bird] = { bird: r.bird, score: 0, level: 0, runs: 0 });
+      b.score = Math.max(b.score, r.score);
+      b.level = Math.max(b.level, r.level);
+      b.runs++;
+    }
+    const list = Object.values(birds).sort((a, b) => b.score - a.score);
+    return { stats: { runs: runs.length, birds: list.length, best, deepest, coins }, birds: list };
+  }
+  function drawFlockStats(d) {
+    const box = $('flockstats'), tbl = $('flockbirds');
+    if (!box || !tbl) return;
+    const st = d.stats;
+    box.textContent = st.runs + ' run' + (st.runs === 1 ? '' : 's') + ' \u00b7 ' + st.birds + ' bird' + (st.birds === 1 ? '' : 's') + ' \u00b7 best score ' + st.best + ' \u00b7 deepest level ' + st.deepest + ' \u00b7 ' + st.coins + ' coins waddled';
+    const rows = (d.birds || []).map((b, i) => '<tr><td>' + (i + 1) + '. ' + b.bird + '</td><td>' + b.score + '</td><td>' + b.level + '</td></tr>').join('');
+    tbl.querySelector('tbody').innerHTML = rows || '<tr><td colspan="3">no waddlers yet</td></tr>';
+  }
   function loadFlockStats() {
     const box = $('flockstats'), tbl = $('flockbirds');
     if (!box || !tbl) return;
     api('/stats').then(d => {
-      if (!d || !d.stats) {
-        const runs = JSON.parse(localStorage.getItem('waddle-runs') || '[]');
-        box.textContent = runs.length + ' local run' + (runs.length === 1 ? '' : 's') + ' · the shared flock board is sleeping, try again when it wakes';
+      if (d && d.stats) { drawFlockStats(d); return; }
+      ntfyGetRuns().then(runs => {
+        if (runs.length) { drawFlockStats(flockStatsFromRuns(runs)); return; }
+        const local = JSON.parse(localStorage.getItem('waddle-runs') || '[]');
+        box.textContent = local.length + ' local run' + (local.length === 1 ? '' : 's') + ' \u00b7 the shared flock board is sleeping, try again when it wakes';
         tbl.querySelector('tbody').innerHTML = '<tr><td colspan="3">the shared board is sleeping</td></tr>';
-        return;
-      }
-      const st = d.stats;
-      box.textContent = st.runs + ' run' + (st.runs === 1 ? '' : 's') + ' · ' + st.birds + ' bird' + (st.birds === 1 ? '' : 's') + ' · best score ' + st.best + ' · deepest level ' + st.deepest + ' · ' + st.coins + ' coins waddled';
-      const rows = (d.birds || []).map((b, i) => '<tr><td>' + (i + 1) + '. ' + b.bird + '</td><td>' + b.score + '</td><td>' + b.level + '</td></tr>').join('');
-      tbl.querySelector('tbody').innerHTML = rows || '<tr><td colspan="3">no waddlers yet</td></tr>';
-    }).catch(() => { box.textContent = 'the shared flock board is sleeping'; });
+      });
+    }).catch(() => {
+      ntfyGetRuns().then(runs => { if (runs.length) drawFlockStats(flockStatsFromRuns(runs)); else box.textContent = 'the shared flock board is sleeping'; });
+    });
   }
 
   function unlockedCount() {
