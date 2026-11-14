@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Waddle Workshop — build levels for small birds</title>
+<style>
+  body{margin:0;background:#101827;color:#e8f1ff;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;padding-bottom:40px}
+  h1{margin:10px 0 2px;font-size:22px;letter-spacing:2px}
+  .note{font-size:13px;opacity:.7;max-width:760px;text-align:center;margin:4px 10px}
+  #grid{display:grid;grid-template-columns:repeat(25,26px);grid-auto-rows:26px;gap:1px;background:#24374f;padding:6px;border-radius:10px;margin:10px}
+  .t{background:#16243a;border:0;padding:0;color:#fff;font:13px monospace;cursor:pointer;border-radius:3px}
+  .t:hover{outline:2px solid #ffd23f}
+  .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;margin:6px}
+  button,input,select{font:inherit;padding:7px 11px;border-radius:8px;border:1px solid #3b5876;background:#1b3049;color:#e8f1ff}
+  button{cursor:pointer} button:hover{background:#26456a}
+  #pal{display:flex;gap:5px;flex-wrap:wrap;max-width:800px;justify-content:center}
+  #pal button{min-width:44px}
+  table{border-collapse:collapse;font-size:14px;margin:8px;max-width:760px;width:92%}
+  td,th{padding:5px 8px;border-bottom:1px solid #2b425c;text-align:left}
+  #msg{color:#ffd23f;min-height:20px;font-size:14px}
+  .legend{font-size:12px;opacity:.75;max-width:760px;text-align:center}
+</style>
+</head>
+<body>
+<h1>THE WADDLE WORKSHOP</h1>
+<div class="note">build a level, share it with the flock, and watch other birds try to waddle through it. every grid is 25 × 14 tiles.</div>
+<div id="pal"></div>
+<div class="row">
+  <button id="clear">clear</button>
+  <button id="fill">fill ground</button>
+  <button id="sample">load my sample</button>
+  <input id="title" maxlength="40" placeholder="level title" value="a very small waddle">
+  <input id="author" maxlength="18" placeholder="your bird name" value="gurt">
+  <button id="save">share this level</button>
+</div>
+<div id="msg"></div>
+<div id="grid"></div>
+<div class="legend">P start · E exit · # wall · = platform · o coin · k key · D door · S spring · ^ spike · w water · C checkpoint · e walker · f flyer · m hammer · M moving platform · i ice · c crumbling root · B moth boss</div>
+<h3>the flock's level shelf</h3>
+<div class="note">levels other birds built. click play to waddle through one.</div>
+<table id="shelf"><thead><tr><th>title</th><th>by</th><th>plays</th><th></th></tr></thead><tbody><tr><td colspan="4">loading…</td></tr></tbody></table>
+<script>
+const W = 25, H = 14;
+const TILES = ['.', '#', '=', 'o', 'k', 'D', 'S', '^', 'w', 'C', 'e', 'f', 'm', 'M', 'i', 'c', 'B', 'P', 'E'];
+const NAMES = {'.':'empty','#':'wall','=':'platform','o':'coin','k':'key','D':'door','S':'spring','^':'spike','w':'water','C':'checkpoint','e':'walker','f':'flyer','m':'hammer','M':'moving','i':'ice','c':'root','B':'moth','P':'start','E':'exit'};
+let grid = Array.from({length:H}, () => new Array(W).fill('.'));
+let brush = '#';
+const $ = id => document.getElementById(id);
+
+function draw() {
+  const g = $('grid'); g.innerHTML = '';
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const b = document.createElement('button');
+    b.className = 't'; b.textContent = grid[y][x] === '.' ? '' : grid[y][x];
+    b.style.color = grid[y][x] === 'w' ? '#7fd4ff' : (grid[y][x] === 'B' ? '#ff9dbb' : '#e8f1ff');
+    b.onclick = () => { grid[y][x] = grid[y][x] === brush ? '.' : brush; draw(); };
+    g.appendChild(b);
+  }
+}
+function pal() {
+  const p = $('pal'); p.innerHTML = '';
+  for (const t of TILES) {
+    const b = document.createElement('button');
+    b.textContent = t === '.' ? 'empty' : t + ' ' + NAMES[t];
+    b.onclick = () => { brush = t; };
+    p.appendChild(b);
+  }
+}
+function sample() {
+  grid = Array.from({length:H}, () => new Array(W).fill('.'));
+  for (let x = 0; x < W; x++) { grid[12][x] = '#'; grid[13][x] = '#'; }
+  grid[11][1] = 'P'; grid[11][2] = 'o';
+  for (let x = 5; x < 9; x++) grid[10][x] = '=';
+  grid[9][7] = 'o';
+  for (let x = 10; x < 15; x++) grid[11][x] = '#';
+  grid[10][12] = '^';
+  grid[11][16] = 'S'; grid[8][16] = 'o';
+  for (let x = 18; x < 23; x++) grid[10][x] = '#';
+  grid[9][20] = 'k';
+  grid[11][23] = 'E';
+  grid[11][17] = 'e';
+  draw();
+}
+$('clear').onclick = () => { grid = Array.from({length:H}, () => new Array(W).fill('.')); draw(); };
+$('fill').onclick = () => { for (let x = 0; x < W; x++) { grid[12][x] = '#'; grid[13][x] = '#'; } draw(); };
+$('sample').onclick = sample;
+
+const NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-waddle';
+const NTFY_ALT = 'https://ntfy.sh/gurt-feather-waddle';
+async function api(path, opts) {
+  const urls = ['', 'http://computer:8600'];
+  for (const base of urls) {
+    for (const u of [base + '/api/gurtwaddle' + path, base + '/gurtwaddle' + path]) {
+      try { const r = await fetch(u, opts); if (r.ok) return await r.json(); } catch (e) {}
+    }
+  }
+  return null;
+}
+async function ntfyPost(payload) {
+  for (const url of [NTFY, NTFY_ALT]) {
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (r.ok) return true;
+    } catch (e) {}
+  }
+  return false;
+}
+async function ntfyCustoms() {
+  for (const url of [NTFY, NTFY_ALT]) {
+    try {
+      const r = await fetch(url + '/json?poll=1&since=all', { cache: 'no-store' });
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean).map(x => { try { return JSON.parse(x); } catch (e) { return null; } }).filter(Boolean);
+      const best = {};
+      for (const m of lines) {
+        let d = m.message;
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { continue; } }
+        if (!d || d.type !== 'custom' || !d.id) continue;
+        best[d.id] = d;
+      }
+      return Object.values(best).sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    } catch (e) {}
+  }
+  return [];
+}
+$('save').onclick = async () => {
+  $('msg').textContent = 'sharing…';
+  const rows = grid.map(r => r.join(''));
+  const d = await api('/custom', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: $('title').value, author: $('author').value, rows }) });
+  if (d && d.ok) {
+    $('msg').textContent = 'shared! the flock can play \"' + d.level.title + '\"';
+    ntfyPost({ type: 'custom', id: d.level.id, title: d.level.title, author: d.level.author, rows, at: new Date().toISOString() });
+    loadShelf();
+  } else {
+    const id = 'lvl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const title = $('title').value.trim() || 'untitled level';
+    const author = $('author').value.trim() || 'anonymous bird';
+    const ok = await ntfyPost({ type: 'custom', id, title, author, rows, at: new Date().toISOString() });
+    $('msg').textContent = ok ? 'shared on the public shelf!' : 'the shelf is sleeping — try again later';
+    loadShelf();
+  }
+};
+async function loadShelf() {
+  const tb = $('shelf').querySelector('tbody');
+  const d = await api('/custom');
+  let rows = (d && d.levels) || [];
+  const pub = await ntfyCustoms();
+  if (pub.length) {
+    const seen = {};
+    for (const L of rows) seen[L.id] = true;
+    for (const L of pub) if (!seen[L.id]) rows.push({ id: L.id, title: L.title, author: L.author, plays: L.plays || 0 });
+  }
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="4">no levels yet — be the first bird</td></tr>'; return; }
+  tb.innerHTML = '';
+  for (const L of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + L.title.replace(/[<>&]/g, '') + '</td><td>' + L.author.replace(/[<>&]/g, '') + '</td><td>' + L.plays + '</td>';
+    const td = document.createElement('td');
+    const b = document.createElement('button'); b.textContent = 'play';
+    b.onclick = () => { location.href = 'index.html?custom=' + encodeURIComponent(L.id); };
+    td.appendChild(b); tr.appendChild(td); tb.appendChild(tr);
+  }
+}
+pal(); sample(); loadShelf();
+</script>
+</body>
+</html>

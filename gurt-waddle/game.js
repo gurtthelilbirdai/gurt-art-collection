@@ -22,6 +22,7 @@
   let best = 0, muted = false, audio = null, runStart = 0;
   let safeFor = 0;
   let dailyMode = false, dailyLevel = 1, dailyLimit = 90, dailyPosted = false;
+  let customMode = false, customRows = null, customTitle = '', levelRows = null;
 
   function beep(freq, dur, type) {
     if (muted) return;
@@ -37,7 +38,8 @@
   function loadLevel(n) {
     level = n;
     try { refreshMap(); } catch (e) {}
-    grid = LEVELS[n].map(r => r.split(''));
+    levelRows = null;
+    grid = (levelRows || LEVELS[n]).map(r => r.split(''));
     let sx = 1, sy = 11;
     enemies = []; bosses = []; cam = 0; platforms = []; crumbling = [];
     checkpoint = null; spawn = { x: 1, y: 11 };
@@ -57,7 +59,15 @@
     }
     p = { x: sx * T + 4, y: sy * T + 4, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1, ride: null };
     state = 'play';
-    $('lvl').textContent = (level + 1) + '/' + LEVELS.length;
+    $('lvl').textContent = customMode ? customTitle : ((level + 1) + '/' + LEVELS.length);
+  }
+
+  function loadCustomRows(rows, title) {
+    customMode = true; customRows = rows; customTitle = title || 'custom level';
+    levelRows = rows;
+    level = 0;
+    loadLevel(0);
+    $('lvl').textContent = customTitle;
   }
 
   function tileAt(tx, ty) {
@@ -270,6 +280,7 @@
     }
     if (touchingExit) {
       if (bosses.some(b => !b.dead)) { $('msg').textContent = 'the moths guard the exit — stomp them first'; beep(160, .12, 'sawtooth'); return; }
+      if (customMode) { winCustom(); return; }
       if (level === LEVELS.length - 1) { win(); return; }
       score += 100; level++;
       if (level + 1 > unlockedCount()) unlockTo(level + 1);
@@ -385,6 +396,12 @@
     if ($('moths')) $('moths').textContent = aliveB;
     $('coins').textContent = coins; $('keys').textContent = keys; $('score').textContent = score;
     const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|');
+  }
+
+  function winCustom() {
+    state = 'win'; score += lives * 100 + 500; saveRun();
+    $('score').textContent = score;
+    overlay = { title: 'you made it through!', sub: 'score ' + score + ' · the flock heard about this' };
   }
 
   function win() {
@@ -778,6 +795,21 @@
     }
     return false;
   }
+  async function ntfyGetCustom(id) {
+    for (const url of [NTFY, NTFY_ALT]) {
+      try {
+        const r = await fetch(url + '/json?poll=1&since=all', { cache: 'no-store' });
+        if (!r.ok) continue;
+        const lines = (await r.text()).split('\n').filter(Boolean).map(x => { try { return JSON.parse(x); } catch (e) { return null; } }).filter(Boolean);
+        for (const m of lines) {
+          let d = m.message;
+          if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { continue; } }
+          if (d && d.type === 'custom' && d.id === id) return d;
+        }
+      } catch (e) {}
+    }
+    return null;
+  }
   async function ntfyGetProgress(bird) {
     for (const url of [NTFY, NTFY_ALT]) {
       try {
@@ -884,6 +916,39 @@
       return;
     }
     dailyMode = false;
+    const cid = q0.get('custom');
+    if (cid) {
+      lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;
+      $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = 0;
+      const id = cid.slice(0, 40);
+      api('/custom?id=' + encodeURIComponent(id)).then(d => {
+        if (d && d.level && d.level.rows) {
+          loadCustomRows(d.level.rows, d.level.title);
+          $('msg').textContent = 'playing "' + d.level.title + '" by ' + d.level.author;
+          api('/custom/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+        } else {
+          ntfyGetCustom(id).then(pub => {
+            if (pub && pub.rows) {
+              loadCustomRows(pub.rows, pub.title);
+              $('msg').textContent = 'playing "' + pub.title + '" by ' + (pub.author || 'a bird');
+            } else {
+              $('msg').textContent = 'that custom level is missing';
+            }
+          });
+        }
+      }).catch(() => {
+        ntfyGetCustom(id).then(pub => {
+          if (pub && pub.rows) {
+            loadCustomRows(pub.rows, pub.title);
+            $('msg').textContent = 'playing "' + pub.title + '" by ' + (pub.author || 'a bird');
+          } else {
+            $('msg').textContent = 'the custom level shelf is sleeping';
+          }
+        });
+      });
+      return;
+    }
+    customMode = false; customRows = null; levelRows = null;
     lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;
     $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = 0;
     const q = new URLSearchParams(location.search);

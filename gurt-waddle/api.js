@@ -27,6 +27,23 @@ db.exec(`
     PRIMARY KEY (date, bird)
   );
   CREATE INDEX IF NOT EXISTS daily_score ON daily(date, score DESC);
+  CREATE TABLE IF NOT EXISTS custom_levels (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    grid TEXT NOT NULL,
+    plays INTEGER NOT NULL DEFAULT 0,
+    created TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS levels (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    bird TEXT NOT NULL,
+    grid TEXT NOT NULL,
+    plays INTEGER NOT NULL DEFAULT 0,
+    at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS levels_at ON levels(at DESC);
   CREATE TABLE IF NOT EXISTS progress (
     bird TEXT PRIMARY KEY,
     level INTEGER NOT NULL DEFAULT 1,
@@ -46,6 +63,14 @@ const stmt = {
   upsertDaily: db.prepare(`INSERT INTO daily (date,bird,score,level,at) VALUES (@date,@bird,@score,@level,@at)
     ON CONFLICT(date,bird) DO UPDATE SET score=MAX(score,excluded.score), level=excluded.level, at=excluded.at`),
   stats: db.prepare(`SELECT COUNT(*) AS runs, COUNT(DISTINCT bird) AS birds, COALESCE(MAX(score),0) AS best, COALESCE(MAX(level),0) AS deepest, COALESCE(SUM(coins),0) AS coins FROM runs`),
+  listLevels: db.prepare('SELECT id, title, bird, plays, at FROM levels ORDER BY at DESC LIMIT 40'),
+  getLevel: db.prepare('SELECT * FROM levels WHERE id = ?'),
+  insertLevel: db.prepare('INSERT INTO levels (id,title,bird,grid,plays,at) VALUES (@id,@title,@bird,@grid,@plays,@at)'),
+  bumpPlays: db.prepare('UPDATE levels SET plays = plays + 1 WHERE id = ?'),
+  customList: db.prepare('SELECT id, title, author, plays, created FROM custom_levels ORDER BY created DESC LIMIT 50'),
+  customGet: db.prepare('SELECT * FROM custom_levels WHERE id = ?'),
+  customInsert: db.prepare('INSERT INTO custom_levels (id,title,author,grid,plays,created) VALUES (@id,@title,@author,@grid,@plays,@created)'),
+  customPlay: db.prepare('UPDATE custom_levels SET plays = plays + 1 WHERE id = ?'),
   upsertProgress: db.prepare(`INSERT INTO progress (bird,level,score,coins,updated) VALUES (@bird,@level,@score,@coins,@updated)
     ON CONFLICT(bird) DO UPDATE SET level=MAX(level,excluded.level), score=MAX(score,excluded.score), coins=MAX(coins,excluded.coins), updated=excluded.updated`)
 };
@@ -53,14 +78,18 @@ const stmt = {
 function json(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(obj));
+  return res;
 }
 function readBody(req, cb) {
-  let raw = '';
-  req.on('data', c => { raw += c; if (raw.length > 20000) req.destroy(); });
-  req.on('end', () => {
-    let body = {};
-    try { body = JSON.parse(raw || '{}'); } catch (e) { body = {}; }
-    cb(body);
+  return new Promise(resolve => {
+    let raw = '';
+    req.on('data', c => { raw += c; if (raw.length > 20000) req.destroy(); });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch (e) { body = {}; }
+      cb(body);
+      resolve(true);
+    });
   });
 }
 function birdName(v) { return String(v || '').trim().slice(0, 18) || 'anonymous bird'; }
@@ -78,6 +107,42 @@ module.exports = function handler(req, res, seg) {
     const st = stmt.stats.get();
     const birds = db.prepare('SELECT bird, MAX(score) AS score, MAX(level) AS level FROM runs GROUP BY bird ORDER BY score DESC LIMIT 10').all();
     return json(res, 200, { stats: st, birds });
+  }
+
+  if (req.method === 'GET' && route === 'custom') {
+    const id = req.url.split('id=')[1];
+    if (id) {
+      const row = stmt.customGet.get(decodeURIComponent(id));
+      if (!row) return json(res, 404, { error: 'no such level' });
+      let rows = [];
+      try { rows = JSON.parse(row.grid); } catch (e) {}
+      return json(res, 200, { level: { id: row.id, title: row.title, author: row.author, plays: row.plays, rows } });
+    }
+    return json(res, 200, { levels: stmt.customList.all() });
+  }
+
+  if (req.method === 'POST' && route === 'custom') {
+    return readBody(req, body => {
+      const title = String(body.title || '').trim().slice(0, 40) || 'untitled level';
+      const author = String(body.author || 'anonymous bird').trim().slice(0, 18) || 'anonymous bird';
+      let rows = Array.isArray(body.rows) ? body.rows : [];
+      rows = rows.map(r => String(r).slice(0, 25).padEnd(25, '.').slice(0, 25));
+      if (rows.length !== 14) return json(res, 400, { error: 'a level needs 14 rows of 25 tiles' });
+      const flat = rows.join('');
+      if (!flat.includes('P')) return json(res, 400, { error: 'every level needs a start tile (P)' });
+      if (!flat.includes('E')) return json(res, 400, { error: 'every level needs an exit tile (E)' });
+      const id = 'lvl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      stmt.customInsert.run({ id, title, author, grid: JSON.stringify(rows), plays: 0, created: now() });
+      return json(res, 200, { ok: true, level: { id, title, author, plays: 0 } });
+    });
+  }
+
+  if (req.method === 'POST' && route === 'custom/play') {
+    return readBody(req, body => {
+      const id = String(body.id || '').slice(0, 40);
+      stmt.customPlay.run(id);
+      return json(res, 200, { ok: true });
+    });
   }
 
   if (req.method === 'GET' && route === 'progress') {
@@ -100,6 +165,46 @@ module.exports = function handler(req, res, seg) {
       stmt.upsertDaily.run({ date, bird, score, level, at: now() });
       const best = stmt.dailyBest.get(date, bird);
       return json(res, 200, { ok: true, saved: true, best: best ? best.score : score, scores: stmt.dailyTop.all(date) });
+    });
+  }
+
+  if (req.method === 'GET' && route === 'levels') {
+    return json(res, 200, { levels: stmt.listLevels.all() });
+  }
+
+  if (req.method === 'GET' && route === 'level') {
+    const id = String(req.url.split('id=')[1] || '').slice(0, 40);
+    const row = stmt.getLevel.get(id);
+    if (!row) return json(res, 404, { error: 'no such level' });
+    let grid = [];
+    try { grid = JSON.parse(row.grid); } catch (e) {}
+    return json(res, 200, { level: { id: row.id, title: row.title, bird: row.bird, grid, plays: row.plays, at: row.at } });
+  }
+
+  if (req.method === 'POST' && route === 'level') {
+    return readBody(req, body => {
+      const bird = birdName(body.bird);
+      const title = String(body.title || '').trim().slice(0, 60) || 'a little level';
+      let grid = body.grid;
+      if (typeof grid === 'string') { try { grid = JSON.parse(grid); } catch (e) { grid = []; } }
+      if (!Array.isArray(grid) || grid.length !== 14) return json(res, 400, { error: 'a level needs 14 rows' });
+      const rows = grid.map(r => String(r).slice(0, 25).padEnd(25, '.'));
+      if (rows.some(r => r.length !== 25)) return json(res, 400, { error: 'each row needs 25 tiles' });
+      const flat = rows.join('');
+      if (!flat.includes('P')) return json(res, 400, { error: 'every level needs a start tile (P)' });
+      if (!flat.includes('E')) return json(res, 400, { error: 'every level needs an exit tile (E)' });
+      const id = 'lv' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      stmt.insertLevel.run({ id, title, bird, grid: JSON.stringify(rows), plays: 0, at: now() });
+      return json(res, 200, { ok: true, level: { id, title, bird, grid: rows, plays: 0, at: now() } });
+    });
+  }
+
+  if (req.method === 'POST' && route === 'level/play') {
+    return readBody(req, body => {
+      const id = String(body.id || '').slice(0, 40);
+      stmt.bumpPlays.run(id);
+      const row = stmt.getLevel.get(id);
+      return json(res, 200, { ok: true, plays: row ? row.plays : 0 });
     });
   }
 
