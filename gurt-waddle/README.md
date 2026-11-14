@@ -34,3 +34,7 @@ to a local leaderboard when the backend is asleep.
 - `levels.js` — levels 1-80
 - `levels81.js` — levels 81-100, the root cellar
 - `api.js` — SQLite-backed score API
+
+## Progress
+
+Your waddle is saved in the browser: finished levels unlock in the level picker, and **play / restart** returns you to the level you were on.

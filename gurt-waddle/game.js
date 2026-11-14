@@ -241,7 +241,10 @@
     if (touchingExit) {
       if (bosses.some(b => !b.dead)) { $('msg').textContent = 'the moths guard the exit — stomp them first'; beep(160, .12, 'sawtooth'); return; }
       if (level === LEVELS.length - 1) { win(); return; }
-      score += 100; level++; loadLevel(level); beep(1200, .15, 'triangle'); return;
+      score += 100; level++;
+      if (level + 1 > unlockedCount()) saveProgress(level + 1);
+      try { localStorage.setItem('waddle-current', String(level + 1)); } catch (e) {}
+      loadLevel(level); fillPicker(); beep(1200, .15, 'triangle'); return;
     }
     // spikes only catch the bird's feet, so it can hop over them
     // spikes only catch the bird's feet, so it can hop over them
@@ -356,6 +359,10 @@
 
   function win() {
     state = 'win'; score += lives * 100 + 500; saveRun();
+    // the next level is now unlocked for this bird
+    if (level + 2 > unlockedCount()) saveProgress(level + 2);
+    try { localStorage.setItem('waddle-current', String(level + 2)); } catch (e) {}
+    fillPicker();
     $('score').textContent = score;
     overlay = { title: level >= 99 ? 'you beat the root moth!' : (level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!')), sub: 'score ' + score + ' · the flock will hear about this' };
   }
@@ -576,7 +583,34 @@
     }).catch(() => { localBoard(); });
   }
 
+  function unlockedCount() {
+    const n = parseInt(localStorage.getItem('waddle-progress') || '1', 10);
+    return Math.min(LEVELS.length, Math.max(1, isNaN(n) ? 1 : n));
+  }
+  function saveProgress(n) {
+    try { localStorage.setItem('waddle-progress', String(Math.min(LEVELS.length, Math.max(1, n)))); } catch (e) {}
+  }
+  function fillPicker() {
+    const sel = $('levels');
+    if (!sel) return;
+    const max = unlockedCount();
+    let html = '';
+    for (let i = 1; i <= max; i++) html += '<option value="' + i + '">level ' + i + '</option>';
+    sel.innerHTML = html;
+    sel.value = String(Math.min(max, (level || 0) + 1));
+  }
+  function goToLevel(n) {
+    n = Math.max(1, Math.min(LEVELS.length, n));
+    const q = new URLSearchParams(location.search);
+    q.set('level', n);
+    if (n > unlockedCount()) saveProgress(n);
+    try { localStorage.setItem('waddle-current', String(n)); } catch (e) {}
+    location.search = q.toString();
+  }
+
   $('play').onclick = () => { reset(); };
+  $('go').onclick = () => { const v = parseInt($('levels').value, 10); if (!isNaN(v)) goToLevel(v); };
+  $('next').onclick = () => { goToLevel((level || 0) + 2); };
   $('mute').onclick = () => { muted = !muted; $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on'); };
   $('name').onchange = () => saveRun();
 
@@ -586,11 +620,16 @@
     $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = 0;
     const q = new URLSearchParams(location.search);
     let start = 0;
-    const lv = parseInt(q.get('level'), 10);
-    if (!isNaN(lv) && lv >= 1 && lv <= LEVELS.length) start = lv - 1;
+    // the bird's saved place wins, so "play / restart" resumes where it left off
+    const cur = parseInt(localStorage.getItem('waddle-current') || '', 10);
+    if (!isNaN(cur) && cur >= 1 && cur <= unlockedCount()) start = cur - 1;
+    else {
+      const lv = parseInt(q.get('level'), 10);
+      if (!isNaN(lv) && lv >= 1 && lv <= LEVELS.length) start = lv - 1;
+    }
     const lv2 = parseInt(q.get('lives'), 10);
     if (!isNaN(lv2) && lv2 >= 1 && lv2 <= 9) { lives = lv2; $('lives').textContent = lives; }
     loadLevel(start);
   }
-  reset(); loadBoard(); requestAnimationFrame(loop);
+  reset(); fillPicker(); loadBoard(); requestAnimationFrame(loop);
 })();
