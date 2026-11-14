@@ -42,15 +42,15 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 10, w: 26, h: 26, vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: level >= 60 ? 2 : (level >= 41 ? 1 : 2), maxHp: level >= 60 ? 2 : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: yy * T - 10, w: 26, h: (level === 79 ? 58 : 26), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? 2 : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? 2 : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'c') crumbling.push({ x: xx, y: yy, timer: -1, back: 0 });
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
       if (ch === 'f') enemies.push({ kind: 'flyer', x: xx * T + 4, y: yy * T + 4, w: 22, h: 22, vx: 1.3, vy: 0, dead: false, t: 0, base: yy * T, x0: xx * T, x1: Math.min(W * T - T, xx * T + T * 3) });
       if (ch === 'm') enemies.push({ kind: 'hammer', x: xx * T + 4, y: yy * T + 4, w: 26, h: 26, vx: 1.6, vy: 0, dead: false, t: 0, base: yy * T });
       if (ch === 'M') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: xx * T + T * 2, dx: 0, dy: 0 });
-      if (ch === 'F') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.min(22 * T, xx * T + 10 * T), dx: 1.1, dy: 0, wait: 30 });
-      if (ch === 'G') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.max(4 * T, xx * T - 10 * T), dx: -1.1, dy: 0, wait: 30 });
+      if (ch === 'F') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.min(21 * T, xx * T + 19 * T), dx: 1.1, dy: 0, wait: 30 });
+      if (ch === 'G') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.max(4 * T, xx * T - 18 * T), dx: -1.1, dy: 0, wait: 30 });
       if (ch === 'V') platforms.push({ kind: 'v', x: xx * T, y: (yy + 1) * T, w: T * 2, h: 12, y0: (yy + 1) * T, y1: (yy - 5) * T, dx: 0, dy: -0.9, wait: 120 });
     }
     p = { x: sx * T + 4, y: sy * T + 4, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1, ride: null };
@@ -331,7 +331,7 @@
       const feet = p.y + p.h;
       // real body overlap: the bird must actually touch the moth
       const nearX = Math.abs(boss.x - p.x) < 58;
-      const stomping = nearX && p.vy > 0 && feet >= boss.y - 34 && feet <= boss.y + boss.h + 16;
+      const stomping = nearX && feet >= boss.y - 34 && feet <= boss.y + boss.h + 20 && (p.vy > 0 || p.onGround);
       const touching = nearX && feet > boss.y - 8 && p.y < boss.y + boss.h;
       if (safeFor <= 0 && touching) {
         if (stomping) {

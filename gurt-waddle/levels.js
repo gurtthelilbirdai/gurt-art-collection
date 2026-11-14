@@ -158,6 +158,7 @@
       rect(g, 4, 13, 17, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 2, 12, 'F'); put(g, 22, 12, 'G');
+      // F and G sweep far enough to overlap, so the jetty always has a bridge
       put(g, 12, 11, 'C');
       coins(g, [[7, 11], [17, 11]]);
       return g;
@@ -419,8 +420,8 @@
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 21, 10, 'B'); put(g, 10, 10, 'B');
       put(g, 12, 11, 'C');
-      put(g, 4, 11, 'S'); put(g, 19, 11, 'S');
-      put(g, 4, 10, 'k'); put(g, 19, 10, 'k');
+      put(g, 4, 11, 'S');
+      put(g, 4, 10, 'k');
       row(g, 11, 7, 'i', 4); row(g, 11, 16, 'i', 4);
       coins(g, [[3, 11], [8, 10], [13, 11], [17, 10], [15, 7]]);
       return g;
@@ -470,6 +471,7 @@
       rect(g, 4, 13, 17, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 2, 12, 'F'); put(g, 22, 12, 'G');
+      // F and G sweep far enough to overlap, so the jetty always has a bridge
       put(g, 12, 11, 'C');
       coins(g, [[7, 11], [17, 11]]);
       return g;
@@ -568,13 +570,11 @@
     },
     // 55 — the elevator in the roots
     () => {
-      const g = blank(); ground(g, [[10, 5]]);
-      rect(g, 10, 13, 5, 1, 'w');
+      const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 11, 10, 'V');
-      row(g, 6, 12, '=', 4); row(g, 9, 18, '=', 4);
+      row(g, 10, 6, '=', 3); row(g, 8, 11, '=', 3); row(g, 6, 16, '=', 3); row(g, 8, 21, '=', 3);
       put(g, 12, 11, 'C');
-      coins(g, [[4, 11], [14, 5], [20, 8]]);
+      coins(g, [[4, 11], [8, 9], [13, 7], [18, 5], [21, 9]]);
       return g;
     },
     // 56 — crumbling stairs
@@ -630,8 +630,8 @@
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 21, 10, 'B'); put(g, 10, 10, 'B'); put(g, 15, 10, 'B');
       put(g, 12, 11, 'C');
-      put(g, 4, 11, 'S'); put(g, 19, 11, 'S');
-      put(g, 4, 10, 'k'); put(g, 19, 10, 'k');
+      put(g, 4, 11, 'S');
+      put(g, 4, 10, 'k');
 
       coins(g, [[3, 11], [8, 10], [13, 11], [17, 10], [15, 7]]);
       return g;
@@ -660,12 +660,12 @@
     },
     // 63 — the jetty
     () => {
-      const g = blank(); ground(g, [[4, 17]]);
-      rect(g, 4, 13, 17, 1, 'w');
+      const g = blank(); ground(g, [[6, 3], [12, 3], [18, 3]]);
+      rect(g, 6, 13, 3, 1, 'w'); rect(g, 12, 13, 3, 1, 'w'); rect(g, 18, 13, 3, 1, 'w');
+      row(g, 12, 6, '=', 3); row(g, 12, 12, '=', 3); row(g, 12, 18, '=', 3);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 2, 12, 'F'); put(g, 22, 12, 'G');
       put(g, 12, 11, 'C');
-      coins(g, [[6, 11], [12, 11], [18, 11]]);
+      coins(g, [[4, 11], [10, 11], [16, 11], [20, 11]]);
       return g;
     },
     // 64 — shell stair
@@ -727,15 +727,20 @@
       coins(g, [[4, 11], [10, 11], [13, 11], [18, 11], [22, 11]]);
       return g;
     },
-    // 70 — the tide elevator
+    // 70 — the tide stair
     () => {
-      const g = blank(); ground(g, [[10, 5]]);
-      rect(g, 10, 13, 5, 1, 'w');
+      const g = blank(); ground(g, [[9, 7]]);
+      rect(g, 9, 13, 7, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 11, 10, 'V');
-      row(g, 6, 12, '=', 4); row(g, 9, 18, '=', 4);
-      put(g, 12, 11, 'C');
-      coins(g, [[4, 11], [14, 5], [20, 8]]);
+      // a staircase of one-way planks climbs over the tide channel
+      row(g, 11, 6, '=', 3);
+      row(g, 10, 9, '=', 3);
+      row(g, 9, 12, '=', 3);
+      row(g, 8, 15, '=', 3);
+      row(g, 9, 18, '=', 2);
+      row(g, 10, 20, '=', 3);
+      put(g, 14, 11, 'C');
+      coins(g, [[4, 11], [13, 8], [19, 9]]);
       return g;
     },
     // 71 — three keys, three doors
@@ -780,14 +785,12 @@
       coins(g, [[6, 10], [10, 8], [14, 7], [18, 10], [22, 11]]);
       return g;
     },
-    // 75 — coast moths
+    // 75 — sunbather beach
     () => {
       const g = blank(); ground(g);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 20, 10, 'B');
-      put(g, 9, 9, 'f'); put(g, 14, 8, 'f');
       put(g, 12, 11, 'C');
-      coins(g, [[5, 11], [10, 11], [16, 11], [18, 8]]);
+      coins(g, [[5, 11], [10, 11], [16, 11], [20, 11]]);
       return g;
     },
     // 76 — the harbour tower
@@ -816,13 +819,13 @@
     },
     // 78 — the ferry home
     () => {
-      const g = blank(); ground(g, [[4, 17]]);
-      rect(g, 4, 13, 17, 1, 'w');
+      const g = blank(); ground(g, [[8, 5]]);
+      rect(g, 8, 13, 5, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 2, 12, 'F'); put(g, 22, 12, 'G');
+      // a low plank bridge crosses the ferry channel
+      row(g, 10, 7, '=', 7);
       put(g, 12, 11, 'C');
-      put(g, 8, 9, 'f'); put(g, 16, 9, 'f');
-      coins(g, [[6, 11], [12, 11], [18, 11]]);
+      coins(g, [[4, 11], [9, 9], [12, 9], [16, 11]]);
       return g;
     },
     // 79 — the lighthouse climb
@@ -841,10 +844,9 @@
       const g = blank();
       row(g, 12, 0, '#', 25); row(g, 13, 0, '#', 25);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 21, 10, 'B'); put(g, 10, 10, 'B'); put(g, 15, 10, 'B');
-      put(g, 12, 11, 'C');
-      put(g, 4, 11, 'S'); put(g, 19, 11, 'S');
-      put(g, 4, 10, 'k'); put(g, 19, 10, 'k');
+      put(g, 12, 10, 'B');
+      put(g, 18, 11, 'C');
+      put(g, 4, 10, 'k');
       coins(g, [[3, 11], [8, 10], [13, 11], [17, 10], [15, 7]]);
       return g;
     },
