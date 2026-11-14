@@ -47,10 +47,10 @@
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
       if (ch === 'f') enemies.push({ kind: 'flyer', x: xx * T + 4, y: yy * T + 4, w: 22, h: 22, vx: 1.3, vy: 0, dead: false, t: 0, base: yy * T, x0: xx * T, x1: Math.min(W * T - T, xx * T + T * 3) });
       if (ch === 'm') enemies.push({ kind: 'hammer', x: xx * T + 4, y: yy * T + 4, w: 26, h: 26, vx: 1.6, vy: 0, dead: false, t: 0, base: yy * T });
-      if (ch === 'M') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: xx * T + T * 3, dx: 0, dy: 0 });
-      if (ch === 'V') platforms.push({ kind: 'v', x: xx * T, y: yy * T, w: T * 2, h: 12, y0: yy * T, y1: yy * T - T * 4, dx: 0, dy: 0 });
+      if (ch === 'M') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: xx * T + T * 2, dx: 0, dy: 0 });
+      if (ch === 'V') platforms.push({ kind: 'v', x: xx * T, y: (yy + 1) * T, w: T * 2, h: 12, y0: (yy + 1) * T, y1: (yy - 5) * T, dx: 0, dy: -0.9, wait: 120 });
     }
-    p = { x: sx * T + 4, y: sy * T + 4, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1 };
+    p = { x: sx * T + 4, y: sy * T + 4, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1, ride: null };
     state = 'play';
     $('lvl').textContent = (level + 1) + '/' + LEVELS.length;
   }
@@ -148,13 +148,30 @@
     if (!left && !right) p.vx *= p.onGround ? (onIce ? 0.985 : 0.78) : 0.94;
 
     const wasGround = p.onGround;
+    // a bird riding a moving platform stays glued to it
+    if (p.ride) {
+      const r = p.ride;
+      const stillOn = p.x + p.w > r.x && p.x < r.x + r.w && Math.abs((p.y + p.h) - r.y) < 18;
+      if (stillOn) { p.y = r.y - p.h; p.vy = 0; p.onGround = true; }
+      else p.ride = null;
+    }
     p.vy += 0.62;
     if (jump && wasGround) { p.vy = -12.8; p.onGround = false; beep(520, .08, 'triangle'); }
     if (!jump && p.vy < -5) p.vy += 0.35; // variable jump height
 
     moveX(p, p.vx);
+    const prevFeet = p.y + p.h;
     const landed = moveY(p, p.vy);
     p.onGround = landed;
+    // moving platforms catch a falling bird from above
+    if (!p.onGround && p.vy > 0) {
+      for (const pl of platforms) {
+        if (prevFeet <= pl.y + 6 && p.y + p.h >= pl.y &&
+            p.x + p.w > pl.x + 2 && p.x < pl.x + pl.w - 2) {
+          p.y = pl.y - p.h; p.vy = 0; p.onGround = true; p.ride = pl; break;
+        }
+      }
+    }
     if (landed && !wasGround) {
       const ch = tileAt(Math.floor((p.x + p.w / 2) / T), Math.floor((p.y + p.h + 2) / T));
       if (ch === 'S') { p.vy = -16; beep(700, .12, 'triangle'); }
@@ -211,19 +228,22 @@
     // moving platforms (simulation)
     for (const pl of platforms) {
       if (pl.kind === 'h') {
-        pl.x += pl.dx; pl.dx = 0;
+        pl.moveX = pl.dx; pl.x += pl.dx; pl.dx = 0;
         if (pl.x <= pl.x0) { pl.x = pl.x0; pl.dx = 1.1; }
         if (pl.x >= pl.x1) { pl.x = pl.x1; pl.dx = -1.1; }
       } else {
-        pl.y += pl.dy; pl.dy = 0;
-        if (pl.y >= pl.y0) { pl.y = pl.y0; pl.dy = -0.9; }
-        if (pl.y <= pl.y1) { pl.y = pl.y1; pl.dy = 0.9; }
+        if (pl.wait > 0) { pl.wait--; }
+        else {
+          pl.y += pl.dy;
+          if (pl.y >= pl.y0) { pl.y = pl.y0; pl.dy = -0.9; pl.wait = 120; }
+          if (pl.y <= pl.y1) { pl.y = pl.y1; pl.dy = 0.9; pl.wait = 120; }
+        }
       }
       // ride the platform if the bird stands on it
       const feet = p.y + p.h;
       if (p.onGround && feet >= pl.y - 4 && feet <= pl.y + 10 &&
           p.x + p.w > pl.x && p.x < pl.x + pl.w) {
-        p.x += pl.dx; p.y += pl.dy;
+        p.x += (pl.moveX || 0); p.y += (pl.dy || 0); p.ride = pl;
       }
     }
 
@@ -429,6 +449,8 @@
     let start = 0;
     const lv = parseInt(q.get('level'), 10);
     if (!isNaN(lv) && lv >= 1 && lv <= LEVELS.length) start = lv - 1;
+    const lv2 = parseInt(q.get('lives'), 10);
+    if (!isNaN(lv2) && lv2 >= 1 && lv2 <= 9) { lives = lv2; $('lives').textContent = lives; }
     loadLevel(start);
   }
   reset(); loadBoard(); requestAnimationFrame(loop);

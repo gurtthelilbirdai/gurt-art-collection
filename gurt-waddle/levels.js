@@ -164,10 +164,10 @@
     },
     // 16 — elevator shaft
     () => {
-      const g = blank(); ground(g, [[9, 7]]);
-      rect(g, 9, 13, 7, 1, 'w');
+      const g = blank(); ground(g, [[10, 5]]);
+      rect(g, 10, 13, 5, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 12, 10, 'V');
+      put(g, 11, 10, 'V');
       col(g, 12, 4, '=', 1);
       row(g, 6, 12, '=', 4); row(g, 9, 18, '=', 4);
       put(g, 12, 11, 'C');
@@ -217,8 +217,7 @@
       put(g, 10, 10, 'B');
       put(g, 12, 11, 'C');
       // drifting planks above the bridges, for the coin route
-      put(g, 11, 10, 'M'); put(g, 18, 10, 'M');
-      coins(g, [[4, 11], [8, 10], [13, 11], [17, 10], [19, 7]]);
+      coins(g, [[4, 11], [8, 10], [13, 11], [17, 10], [15, 7]]);
       return g;
     },
     // 21 — ice pond
@@ -279,15 +278,13 @@
       coins(g, [[5, 11], [10, 11], [16, 11], [18, 8]]);
       return g;
     },
-    // 27 — elevator and ice
+    // 27 — moving platform over the icy gap
     () => {
-      const g = blank(); ground(g, [[9, 7]]);
-      rect(g, 9, 13, 7, 1, 'w');
+      const g = blank(); ground(g, [[10, 3]]);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 12, 10, 'V');
-      row(g, 6, 12, '=', 4); row(g, 9, 18, '=', 4);
-      put(g, 12, 11, 'C');
-      coins(g, [[4, 11], [14, 5], [20, 8]]);
+      row(g, 12, 10, '=', 3);
+      put(g, 14, 11, 'C');
+      coins(g, [[4, 11], [11, 11], [17, 11], [21, 11]]);
       return g;
     },
     // 28 — hammer bridge
@@ -313,12 +310,13 @@
     },
     // 30 — the long ferry
     () => {
-      const g = blank(); ground(g, [[4, 17]]);
-      rect(g, 4, 13, 17, 1, 'w');
+      const g = blank(); ground(g);
+      // a frozen river runs under the ferry deck
+      rect(g, 3, 13, 19, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 7, 11, 'M'); put(g, 12, 11, 'M'); put(g, 17, 11, 'M');
-      put(g, 12, 11, 'C');
-      coins(g, [[6, 11], [10, 11], [15, 11], [19, 11]]);
+      put(g, 11, 11, 'M');
+      put(g, 16, 11, 'C');
+      coins(g, [[4, 11], [9, 11], [14, 11], [19, 11]]);
       return g;
     },
     // 31 — spring ladder
@@ -374,10 +372,10 @@
       const g = blank(); ground(g, [[3, 5], [11, 5], [19, 5]]);
       rect(g, 3, 13, 5, 1, 'w'); rect(g, 11, 13, 5, 1, 'w'); rect(g, 19, 13, 5, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 6, 11, 'M'); put(g, 14, 11, 'M'); put(g, 21, 11, 'M');
+      row(g, 12, 3, '=', 5); row(g, 12, 11, '=', 5); row(g, 12, 19, '=', 5);
       put(g, 9, 11, 'C');
       put(g, 13, 8, 'f');
-      coins(g, [[5, 11], [13, 11], [20, 11]]);
+      coins(g, [[5, 10], [13, 10], [20, 10]]);
       return g;
     },
     // 37 — the long climb, colder
@@ -407,7 +405,7 @@
       rect(g, 7, 13, 3, 1, 'w'); rect(g, 16, 13, 3, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       row(g, 12, 7, 'i', 3); row(g, 12, 16, 'i', 3);
-      put(g, 5, 9, 'k'); put(g, 20, 9, 'k');
+      put(g, 5, 11, 'k'); put(g, 14, 11, 'k');
       put(g, 11, 11, 'D'); put(g, 18, 11, 'D');
       put(g, 9, 8, 'm'); put(g, 14, 7, 'f');
       put(g, 12, 11, 'C');
@@ -420,12 +418,11 @@
       row(g, 12, 0, '#', 25); row(g, 13, 0, '#', 25);
       row(g, 12, 7, '#', 4); row(g, 12, 16, '#', 4);
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 21, 10, 'B'); put(g, 10, 10, 'B'); put(g, 15, 7, 'B');
+      put(g, 21, 10, 'B'); put(g, 10, 10, 'B');
       put(g, 12, 11, 'C');
       put(g, 4, 11, 'S'); put(g, 19, 11, 'S');
       row(g, 11, 7, 'i', 4); row(g, 11, 16, 'i', 4);
-      put(g, 11, 10, 'M'); put(g, 18, 10, 'M');
-      coins(g, [[4, 11], [8, 10], [13, 11], [17, 10], [19, 7]]);
+      coins(g, [[4, 11], [8, 10], [13, 11], [17, 10], [15, 7]]);
       return g;
     }
   ];
