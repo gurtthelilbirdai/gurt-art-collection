@@ -265,7 +265,7 @@
       if (bosses.some(b => !b.dead)) { $('msg').textContent = 'the moths guard the exit — stomp them first'; beep(160, .12, 'sawtooth'); return; }
       if (level === LEVELS.length - 1) { win(); return; }
       score += 100; level++;
-      if (level + 1 > unlockedCount()) saveProgress(level + 1);
+      if (level + 1 > unlockedCount()) unlockTo(level + 1);
       try { localStorage.setItem('waddle-current', String(level + 1)); } catch (e) {}
       loadLevel(level); fillPicker(); beep(1200, .15, 'triangle'); return;
     }
@@ -383,7 +383,7 @@
   function win() {
     state = 'win'; score += lives * 100 + 500; saveRun();
     // the next level is now unlocked for this bird
-    if (level + 2 > unlockedCount()) saveProgress(level + 2);
+    if (level + 2 > unlockedCount()) unlockTo(level + 2);
     try { localStorage.setItem('waddle-current', String(level + 2)); } catch (e) {}
     fillPicker();
     $('score').textContent = score;
@@ -624,11 +624,40 @@
   }
   function goToLevel(n) {
     n = Math.max(1, Math.min(LEVELS.length, n));
+    // only earned levels can be entered; the next-level button must not
+    // quietly unlock the door in front of it
+    if (n > unlockedCount()) { $('msg').textContent = 'that level is still locked'; return; }
     const q = new URLSearchParams(location.search);
     q.set('level', n);
-    if (n > unlockedCount()) saveProgress(n);
     try { localStorage.setItem('waddle-current', String(n)); } catch (e) {}
     location.search = q.toString();
+  }
+  function unlockTo(n) {
+    if (n > unlockedCount()) saveProgress(n);
+    syncProgress();
+  }
+  let cloudLevel = 1;
+  function syncProgress() {
+    const bird = ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt';
+    api('/progress', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bird, level: unlockedCount(), score: Math.max(0, score || 0), coins: Math.max(0, coins || 0) })
+    }).then(d => {
+      if (d && d.progress && d.progress.level > cloudLevel) {
+        cloudLevel = d.progress.level;
+        if (cloudLevel > unlockedCount()) saveProgress(cloudLevel);
+        fillPicker(); buildMap(); refreshMap();
+        $('msg').textContent = 'the flock reached level ' + cloudLevel + ' — unlocked for you';
+      }
+    }).catch(() => {});
+  }
+  function loadCloudProgress() {
+    const bird = ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt';
+    api('/progress?bird=' + encodeURIComponent(bird)).then(d => {
+      if (!d || !d.progress) return;
+      cloudLevel = d.progress.level || 1;
+      if (cloudLevel > unlockedCount()) { saveProgress(cloudLevel); fillPicker(); buildMap(); refreshMap(); }
+    }).catch(() => {});
   }
 
   const REGIONS = [
@@ -666,7 +695,7 @@
 
   $('play').onclick = () => { reset(); };
   $('go').onclick = () => { const v = parseInt($('levels').value, 10); if (!isNaN(v)) goToLevel(v); };
-  $('next').onclick = () => { goToLevel((level || 0) + 2); };
+  $('next').onclick = () => { goToLevel((level || 0) + 1); };
   $('mute').onclick = () => { muted = !muted; $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on'); };
   $('name').onchange = () => saveRun();
 
@@ -687,5 +716,5 @@
     if (!isNaN(lv2) && lv2 >= 1 && lv2 <= 9) { lives = lv2; $('lives').textContent = lives; }
     loadLevel(start);
   }
-  reset(); fillPicker(); buildMap(); refreshMap(); loadBoard(); requestAnimationFrame(loop);
+  reset(); fillPicker(); buildMap(); refreshMap(); loadBoard(); loadCloudProgress(); requestAnimationFrame(loop);
 })();

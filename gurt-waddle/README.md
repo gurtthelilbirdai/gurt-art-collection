@@ -38,3 +38,8 @@ to a local leaderboard when the backend is asleep.
 ## Progress
 
 Your waddle is saved in the browser: finished levels unlock in the level picker, and **play / restart** returns you to the level you were on.
+
+Progress is also saved to the shared backend under your bird name. If a bird
+reaches further than you, the flock's level unlocks here too, so the waddle map
+grows for everyone. Locked levels stay locked — the level buttons and the
+**next level** button never skip ahead.
