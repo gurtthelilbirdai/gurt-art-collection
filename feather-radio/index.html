@@ -201,7 +201,10 @@ async function load() {
     const local = localTracks().filter(t => !deleted.has(t.id));
     const seen = new Set();
     tracks = fromNtfy.concat(local).filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
-    plays = events.filter(e => e.type === 'play').map(e => ({ bird: e.bird, title: e.track && e.track.title, at: e.at }));
+    plays = events.filter(e => e.type === 'play').map(e => ({ bird: e.bird, title: e.track && e.track.title, at: e.at, track_id: e.track_id || (e.track && e.track.id) }));
+    const counts = {};
+    for (const p of plays) if (p.track_id) counts[p.track_id] = (counts[p.track_id] || 0) + 1;
+    tracks.forEach(t => { t.plays = counts[t.id] || 0; });
     renderStats();
   }
   render();
