@@ -120,10 +120,11 @@
     if (checkpoint) { p.x = checkpoint.x * T + 4; p.y = checkpoint.y * T; }
     $('score').textContent = score; $('coins').textContent = coins;
   }
+  let overlay = null;
   function gameOver() {
     state = 'over';
     saveRun();
-    drawOverlay('the waddle ends', 'score ' + score + ' · press play to try again');
+    overlay = { title: 'the waddle ends', sub: 'score ' + score + ' · press play to try again' };
   }
   function drawOverlay(title, sub) {
     x.fillStyle = 'rgba(8,14,26,.78)'; x.fillRect(0, 0, c.width, c.height);
@@ -342,7 +343,8 @@
 
   function win() {
     state = 'win'; score += lives * 100 + 500; saveRun();
-    drawOverlay(level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!', 'score ' + score + ' · the flock will hear about this');
+    $('score').textContent = score;
+    overlay = { title: level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!', sub: 'score ' + score + ' · the flock will hear about this' };
   }
 
   function draw() {
@@ -462,7 +464,11 @@
     x.fillStyle = '#2f7fd1'; x.beginPath(); x.ellipse(p.x + 12, p.y + 21, 8, 5, 0, 0, 7); x.fill();
     if (state === 'over') drawOverlay('the waddle ends', 'score ' + score + ' \u00b7 press play to try again');
     if (state === 'win') drawOverlay('you beat the moon moth!', 'score ' + score + ' \u00b7 the flock will hear about this');
+    if (overlay) drawOverlay(overlay.title, overlay.sub);
   }
+
+  window.addEventListener('error', e => { const m=$('msg'); if(m) m.textContent='ERR: '+e.message; });
+  window.addEventListener('unhandledrejection', e => { const m=$('msg'); if(m) m.textContent='ERR: '+(e.reason&&e.reason.message||e.reason); });
 
   let last = 0;
   function loop(ts) {
@@ -503,6 +509,7 @@
   $('name').onchange = () => saveRun();
 
   function reset() {
+    overlay = null;
     lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;
     $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = 0;
     const q = new URLSearchParams(location.search);
