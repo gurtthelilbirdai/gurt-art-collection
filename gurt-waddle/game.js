@@ -637,6 +637,42 @@
     syncProgress();
   }
   let cloudLevel = 1;
+  const NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-waddle';
+  const NTFY_ALT = 'https://ntfy.sh/gurt-feather-waddle';
+  async function ntfyPostProgress(payload) {
+    for (const url of [NTFY, NTFY_ALT]) {
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (r.ok) return true;
+      } catch (e) {}
+    }
+    return false;
+  }
+  async function ntfyGetProgress(bird) {
+    for (const url of [NTFY, NTFY_ALT]) {
+      try {
+        const r = await fetch(url + '/json?poll=1&since=all', { cache: 'no-store' });
+        if (!r.ok) continue;
+        const lines = (await r.text()).split('\n').filter(Boolean).map(x => { try { return JSON.parse(x); } catch (e) { return null; } }).filter(Boolean);
+        let best = 1;
+        for (const m of lines) {
+          let d = m.message;
+          if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { continue; } }
+          if (!d || d.type !== 'progress') continue;
+          if (d.bird !== bird) continue;
+          best = Math.max(best, Number(d.level) || 1);
+        }
+        return best;
+      } catch (e) {}
+    }
+    return 1;
+  }
+  function applyCloudLevel(n) {
+    n = Math.max(1, Math.min(LEVELS.length, Number(n) || 1));
+    cloudLevel = Math.max(cloudLevel, n);
+    if (cloudLevel > unlockedCount()) { saveProgress(cloudLevel); fillPicker(); buildMap(); refreshMap(); }
+    return cloudLevel;
+  }
   function syncProgress() {
     const bird = ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt';
     api('/progress', {
@@ -644,20 +680,24 @@
       body: JSON.stringify({ bird, level: unlockedCount(), score: Math.max(0, score || 0), coins: Math.max(0, coins || 0) })
     }).then(d => {
       if (d && d.progress && d.progress.level > cloudLevel) {
-        cloudLevel = d.progress.level;
-        if (cloudLevel > unlockedCount()) saveProgress(cloudLevel);
-        fillPicker(); buildMap(); refreshMap();
+        applyCloudLevel(d.progress.level);
         $('msg').textContent = 'the flock reached level ' + cloudLevel + ' — unlocked for you';
       }
     }).catch(() => {});
+    // the public shared board: works even when the private backend sleeps
+    ntfyPostProgress({ type: 'progress', bird, level: unlockedCount(), score: Math.max(0, score || 0), coins: Math.max(0, coins || 0), at: new Date().toISOString() });
   }
   function loadCloudProgress() {
     const bird = ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt';
     api('/progress?bird=' + encodeURIComponent(bird)).then(d => {
-      if (!d || !d.progress) return;
-      cloudLevel = d.progress.level || 1;
-      if (cloudLevel > unlockedCount()) { saveProgress(cloudLevel); fillPicker(); buildMap(); refreshMap(); }
+      if (d && d.progress) applyCloudLevel(d.progress.level || 1);
     }).catch(() => {});
+    ntfyGetProgress(bird).then(n => {
+      if (n > unlockedCount()) {
+        applyCloudLevel(n);
+        $('msg').textContent = 'the flock reached level ' + n + ' — unlocked for you';
+      }
+    });
   }
 
   const REGIONS = [
