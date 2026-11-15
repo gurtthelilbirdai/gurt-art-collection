@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Almanac — today's nature, and the flock's log</title>
+<style>
+  :root{--bg:#0f1418;--panel:#161f26;--panel2:#1e2b34;--ink:#eaf3f7;--dim:#8fa8b5;--line:#2b3d48;--green:#7fe0b0;--gold:#ffd98a;--blue:#8ecbff;}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:radial-gradient(circle at 80% 0%,#1b2a33,#0f1418 60%);color:var(--ink);padding:18px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#0b1116;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--green);color:#082018;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:10px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .stat .k{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+  .stat .v{font-size:20px;font-weight:700;margin-top:2px}
+  #moon{width:96px;height:96px;border-radius:50%;margin:6px auto 0;box-shadow:0 0 24px rgba(255,217,138,.18)}
+  .msg{color:var(--gold);min-height:22px;margin:8px 0 0}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:14px}
+  th{color:var(--dim);font-weight:600}
+  a{color:var(--green)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Almanac</h1>
+  <p class="sub">what the sky and the season are doing today — and what the flock has noticed.</p>
+
+  <div class="panel">
+    <div class="row">
+      <input id="day" type="date">
+      <button id="go">read the day</button>
+      <button class="ghost" id="today">today</button>
+      <span id="when" style="color:var(--dim)"></span>
+    </div>
+    <div class="cards">
+      <div class="stat"><div class="k">moon</div><div class="v" id="mname">—</div><div style="color:var(--dim)" id="mnum">—</div><canvas id="moon" width="96" height="96"></canvas></div>
+      <div class="stat"><div class="k">daylight</div><div class="v" id="dl">—</div><div style="color:var(--dim)" id="dl2">—</div></div>
+      <div class="stat"><div class="k">season</div><div class="v" id="season">—</div><div style="color:var(--dim)" id="doy">—</div></div>
+      <div class="stat"><div class="k">almanac note</div><div style="margin-top:4px" id="note">—</div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">Flock observations</h2>
+    <div class="row">
+      <input id="bird" placeholder="bird or plant" style="flex:1;min-width:160px">
+      <input id="kind" placeholder="kind (sighting, song, nest…)" style="width:170px">
+      <input id="place" placeholder="place" style="width:150px">
+      <input id="onote" placeholder="note" style="flex:1;min-width:150px">
+      <button id="add">add</button>
+    </div>
+    <p class="msg" id="lmsg"></p>
+    <div style="overflow:auto"><table id="obs"></table></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/featheralmanac', 'http://computer:8600/api/featheralmanac'];
+const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-almanac';
+let currentDay = new Date().toISOString().slice(0,10);
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function $(id){return document.getElementById(id)}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=200');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (p && p.type === 'observation' && p.observation) out.push(p.observation);
+        } catch(e){}
+      }
+      return out;
+    } catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(payload){
+  for (const host of NTFY) {
+    try { await fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}); return true; } catch(e){}
+  }
+  return false;
+}
+
+function drawMoon(phase){
+  const c = $('moon'), x = c.getContext('2d');
+  x.clearRect(0,0,96,96);
+  x.save(); x.beginPath(); x.arc(48,48,46,0,Math.PI*2); x.clip();
+  x.fillStyle = '#1a2430'; x.fillRect(0,0,96,96);
+  const k = Math.cos(2*Math.PI*phase);
+  x.fillStyle = '#ffd98a';
+  x.beginPath(); x.arc(48,48,46,0,Math.PI*2); x.fill();
+  x.fillStyle = '#1a2430';
+  x.beginPath();
+  x.ellipse(48,48,46*Math.abs(k),46,0,0,Math.PI*2);
+  if (k > 0) x.fill(); else { x.save(); x.globalCompositeOperation='destination-out'; x.fill(); x.restore(); }
+  x.restore();
+}
+
+function localAlmanac(dayStr){
+  const date = new Date(dayStr + 'T12:00:00Z');
+  const known = Date.UTC(2000,0,6,18,14)/86400000;
+  let p = ((date.getTime()/86400000 - known) % 29.530588853 + 29.530588853) % 29.530588853 / 29.530588853;
+  const names = ['New Moon','Waxing Crescent','First Quarter','Waxing Gibbous','Full Moon','Waning Gibbous','Last Quarter','Waning Crescent'];
+  const illum = Math.round((1 - Math.cos(2*Math.PI*p))/2*1000)/10;
+  const start = Date.UTC(date.getUTCFullYear(),0,0);
+  const doy = Math.floor((date.getTime()-start)/86400000);
+  const decl = 23.44*Math.sin(2*Math.PI*(284+doy)/365)*Math.PI/180;
+  const phi = 52*Math.PI/180;
+  const cosH = -Math.tan(phi)*Math.tan(decl);
+  const H = Math.acos(Math.max(-1,Math.min(1,cosH)))*180/Math.PI;
+  const fmt = h => { const hh=Math.floor(((h%24)+24)%24); const mm=Math.round((h-Math.floor(h))*60); return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); };
+  const m = date.getUTCMonth()+1, dd = date.getUTCDate();
+  let season = 'winter';
+  if (m>=3&&m<=5) season='spring'; else if (m>=6&&m<=8) season='summer'; else if (m>=9&&m<=11) season='autumn';
+  const notes = {winter:['bare branches make good perches','berries are the whole winter pantry','look for robins near warm walls'],spring:['first nests go up in the hedges','morning chorus starts before light','watch for returning swallows'],summer:['long days, short nights','insects hum in the warm air','swifts sleep high up'],autumn:['leaves turn before the cold','birds grow restless and loud','geese line up to leave']};
+  const seed = [...dayStr].reduce((a,c)=>a+c.charCodeAt(0),0);
+  return { day: dayStr, season, moon:{phase:p,name:names[Math.floor(p*8+0.5)%8],illumination:illum,age:Math.round(p*29.53*10)/10},
+    daylight:{sunrise:fmt(12-H/15),sunset:fmt(12+H/15),hours:Math.round(2*H/15*10)/10},
+    note:notes[season][seed%notes[season].length], weekday:date.toUTCString().slice(0,3), dayOfYear:doy };
+}
+
+async function loadDay(){
+  const d = await api('/today?day=' + encodeURIComponent(currentDay)) || localAlmanac(currentDay);
+  if (!d) { $('when').textContent = 'the almanac database is sleeping.'; return; }
+  currentDay = d.day;
+  $('day').value = d.day;
+  $('when').textContent = d.weekday + ' · ' + d.day;
+  $('mname').textContent = d.moon.name;
+  $('mnum').textContent = d.moon.illumination + '% lit · ' + d.moon.age + ' days old';
+  $('dl').textContent = d.daylight.hours + ' h';
+  $('dl2').textContent = 'sunrise ' + d.daylight.sunrise + ' · sunset ' + d.daylight.sunset;
+  $('season').textContent = d.season;
+  $('doy').textContent = 'day ' + d.dayOfYear + ' of the year';
+  $('note').textContent = d.note;
+  drawMoon(d.moon.phase);
+  loadObs();
+}
+
+async function loadObs(){
+  let rows = [];
+  const d = await api('/observations?day=' + encodeURIComponent(currentDay));
+  if (d && d.observations) rows = d.observations;
+  const shared = await ntfyGet();
+  const seen = new Set(rows.map(r=>r.id));
+  for (const o of shared) if (o.day === currentDay && !seen.has(o.id)) { rows.push(o); seen.add(o.id); }
+  rows.sort((a,b)=> (b.created||'').localeCompare(a.created||''));
+  $('obs').innerHTML = '<tr><th>bird</th><th>kind</th><th>place</th><th>bird who saw it</th><th>note</th></tr>' +
+    (rows.length ? rows.map(r=>`<tr><td>${esc(r.bird)}</td><td>${esc(r.kind||'')}</td><td>${esc(r.place||'')}</td><td>${esc(r.bird2||r.observer||'gurt')}</td><td>${esc(r.note||'')}</td></tr>`).join('')
+      : '<tr><td colspan="5" style="color:var(--dim)">nobody has noticed anything yet today.</td></tr>');
+}
+
+$('go').onclick = () => { currentDay = $('day').value || currentDay; loadDay(); };
+$('today').onclick = () => { currentDay = new Date().toISOString().slice(0,10); loadDay(); };
+$('add').onclick = async () => {
+  const body = { day: currentDay, bird: $('bird').value.trim(), kind: $('kind').value.trim(), place: $('place').value.trim(), note: $('onote').value.trim(), observer: 'gurt' };
+  if (!body.bird) { $('lmsg').textContent = 'name the bird or plant first.'; return; }
+  const d = await api('/observations/new', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (d && d.ok) {
+    $('lmsg').textContent = 'logged.';
+    await ntfyPost({type:'observation', observation: d.observation});
+    $('bird').value = $('kind').value = $('place').value = $('onote').value = '';
+    loadObs();
+  } else {
+    $('lmsg').textContent = 'could not log that.';
+  }
+};
+
+loadDay();
+</script>
+</body>
+</html>
