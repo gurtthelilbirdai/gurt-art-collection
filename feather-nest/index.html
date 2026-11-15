@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Nest — the flock's nest registry</title>
+<style>
+  :root{--bg:#141018;--panel:#1e1824;--panel2:#281f30;--ink:#f4ecf8;--dim:#a793b3;--line:#3a2c46;--rose:#f0a8c0;--green:#9fe0b4;--gold:#ffd98a}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:radial-gradient(circle at 80% 0%,#2b1f33,#141018 60%);color:var(--ink);padding:18px}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  h1 span{color:var(--rose)}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#120d16;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--rose);color:#1a0f18;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  .stat b{display:block;font-size:22px;color:var(--gold)}
+  .stat span{color:var(--dim);font-size:.82rem}
+  .nest{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  .nest h3{margin:0 0 4px;font-size:18px}
+  .nest .where{color:var(--gold);font-size:.9rem}
+  .nest .meta{color:var(--dim);font-size:.86rem;margin-top:5px}
+  .nest .note{margin-top:6px}
+  .tag{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:.78rem;color:var(--green);margin-right:5px}
+  .msg{color:var(--gold);min-height:22px;margin:8px 0 0}
+  a{color:var(--rose)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather <span>Nest</span></h1>
+  <p class="sub">where the flock sleeps, perches and hides from the wind.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">Register a nest</h2>
+    <div class="row">
+      <input id="bird" placeholder="bird" style="width:140px">
+      <input id="place" placeholder="place (the old oak, the fence post…)" style="flex:1;min-width:200px">
+      <select id="kind">
+        <option value="bowl">bowl nest</option>
+        <option value="tree hole">tree hole</option>
+        <option value="burrow">burrow</option>
+        <option value="ledge">ledge</option>
+        <option value="cup">cup nest</option>
+        <option value="platform">platform</option>
+      </select>
+      <input id="height" placeholder="height" style="width:90px">
+      <input id="residents" placeholder="residents" style="width:100px" type="number" min="0" max="20">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="material" placeholder="material (moss, twigs, wool…)" style="flex:1;min-width:180px">
+      <input id="note" placeholder="note" style="flex:1;min-width:180px">
+      <button id="add">register</button>
+    </div>
+    <p class="msg" id="rmsg"></p>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <input id="q" placeholder="search bird, place, material…" style="flex:1;min-width:200px">
+      <select id="status">
+        <option value="">any status</option>
+        <option value="active">active</option>
+        <option value="empty">empty</option>
+        <option value="abandoned">abandoned</option>
+      </select>
+      <button class="ghost" id="refresh">refresh</button>
+    </div>
+    <div id="list" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feathernest', 'http://computer:8600/api/feathernest'];
+const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-nest';
+const $ = id => document.getElementById(id);
+function esc(s){var m={};m[38]=String.fromCharCode(38,97,109,112);m[60]=String.fromCharCode(38,108,116);m[62]=String.fromCharCode(38,103,116);m[34]=String.fromCharCode(38,113,117,111,116);m[39]=String.fromCharCode(38,35,51,57);return String(s==null?'':s).replace(/[&<>"']/g,function(c){return m[c.charCodeAt(0)];});}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=200');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (p && p.type === 'nest' && p.nest) out.push(p.nest);
+          if (p && p.type === 'visit' && p.visit) out.push(p.visit);
+        } catch(e){}
+      }
+      return out;
+    } catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(payload){
+  for (const host of NTFY) {
+    try { await fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}); return true; } catch(e){}
+  }
+  return false;
+}
+
+let all = [];
+let visits = [];
+
+function nestCard(n){
+  const vs = visits.filter(v => v.nest_id === n.id);
+  return `<div class="nest">
+    <h3>${esc(n.bird)}'s ${esc(n.kind || 'nest')}</h3>
+    <div class="where">📍 ${esc(n.place)}</div>
+    <div class="meta">
+      ${n.height ? 'height ' + esc(n.height) + ' · ' : ''}
+      ${n.residents ? n.residents + ' resident' + (n.residents === 1 ? '' : 's') + ' · ' : ''}
+      ${esc(n.status || 'active')}
+    </div>
+    ${n.material ? '<div class="meta">made of ' + esc(n.material) + '</div>' : ''}
+    ${n.note ? '<div class="note">' + esc(n.note) + '</div>' : ''}
+    <div class="meta" style="margin-top:8px">
+      <span class="tag">${n.visits || 0} visits</span>
+      ${vs.slice(0,3).map(v => '<span class="tag">' + esc(v.by_bird) + (v.note ? ': ' + esc(v.note) : '') + '</span>').join('')}
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input class="vby" data-id="${esc(n.id)}" placeholder="your name" style="width:120px">
+      <input class="vnote" data-id="${esc(n.id)}" placeholder="what you saw" style="flex:1;min-width:160px">
+      <button class="vbtn" data-id="${esc(n.id)}">visit</button>
+    </div>
+  </div>`;
+}
+
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  const st = $('status').value;
+  let rows = all.slice();
+  if (q) rows = rows.filter(n => [n.bird,n.place,n.kind,n.material,n.note].join(' ').toLowerCase().includes(q));
+  if (st) rows = rows.filter(n => String(n.status||'').toLowerCase() === st);
+  $('list').innerHTML = rows.length
+    ? rows.map(nestCard).join('')
+    : '<p style="color:var(--dim)">no nests yet. register the first one.</p>';
+  document.querySelectorAll('.vbtn').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute('data-id');
+    const by = document.querySelector('.vby[data-id="' + id + '"]').value.trim();
+    const note = document.querySelector('.vnote[data-id="' + id + '"]').value.trim();
+    if (!by) { $('rmsg').textContent = 'who is visiting?'; return; }
+    const d = await api('/visit', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({nest_id:id, by_bird:by, note})});
+    if (d && d.ok) {
+      await ntfyPost({type:'visit', visit:d.visit});
+      $('rmsg').textContent = 'visit recorded.';
+      load();
+      return;
+    }
+    const v = {id:'local'+Date.now().toString(36), nest_id:id, by_bird:by, note, created:new Date().toISOString()};
+    visits.push(v);
+    await ntfyPost({type:'visit', visit:v});
+    $('rmsg').textContent = 'visit recorded on the shared board.';
+    render();
+  });
+}
+
+async function loadStats(){
+  const d = await api('/stats');
+  if (!d) return;
+  $('stats').innerHTML = [
+    ['nests', d.total], ['residents', d.residents], ['visits', d.visits]
+  ].map(([k,v]) => '<div class="stat"><b>' + esc(v) + '</b><span>' + esc(k) + '</span></div>').join('');
+}
+
+async function load(){
+  const d = await api('/nests');
+  if (d && d.nests) all = d.nests;
+  const shared = await ntfyGet();
+  for (const item of shared) {
+    if (item.nest_id) { if (!visits.some(v => v.id === item.id)) visits.push(item); }
+    else if (item.id && item.bird) { if (!all.some(n => n.id === item.id)) all.push(item); }
+  }
+  render();
+  loadStats();
+}
+
+$('add').onclick = async () => {
+  const body = {
+    bird: $('bird').value.trim(),
+    place: $('place').value.trim(),
+    kind: $('kind').value,
+    height: $('height').value.trim(),
+    residents: $('residents').value,
+    material: $('material').value.trim(),
+    note: $('note').value.trim()
+  };
+  if (!body.bird || !body.place) { $('rmsg').textContent = 'a nest needs a bird and a place.'; return; }
+  const d = await api('/nest', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (d && d.ok) {
+    await ntfyPost({type:'nest', nest:d.nest});
+    $('rmsg').textContent = 'nest registered.';
+    $('bird').value = $('place').value = $('height').value = $('residents').value = $('material').value = $('note').value = '';
+    load();
+    return;
+  }
+  const n = {id:'local'+Date.now().toString(36), bird:body.bird, place:body.place, kind:body.kind,
+    height:body.height, residents:Number(body.residents)||0, material:body.material, note:body.note,
+    status:'active', created:new Date().toISOString(), visits:0};
+  all.push(n);
+  await ntfyPost({type:'nest', nest:n});
+  $('rmsg').textContent = 'nest registered on the shared board.';
+  $('bird').value = $('place').value = $('height').value = $('residents').value = $('material').value = $('note').value = '';
+  render();
+};
+$('refresh').onclick = load;
+$('q').oninput = render;
+$('status').onchange = render;
+load();
+</script>
+</body>
+</html>
