@@ -65,6 +65,15 @@ db.exec(`
     PRIMARY KEY (bird, medal_id)
   );
   CREATE INDEX IF NOT EXISTS medals_medal ON medals(medal_id);
+  CREATE TABLE IF NOT EXISTS ghosts (
+    level INTEGER NOT NULL,
+    bird TEXT NOT NULL,
+    samples TEXT NOT NULL,
+    seconds REAL NOT NULL DEFAULT 0,
+    at TEXT NOT NULL,
+    PRIMARY KEY (level, bird)
+  );
+  CREATE INDEX IF NOT EXISTS ghosts_level ON ghosts(level, seconds ASC);
   CREATE TABLE IF NOT EXISTS progress (
     bird TEXT PRIMARY KEY,
     level INTEGER NOT NULL DEFAULT 1,
@@ -103,6 +112,11 @@ const stmt = {
   medalBirdList: db.prepare('SELECT bird, medal_id, at FROM medals ORDER BY at DESC LIMIT 300'),
   medalAward: db.prepare('INSERT OR IGNORE INTO medals (bird, medal_id, at) VALUES (?,?,?)'),
   medalHas: db.prepare('SELECT COUNT(*) AS n FROM medals WHERE bird = ? AND medal_id = ?'),
+  ghostGet: db.prepare('SELECT level, bird, samples, seconds, at FROM ghosts WHERE level = ? ORDER BY seconds ASC LIMIT 1'),
+  ghostMine: db.prepare('SELECT level, bird, samples, seconds, at FROM ghosts WHERE level = ? AND bird = ?'),
+  ghostAll: db.prepare('SELECT level, bird, seconds, at FROM ghosts ORDER BY level ASC, seconds ASC LIMIT 200'),
+  ghostUpsert: db.prepare(`INSERT INTO ghosts (level,bird,samples,seconds,at) VALUES (@level,@bird,@samples,@seconds,@at)
+    ON CONFLICT(level,bird) DO UPDATE SET samples=excluded.samples, seconds=MIN(ghosts.seconds, excluded.seconds), at=excluded.at`),
   upsertProgress: db.prepare(`INSERT INTO progress (bird,level,score,coins,updated) VALUES (@bird,@level,@score,@coins,@updated)
     ON CONFLICT(bird) DO UPDATE SET level=MAX(level,excluded.level), score=MAX(score,excluded.score), coins=MAX(coins,excluded.coins), updated=excluded.updated`)
 };
@@ -291,6 +305,39 @@ module.exports = function handler(req, res, seg) {
       stmt.bumpPlays.run(id);
       const row = stmt.getLevel.get(id);
       return json(res, 200, { ok: true, plays: row ? row.plays : 0 });
+    });
+  }
+
+  if (req.method === 'GET' && route === 'ghost') {
+    const url = req.url.split('?')[1] || '';
+    const level = Math.max(1, Math.min(100, Math.floor(Number((url.split('level=')[1] || '').split('&')[0]) || 0)));
+    if (!level) return json(res, 200, { ghosts: stmt.ghostAll.all() });
+    const row = stmt.ghostGet.get(level);
+    if (!row) return json(res, 200, { ghost: null });
+    let samples = [];
+    try { samples = JSON.parse(row.samples); } catch (e) {}
+    return json(res, 200, { ghost: { level: row.level, bird: row.bird, samples, seconds: row.seconds, at: row.at } });
+  }
+
+  if (req.method === 'POST' && route === 'ghost') {
+    return readBody(req, body => {
+      const bird = birdName(body.bird);
+      const level = Math.max(1, Math.min(100, Math.floor(Number(body.level) || 1)));
+      const seconds = Math.max(0.1, Math.min(3600, Number(body.seconds) || 0.1));
+      let samples = body.samples;
+      if (typeof samples === 'string') { try { samples = JSON.parse(samples); } catch (e) { samples = []; } }
+      if (!Array.isArray(samples) || !samples.length) return json(res, 400, { error: 'no ghost samples' });
+      const clean = samples.slice(0, 4000).map(s2 => {
+        if (!Array.isArray(s2)) return null;
+        const gx = Math.max(0, Math.min(800, Math.round(Number(s2[0]) || 0)));
+        const gy = Math.max(-200, Math.min(600, Math.round(Number(s2[1]) || 0)));
+        const gf = Number(s2[2]) < 0 ? -1 : 1;
+        return [gx, gy, gf];
+      }).filter(Boolean);
+      if (!clean.length) return json(res, 400, { error: 'no ghost samples' });
+      stmt.ghostUpsert.run({ level, bird, samples: JSON.stringify(clean), seconds, at: now() });
+      const best = stmt.ghostGet.get(level);
+      return json(res, 200, { ok: true, saved: true, ghost: { level: best.level, bird: best.bird, samples: JSON.parse(best.samples), seconds: best.seconds } });
     });
   }
 
