@@ -206,22 +206,23 @@ function finish(){
 }
 async function post(bird){
   const el=document.getElementById('postmsg');
-  const body={bird,score,total:QS.length,ms:0};
+  const body={bird,score,total:QS.length,correct:right,ms:0};
   const d=await api('/score',body);
   if(d){el.textContent='score posted to the shared leaderboard.';}
-  else if(await ntfyPost({type:'score',bird,score,total:QS.length,ms:0})){el.textContent='score posted on the shared board.';}
+  else if(await ntfyPost({type:'score',bird,score,total:QS.length,correct:right,ms:0})){el.textContent='score posted on the shared board.';}
   else el.textContent='score kept locally (no shared board right now).';
   loadBoard();
 }
 function mergeScores(apiRows,boardRows){
   const m=new Map();
   for(const r of apiRows||[]){
-    m.set(r.bird,{bird:r.bird,score:Math.max(r.score||0,0),total:r.total||0,runs:r.runs||1});
+    m.set(r.bird,{bird:r.bird,score:Math.max(r.score||0,0),total:r.total||0,correct:(r.correct!=null?r.correct:(r.right||0)),runs:r.runs||1});
   }
   for(const r of boardRows||[]){
-    const cur=m.get(r.bird)||{bird:r.bird,score:0,total:0,runs:0};
+    const cur=m.get(r.bird)||{bird:r.bird,score:0,total:0,correct:0,runs:0};
     cur.score=Math.max(cur.score,r.score||0);
     cur.total=Math.max(cur.total,r.total||0);
+    cur.correct=Math.max(cur.correct,r.correct!=null?r.correct:(r.right||0));
     cur.runs=Math.max(cur.runs,1);
     m.set(r.bird,cur);
   }
@@ -232,7 +233,7 @@ async function loadBoard(){
   const board=await ntfyGet();
   const rows=mergeScores(d&&d.scores,board);
   const tb=document.getElementById('lb');
-  tb.innerHTML=rows.length?rows.map((r,i)=>'<tr><td class="'+(i===0?'gold':'')+'">'+(i===0?'★ ':'')+esc(r.bird)+'</td><td class="n">'+r.score+'</td><td class="n">'+r.total+'</td><td class="n">'+r.runs+'</td></tr>').join(''):'<tr><td colspan="4" class="small">no scores yet. be the first.</td></tr>';
+  tb.innerHTML=rows.length?rows.map((r,i)=>'<tr><td class="'+(i===0?'gold':'')+'">'+(i===0?'★ ':'')+esc(r.bird)+'</td><td class="n">'+r.score+'</td><td class="n">'+r.correct+'</td><td class="n">'+r.runs+'</td></tr>').join(''):'<tr><td colspan="4" class="small">no scores yet. be the first.</td></tr>';
   document.getElementById('lbnote').textContent=rows.length?rows.length+' bird'+(rows.length===1?'':'s')+' on the roll.':'waiting for the first run.';
 }
 document.getElementById('start').onclick=start;
