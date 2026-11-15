@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Quiz — can you name the bird?</title>
+<style>
+:root{--bg:#0f1418;--card:#182028;--ink:#e8eef2;--dim:#93a4b0;--blue:#5fb3ff;--green:#7bd88f;--gold:#f1c40f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;padding:16px}
+.wrap{max-width:720px;margin:0 auto}
+h1{font-size:1.6rem;margin:0 0 4px}
+.sub{color:var(--dim);margin:0 0 16px;font-size:.95rem}
+.card{background:var(--card);border:1px solid #24313c;border-radius:14px;padding:16px;margin-bottom:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grow{flex:1;min-width:140px}
+input,button{font:inherit}
+input{background:#0e141a;border:1px solid #2b3946;color:var(--ink);border-radius:9px;padding:9px 11px;width:100%}
+button{background:#223140;border:1px solid #35485a;color:var(--ink);border-radius:9px;padding:9px 14px;cursor:pointer}
+button:hover{background:#2b3d50}
+button.primary{background:var(--blue);border-color:var(--blue);color:#04121e;font-weight:700}
+button:disabled{opacity:.55;cursor:default}
+.clues{font-size:1.05rem;margin:10px 0 14px}
+.clues b{color:var(--gold)}
+.opts{display:grid;gap:9px}
+.opt{text-align:left;padding:12px 14px;border-radius:11px}
+.opt.right{border-color:var(--green);background:#18321f}
+.opt.wrong{border-color:#e05252;background:#33191b}
+.score{display:flex;gap:16px;font-size:.95rem;color:var(--dim);margin-bottom:12px;flex-wrap:wrap}
+.score b{color:var(--ink);font-size:1.15rem}
+table{width:100%;border-collapse:collapse;font-size:.95rem}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid #24313c}
+th{color:var(--dim);font-weight:600;font-size:.85rem}
+td.n{text-align:right;color:var(--dim)}
+.gold{color:var(--gold)}
+.msg{color:var(--green);font-size:.95rem;min-height:1.4em}
+.bar{height:8px;background:#0e141a;border-radius:5px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:var(--blue);width:0;transition:width .3s}
+.small{font-size:.85rem;color:var(--dim)}
+a{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Feather Quiz</h1>
+<p class="sub">Real birds from the flock's field guide. Ten questions. Name the bird from its family, home, size and range.</p>
+
+<div id="setup" class="card">
+  <div class="row">
+    <div class="grow"><input id="bird" placeholder="your bird name" maxlength="40" value="gurt"></div>
+    <div class="grow"><select id="len" style="width:100%;background:#0e141a;color:var(--ink;border:1px solid #2b3946;border-radius:9px;padding:9px"><option value="10">10 questions</option><option value="5">5 questions</option><option value="20">20 questions</option></select></div>
+    <button class="primary" id="start">start</button>
+  </div>
+  <p class="small" style="margin-bottom:0">Each right answer is 10 points plus a speed bonus. Wrong answers cost nothing but time.</p>
+</div>
+
+<div id="game" class="card" style="display:none">
+  <div class="score">
+    <span>question <b id="qn">1</b>/<b id="qt">10</b></span>
+    <span>score <b id="sc">0</b></span>
+    <span>streak <b id="st">0</b></span>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="clues" id="clues"></div>
+  <div class="opts" id="opts"></div>
+  <p class="msg" id="msg"></p>
+  <div class="row" style="justify-content:space-between">
+    <button id="skip">skip</button>
+    <button class="primary" id="next" style="display:none">next question</button>
+  </div>
+</div>
+
+<div id="over" class="card" style="display:none">
+  <h2 style="margin:0 0 6px">Finished</h2>
+  <p id="final" style="font-size:1.1rem"></p>
+  <p class="msg" id="postmsg"></p>
+  <div class="row"><button class="primary" id="again">play again</button><button id="change">change bird</button></div>
+</div>
+
+<div class="card">
+  <h3 style="margin:0 0 8px">Leaderboard</h3>
+  <table><thead><tr><th>bird</th><th class="n">score</th><th class="n">right</th><th class="n">runs</th></tr></thead><tbody id="lb"></tbody></table>
+  <p class="small" id="lbnote"></p>
+</div>
+</div>
+<script>
+const NTFY=['https://ntfy.sh','https://ntfy.nerdvpn.de'];
+const TOPIC='feather-quiz';
+const esc=s=>{var m={};m[38]=String.fromCharCode(38,97,109,112,59);m[60]=String.fromCharCode(60);m[62]=String.fromCharCode(62);return String(s==null?'':s).replace(/[&<>]/g,function(c){return m[c.charCodeAt(0)];});};
+let BANK=[],QS=[],i=0,score=0,streak=0,right=0,t0=0,timer=null,played=false,best=0;
+
+async function loadBank(){try{const r=await fetch('bank.json');BANK=await r.json();}catch(e){BANK=[];}}
+
+async function api(path,body){
+  try{
+    const opt=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
+    const r=await fetch('http://computer:8600/api/feather-quiz'+path,opt);
+    if(!r.ok)return null;return await r.json();
+  }catch(e){return null;}
+}
+async function ntfyGet(){
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=200');
+      if(!r.ok)continue;
+      const t=await r.text();const out=[];
+      for(const line of t.split('\n')){
+        if(!line.trim())continue;
+        let m;try{m=JSON.parse(line);}catch(e){continue;}
+        let p=m.message;try{if(typeof p==='string')p=JSON.parse(p);}catch(e){}
+        if(p&&p.type==='score')out.push(p);
+      }
+      return out;
+    }catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(p){for(const h of NTFY){try{await fetch(h+'/'+TOPIC,{method:'POST',body:JSON.stringify(p)});return true;}catch(e){}}return false;}
+
+function pick(n){const a=[...BANK];for(let k=a.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[a[k],a[j]]=[a[j],a[k]];}return a.slice(0,n);}
+
+function buildQ(bank){
+  const ans=bank[0];
+  const wrongs=[];
+  for(const b of bank){if(wrongs.length>=3)break;if(b.en!==ans.en)wrongs.push(b);}
+  const opts=[ans,...wrongs].sort(()=>Math.random()-0.5);
+  const facts=[];
+  facts.push('family <b>'+esc(ans.family)+'</b>');
+  facts.push('home <b>'+esc(ans.habitat)+'</b>');
+  if(ans.mass)facts.push('mass <b>'+ans.mass+' g</b>');
+  if(ans.iucn)facts.push('status <b>'+esc(ans.iucn)+'</b>');
+  if(ans.range)facts.push('range '+esc(ans.range.length>150?ans.range.slice(0,150)+'…':ans.range));
+  return {ans,opts,facts};
+}
+
+function start(){
+  if(!BANK.length){document.getElementById('msg').textContent='no bank loaded';return;}
+  const n=parseInt(document.getElementById('len').value,10);
+  QS=pick(n).map(buildQ);
+  i=0;score=0;streak=0;right=0;played=false;
+  document.getElementById('setup').style.display='none';
+  document.getElementById('over').style.display='none';
+  document.getElementById('game').style.display='block';
+  document.getElementById('qt').textContent=QS.length;
+  show();
+}
+function show(){
+  const q=QS[i];
+  document.getElementById('qn').textContent=i+1;
+  document.getElementById('sc').textContent=score;
+  document.getElementById('st').textContent=streak;
+  document.getElementById('bar').style.width=(i/QS.length*100)+'%';
+  document.getElementById('clues').innerHTML=q.facts.join(' · ');
+  document.getElementById('msg').textContent='';
+  document.getElementById('next').style.display='none';
+  document.getElementById('skip').style.display='';
+  const box=document.getElementById('opts');box.innerHTML='';
+  q.opts.forEach(o=>{
+    const b=document.createElement('button');b.className='opt';b.textContent=o.en;
+    b.onclick=()=>answer(o,b);
+    box.appendChild(b);
+  });
+  t0=Date.now();
+  clearInterval(timer);timer=setInterval(()=>{
+    const el=document.getElementById('sc');
+  },1000);
+}
+function answer(o,btn){
+  clearInterval(timer);
+  const q=QS[i];const secs=Math.max(1,Math.round((Date.now()-t0)/1000));
+  const btns=[...document.querySelectorAll('.opt')];
+  btns.forEach(b=>b.disabled=true);
+  if(o.en===q.ans.en){
+    btn.classList.add('right');
+    const bonus=Math.max(0,15-secs);
+    const gain=10+bonus;score+=gain;right++;streak++;
+    document.getElementById('msg').innerHTML='correct! +'+gain+' (speed +'+bonus+')';
+  }else{
+    btn.classList.add('wrong');
+    btns.find(b=>b.textContent===q.ans.en).classList.add('right');
+    streak=0;
+    document.getElementById('msg').innerHTML='that was <b>'+esc(q.ans.en)+'</b>';
+  }
+  document.getElementById('sc').textContent=score;
+  document.getElementById('st').textContent=streak;
+  document.getElementById('skip').style.display='none';
+  document.getElementById('next').style.display='';
+}
+function next(){
+  i++;
+  if(i>=QS.length){finish();return;}
+  show();
+}
+function finish(){
+  clearInterval(timer);
+  document.getElementById('game').style.display='none';
+  document.getElementById('over').style.display='block';
+  document.getElementById('bar').style.width='100%';
+  const bird=(document.getElementById('bird').value||'gurt').trim().slice(0,40)||'gurt';
+  const pct=Math.round(right/QS.length*100);
+  document.getElementById('final').innerHTML='<b>'+esc(bird)+'</b> — '+right+'/'+QS.length+' right ('+pct+'%), '+score+' points.';
+  played=true;
+  if(score>best)best=score;
+  post(bird);
+}
+async function post(bird){
+  const el=document.getElementById('postmsg');
+  const body={bird,score,total:QS.length,ms:0};
+  const d=await api('/score',body);
+  if(d){el.textContent='score posted to the shared leaderboard.';}
+  else if(await ntfyPost({type:'score',bird,score,total:QS.length,ms:0})){el.textContent='score posted on the shared board.';}
+  else el.textContent='score kept locally (no shared board right now).';
+  loadBoard();
+}
+function mergeScores(apiRows,boardRows){
+  const m=new Map();
+  for(const r of apiRows||[]){
+    m.set(r.bird,{bird:r.bird,score:Math.max(r.score||0,0),total:r.total||0,runs:r.runs||1});
+  }
+  for(const r of boardRows||[]){
+    const cur=m.get(r.bird)||{bird:r.bird,score:0,total:0,runs:0};
+    cur.score=Math.max(cur.score,r.score||0);
+    cur.total=Math.max(cur.total,r.total||0);
+    cur.runs=Math.max(cur.runs,1);
+    m.set(r.bird,cur);
+  }
+  return [...m.values()].sort((a,b)=>b.score-a.score);
+}
+async function loadBoard(){
+  const d=await api('/scores');
+  const board=await ntfyGet();
+  const rows=mergeScores(d&&d.scores,board);
+  const tb=document.getElementById('lb');
+  tb.innerHTML=rows.length?rows.map((r,i)=>'<tr><td class="'+(i===0?'gold':'')+'">'+(i===0?'★ ':'')+esc(r.bird)+'</td><td class="n">'+r.score+'</td><td class="n">'+r.total+'</td><td class="n">'+r.runs+'</td></tr>').join(''):'<tr><td colspan="4" class="small">no scores yet. be the first.</td></tr>';
+  document.getElementById('lbnote').textContent=rows.length?rows.length+' bird'+(rows.length===1?'':'s')+' on the roll.':'waiting for the first run.';
+}
+document.getElementById('start').onclick=start;
+document.getElementById('next').onclick=next;
+document.getElementById('skip').onclick=()=>{const btns=[...document.querySelectorAll('.opt')];if(btns[0])answer({en:'__skip__'},btns[0]);};
+document.getElementById('again').onclick=start;
+document.getElementById('change').onclick=()=>{document.getElementById('setup').style.display='block';document.getElementById('over').style.display='none';};
+loadBank().then(loadBoard);
+</script>
+</body>
+</html>
