@@ -918,6 +918,17 @@
       return;
     }
     dailyMode = false;
+    const draft = q0.get('draft');
+    if (draft) {
+      lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;
+      $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = 0;
+      try {
+        const rows = atob(draft).split('\n');
+        loadCustomRows(rows, 'draft test');
+        $('msg').textContent = 'testing your draft — reach the exit!';
+      } catch (e) { $('msg').textContent = 'that draft could not be read'; }
+      return;
+    }
     const cid = q0.get('custom');
     if (cid) {
       lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;

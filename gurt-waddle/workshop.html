@@ -19,6 +19,13 @@
   table{border-collapse:collapse;font-size:14px;margin:8px;max-width:760px;width:92%}
   td,th{padding:5px 8px;border-bottom:1px solid #2b425c;text-align:left}
   #msg{color:#ffd23f;min-height:20px;font-size:14px}
+  #detail{margin:14px auto;max-width:760px;background:#16243a;border:1px solid #2b425c;border-radius:12px;padding:10px 14px;display:none}
+  #detail h3{margin:4px 0 6px}
+  #comments{max-height:220px;overflow:auto;margin:6px 0}
+  .cm{border-bottom:1px solid #24374f;padding:5px 0;font-size:14px}
+  .cm b{color:#9fc3e8}
+  .like{background:#3b2a52;border-color:#7a4fa3}
+  .like.on{background:#ffd23f;color:#101827;border-color:#ffd23f}
   .legend{font-size:12px;opacity:.75;max-width:760px;text-align:center}
 </style>
 </head>
@@ -33,13 +40,26 @@
   <input id="title" maxlength="40" placeholder="level title" value="a very small waddle">
   <input id="author" maxlength="18" placeholder="your bird name" value="gurt">
   <button id="save">share this level</button>
+  <button id="test">test my draft</button>
+  <button id="check">check my level</button>
 </div>
 <div id="msg"></div>
 <div id="grid"></div>
 <div class="legend">P start · E exit · # wall · = platform · o coin · k key · D door · S spring · ^ spike · w water · C checkpoint · e walker · f flyer · m hammer · M moving platform · i ice · c crumbling root · B moth boss</div>
+<div id="detail">
+  <h3 id="dtitle">level</h3>
+  <div class="note" id="dmeta" style="text-align:left"></div>
+  <div id="comments"></div>
+  <div class="row" style="justify-content:flex-start">
+    <input id="cbird" maxlength="18" placeholder="your bird name" value="gurt">
+    <input id="ctext" maxlength="300" placeholder="say something about this level" style="flex:1;min-width:220px">
+    <button id="cpost">post</button>
+  </div>
+  <div id="cmsg" class="note" style="text-align:left"></div>
+</div>
 <h3>the flock's level shelf</h3>
 <div class="note">levels other birds built. click play to waddle through one.</div>
-<table id="shelf"><thead><tr><th>title</th><th>by</th><th>plays</th><th></th></tr></thead><tbody><tr><td colspan="4">loading…</td></tr></tbody></table>
+<table id="shelf"><thead><tr><th>title</th><th>by</th><th>plays</th><th>likes</th><th></th></tr></thead><tbody><tr><td colspan="5">loading…</td></tr></tbody></table>
 <script>
 const W = 25, H = 14;
 const TILES = ['.', '#', '=', 'o', 'k', 'D', 'S', '^', 'w', 'C', 'e', 'f', 'm', 'M', 'i', 'c', 'B', 'P', 'E'];
@@ -124,7 +144,79 @@ async function ntfyCustoms() {
   }
   return [];
 }
+// --- level checker -------------------------------------------------
+// a rough walk from P to E over non-solid tiles, so a level that is
+// obviously impossible gets flagged before it reaches the flock
+function solidCh(ch) { return ch === '#' || ch === 'i' || ch === 'c'; }
+function checkLevel() {
+  const flat = grid.map(r => r.join('')).join('');
+  const problems = [];
+  let starts = 0, exits = 0, keys = 0, doors = 0;
+  for (const ch of flat) {
+    if (ch === 'P') starts++;
+    if (ch === 'E') exits++;
+    if (ch === 'k') keys++;
+    if (ch === 'D') doors++;
+  }
+  if (starts !== 1) problems.push('needs exactly one start (P) — has ' + starts);
+  if (exits !== 1) problems.push('needs exactly one exit (E) — has ' + exits);
+  if (doors > keys) problems.push(doors + ' doors but only ' + keys + ' keys');
+  // flood fill from the start, treating platforms and springs as passable
+  const sx = flat.indexOf('P'), sy = Math.floor(sx / W);
+  const seen = new Set([sy * W + (sx % W)]);
+  const q = [[sx % W, sy]];
+  const passable = ch => ch !== '#' && ch !== 'i' && ch !== 'c' && ch !== 'B';
+  while (q.length) {
+    const [x, y] = q.shift();
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+      const k = ny * W + nx;
+      if (seen.has(k)) continue;
+      const ch = grid[ny][nx];
+      if (!passable(ch)) continue;
+      seen.add(k); q.push([nx, ny]);
+    }
+  }
+  const ex = flat.indexOf('E');
+  if (ex >= 0 && !seen.has(Math.floor(ex / W) * W + (ex % W))) {
+    problems.push('the exit cannot be reached by walking — the flock would be stuck');
+  }
+  if (!problems.length) problems.push('looks good! start and exit connect.');
+  $('msg').textContent = problems.join(' · ');
+  return problems;
+}
+$('check').onclick = checkLevel;
+$('test').onclick = () => {
+  const rows = grid.map(r => r.join('\n'));
+  const b64 = btoa(rows.join('\n'));
+  window.open('index.html?draft=' + encodeURIComponent(b64), '_blank');
+};
+
+// remix: pull a level off the shelf into the editor
+async function remix(L) {
+  let rows = null;
+  const d = await api('/custom?id=' + encodeURIComponent(L.id));
+  if (d && d.level && d.level.rows) rows = d.level.rows;
+  if (!rows) {
+    const pub = await ntfyCustoms();
+    const p = pub.find(x => x.id === L.id);
+    if (p && p.rows) rows = p.rows;
+  }
+  if (!rows || rows.length !== H) { $('msg').textContent = 'that level could not be loaded for remixing'; return; }
+  grid = rows.map(r => String(r).padEnd(W, '.').slice(0, W).split(''));
+  $('title').value = L.title + ' (remix)';
+  draw();
+  $('msg').textContent = 'remixed "' + L.title + '" — change it and share your version';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 $('save').onclick = async () => {
+  const problems = checkLevel();
+  if (problems.some(p => p.startsWith('needs exactly'))) {
+    $('msg').textContent = 'not shared — ' + problems.join(' · ');
+    return;
+  }
   $('msg').textContent = 'sharing…';
   const rows = grid.map(r => r.join(''));
   const d = await api('/custom', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -150,19 +242,67 @@ async function loadShelf() {
   if (pub.length) {
     const seen = {};
     for (const L of rows) seen[L.id] = true;
-    for (const L of pub) if (!seen[L.id]) rows.push({ id: L.id, title: L.title, author: L.author, plays: L.plays || 0 });
+    for (const L of pub) if (!seen[L.id]) rows.push({ id: L.id, title: L.title, author: L.author, plays: L.plays || 0, likes: 0 });
   }
-  if (!rows.length) { tb.innerHTML = '<tr><td colspan="4">no levels yet — be the first bird</td></tr>'; return; }
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="5">no levels yet — be the first bird</td></tr>'; return; }
   tb.innerHTML = '';
   for (const L of rows) {
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td>' + L.title.replace(/[<>&]/g, '') + '</td><td>' + L.author.replace(/[<>&]/g, '') + '</td><td>' + L.plays + '</td>';
+    tr.innerHTML = '<td>' + L.title.replace(/[<>&]/g, '') + '</td><td>' + L.author.replace(/[<>&]/g, '') + '</td><td>' + (L.plays || 0) + '</td><td>' + (L.likes || 0) + '</td>';
     const td = document.createElement('td');
-    const b = document.createElement('button'); b.textContent = 'play';
-    b.onclick = () => { location.href = 'index.html?custom=' + encodeURIComponent(L.id); };
-    td.appendChild(b); tr.appendChild(td); tb.appendChild(tr);
+    td.style.whiteSpace = 'nowrap';
+    const play = document.createElement('button'); play.textContent = 'play';
+    play.onclick = () => { location.href = 'index.html?custom=' + encodeURIComponent(L.id); };
+    const like = document.createElement('button'); like.className = 'like'; like.textContent = '♥ ' + (L.likes || 0);
+    like.onclick = async () => {
+      const bird = $('author').value.trim() || 'anonymous bird';
+      const on = like.classList.contains('on');
+      const r = await api('/custom/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: L.id, bird, liked: on }) });
+      if (r && r.ok) { like.classList.toggle('on', !on); like.textContent = '♥ ' + r.likes; }
+      else $('msg').textContent = 'likes need the shelf awake — try again later';
+    };
+    const cmt = document.createElement('button'); cmt.textContent = 'comments';
+    cmt.onclick = () => openDetail(L);
+    const rem = document.createElement('button'); rem.textContent = 'remix';
+    rem.onclick = () => remix(L);
+    td.appendChild(play); td.appendChild(like); td.appendChild(cmt); td.appendChild(rem);
+    tr.appendChild(td); tb.appendChild(tr);
   }
 }
+
+let currentLevel = null;
+async function openDetail(L) {
+  currentLevel = L;
+  $('detail').style.display = 'block';
+  $('dtitle').textContent = L.title;
+  $('dmeta').textContent = 'by ' + L.author + ' · ' + (L.plays || 0) + ' plays · ' + (L.likes || 0) + ' likes';
+  $('comments').innerHTML = '<div class="note">loading comments…</div>';
+  $('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const d = await api('/custom/comments?id=' + encodeURIComponent(L.id));
+  if (!d) { $('comments').innerHTML = '<div class="note">the comment shelf is sleeping — try again later</div>'; return; }
+  renderComments(d.comments || []);
+}
+function renderComments(list) {
+  if (!list.length) { $('comments').innerHTML = '<div class="note">no comments yet — say the first thing</div>'; return; }
+  $('comments').innerHTML = '';
+  for (const c of list) {
+    const div = document.createElement('div');
+    div.className = 'cm';
+    const when = new Date(c.at).toLocaleString();
+    div.innerHTML = '<b>' + String(c.bird).replace(/[<>&]/g, '') + '</b> ' + String(c.text).replace(/[<>&]/g, '') + '<div class="note" style="text-align:left">' + when + '</div>';
+    $('comments').appendChild(div);
+  }
+}
+$('cpost').onclick = async () => {
+  if (!currentLevel) return;
+  const bird = $('cbird').value.trim() || 'anonymous bird';
+  const text = $('ctext').value.trim();
+  if (!text) { $('cmsg').textContent = 'write something first'; return; }
+  const d = await api('/custom/comment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: currentLevel.id, bird, text }) });
+  if (d && d.ok) { $('ctext').value = ''; $('cmsg').textContent = 'posted!'; renderComments(d.comments || []); }
+  else $('cmsg').textContent = 'the comment shelf is sleeping — try again later';
+};
+
 pal(); sample(); loadShelf();
 </script>
 </body>

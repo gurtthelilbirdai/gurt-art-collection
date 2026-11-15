@@ -27,6 +27,20 @@ db.exec(`
     PRIMARY KEY (date, bird)
   );
   CREATE INDEX IF NOT EXISTS daily_score ON daily(date, score DESC);
+  CREATE TABLE IF NOT EXISTS custom_likes (
+    level_id TEXT NOT NULL,
+    bird TEXT NOT NULL,
+    at TEXT NOT NULL,
+    PRIMARY KEY (level_id, bird)
+  );
+  CREATE TABLE IF NOT EXISTS custom_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    level_id TEXT NOT NULL,
+    bird TEXT NOT NULL,
+    text TEXT NOT NULL,
+    at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS custom_comments_level ON custom_comments(level_id, at DESC);
   CREATE TABLE IF NOT EXISTS custom_levels (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -71,6 +85,12 @@ const stmt = {
   customGet: db.prepare('SELECT * FROM custom_levels WHERE id = ?'),
   customInsert: db.prepare('INSERT INTO custom_levels (id,title,author,grid,plays,created) VALUES (@id,@title,@author,@grid,@plays,@created)'),
   customPlay: db.prepare('UPDATE custom_levels SET plays = plays + 1 WHERE id = ?'),
+  customLikes: db.prepare('SELECT COUNT(*) AS n FROM custom_likes WHERE level_id = ?'),
+  customLikeAdd: db.prepare('INSERT OR IGNORE INTO custom_likes (level_id,bird,at) VALUES (?,?,?)'),
+  customLikeRemove: db.prepare('DELETE FROM custom_likes WHERE level_id = ? AND bird = ?'),
+  customLikeList: db.prepare('SELECT bird FROM custom_likes WHERE level_id = ?'),
+  customComments: db.prepare('SELECT id, bird, text, at FROM custom_comments WHERE level_id = ? ORDER BY at DESC LIMIT 100'),
+  customCommentAdd: db.prepare('INSERT INTO custom_comments (level_id,bird,text,at) VALUES (?,?,?,?)'),
   upsertProgress: db.prepare(`INSERT INTO progress (bird,level,score,coins,updated) VALUES (@bird,@level,@score,@coins,@updated)
     ON CONFLICT(bird) DO UPDATE SET level=MAX(level,excluded.level), score=MAX(score,excluded.score), coins=MAX(coins,excluded.coins), updated=excluded.updated`)
 };
@@ -118,7 +138,8 @@ module.exports = function handler(req, res, seg) {
       try { rows = JSON.parse(row.grid); } catch (e) {}
       return json(res, 200, { level: { id: row.id, title: row.title, author: row.author, plays: row.plays, rows } });
     }
-    return json(res, 200, { levels: stmt.customList.all() });
+    const rows = stmt.customList.all().map(r => ({ ...r, likes: stmt.customLikes.get(r.id).n }));
+    return json(res, 200, { levels: rows });
   }
 
   if (req.method === 'POST' && route === 'custom') {
@@ -142,6 +163,35 @@ module.exports = function handler(req, res, seg) {
       const id = String(body.id || '').slice(0, 40);
       stmt.customPlay.run(id);
       return json(res, 200, { ok: true });
+    });
+  }
+
+  if (req.method === 'POST' && route === 'custom/like') {
+    return readBody(req, body => {
+      const id = String(body.id || '').slice(0, 40);
+      const bird = birdName(body.bird);
+      const liked = body.liked === false || body.liked === 0;
+      if (liked) stmt.customLikeRemove.run(id, bird);
+      else stmt.customLikeAdd.run(id, bird, now());
+      return json(res, 200, { ok: true, likes: stmt.customLikes.get(id).n, liked: !liked });
+    });
+  }
+
+  if (req.method === 'GET' && route === 'custom/comments') {
+    const id = String(req.url.split('id=')[1] || '').slice(0, 40);
+    const likes = stmt.customLikes.get(id).n;
+    const likedBy = stmt.customLikeList.all(id).map(r => r.bird);
+    return json(res, 200, { comments: stmt.customComments.all(id), likes, likedBy });
+  }
+
+  if (req.method === 'POST' && route === 'custom/comment') {
+    return readBody(req, body => {
+      const id = String(body.id || '').slice(0, 40);
+      const bird = birdName(body.bird);
+      const text = String(body.text || '').trim().slice(0, 300);
+      if (!text) return json(res, 400, { error: 'comment text required' });
+      stmt.customCommentAdd.run(id, bird, text, now());
+      return json(res, 200, { ok: true, comments: stmt.customComments.all(id) });
     });
   }
 
