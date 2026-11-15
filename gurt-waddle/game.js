@@ -1151,7 +1151,20 @@
   if ($('daily')) $('daily').onclick = () => startDaily();
   $('go').onclick = () => { const v = parseInt($('levels').value, 10); if (!isNaN(v)) goToLevel(v); };
   $('next').onclick = () => { goToLevel((level || 0) + 1); };
-  $('mute').onclick = () => { muted = !muted; $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on'); if (muted) playTheme(0); else playTheme(level + 1); };
+  $('mute').onclick = () => {
+    muted = !muted;
+    $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on');
+    if (muted) playTheme(0); else playTheme(level + 1);
+  };
+  // browsers block autoplay, so the theme starts on the first real gesture
+  function kickMusic() {
+    if (muted || !themeName) return;
+    if (!theme) theme = new Audio(themeName);
+    theme.loop = true; theme.volume = 0.55;
+    if (theme.paused) theme.play().catch(()=>{});
+  }
+  window.addEventListener('pointerdown', kickMusic);
+  window.addEventListener('keydown', kickMusic);
   $('name').onchange = () => saveRun();
 
   function reset() {
