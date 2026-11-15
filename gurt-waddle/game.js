@@ -84,7 +84,7 @@
       if (ch === 'f') enemies.push({ kind: 'flyer', x: xx * T + 4, y: yy * T + 4, w: 22, h: 22, vx: 1.3, vy: 0, dead: false, t: 0, base: yy * T, x0: xx * T, x1: Math.min(W * T - T, xx * T + T * 3) });
       if (ch === 'm') enemies.push({ kind: 'hammer', x: xx * T + 4, y: yy * T + 4, w: 26, h: 26, vx: 1.6, vy: 0, dead: false, t: 0, base: yy * T });
       if (ch === 'M') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: xx * T + T * 2, dx: 0, dy: 0 });
-      if (ch === 'F') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.min(21 * T, xx * T + 19 * T), dx: 1.1, dy: 0, wait: 30 });
+      if (ch === 'F') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: 21 * T, dx: 1.1, dy: 0, wait: 90 });
       if (ch === 'G') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.max(4 * T, xx * T - 18 * T), dx: -1.1, dy: 0, wait: 30 });
       if (ch === 'V') platforms.push({ kind: 'v', x: xx * T, y: (yy + 1) * T, w: T * 2, h: 12, y0: (yy + 1) * T, y1: (yy - 5) * T, dx: 0, dy: -0.9, wait: 120 });
     }
@@ -371,7 +371,7 @@
         if (pl.wait > 0) { pl.wait--; pl.moveX = 0; }
         else {
           pl.moveX = pl.dx; pl.x += pl.dx;
-          if (pl.x <= pl.x0) { pl.x = pl.x0; pl.dx = 1.1; }
+          if (pl.x <= pl.x0) { pl.x = pl.x0; pl.dx = 1.1; pl.wait = 90; }
           else if (pl.x >= pl.x1) { pl.x = pl.x1; pl.dx = -1.1; }
         }
       } else {
@@ -384,11 +384,24 @@
       }
       // ride the platform if the bird stands on it
       const feet = p.y + p.h;
+      if (p.ride === pl) {
+        // already aboard: the deck carries the bird, it never slips off
+        p.x += (pl.moveX || 0); p.y += (pl.dy || 0);
+        p.y = pl.y - p.h; p.vy = 0; p.onGround = true;
+      }
       if (p.onGround && feet >= pl.y - 14 && feet <= pl.y + 12 &&
           p.x + p.w > pl.x && p.x < pl.x + pl.w) {
         p.x += (pl.moveX || 0); p.y += (pl.dy || 0); p.ride = pl;
+        p.y = pl.y - p.h; p.vy = 0;
       }
     }
+
+    window.__gurtDebug = { x: p.x, y: p.y, vx: p.vx, vy: p.vy, onGround: p.onGround, ride: p.ride ? p.ride.x : -1, decks: platforms.map(pl => pl.x) };
+
+    // a stale ride reference would teleport the bird back onto a deck
+    if (p.ride && !platforms.some(pl => pl === p.ride &&
+        p.x + p.w > pl.x && p.x < pl.x + pl.w &&
+        Math.abs((p.y + p.h) - pl.y) < 20)) p.ride = null;
 
     // enemies (simulation)
     for (const e of enemies) {

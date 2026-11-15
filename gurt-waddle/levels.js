@@ -157,8 +157,8 @@
       const g = blank(); ground(g, [[4, 17]]);
       rect(g, 4, 13, 17, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 2, 12, 'F'); put(g, 22, 12, 'G');
-      // F and G sweep far enough to overlap, so the jetty always has a bridge
+      // one ferry deck sweeps the channel between the two jetties
+      put(g, 2, 12, 'F');
       put(g, 12, 11, 'C');
       coins(g, [[7, 11], [17, 11]]);
       return g;
@@ -470,8 +470,8 @@
       const g = blank(); ground(g, [[4, 17]]);
       rect(g, 4, 13, 17, 1, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
-      put(g, 2, 12, 'F'); put(g, 22, 12, 'G');
-      // F and G sweep far enough to overlap, so the jetty always has a bridge
+      // one ferry deck sweeps the channel between the two jetties
+      put(g, 2, 12, 'F');
       put(g, 12, 11, 'C');
       coins(g, [[7, 11], [17, 11]]);
       return g;
