@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Jam — make a song together</title>
+<style>
+:root{--bg:#0f1220;--card:#1b2036;--line:#333c60;--ink:#eef2ff;--dim:#9aa6cc;--blue:#5fb0ff;--pink:#ff7ab6;--green:#7ee0a8;--yellow:#ffd166}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding:20px}
+.wrap{max-width:960px;margin:0 auto}
+h1{font-size:26px;margin:0 0 4px}
+p.sub{color:var(--dim);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+label{color:var(--dim);font-size:13px}
+input,select,button{font:inherit;background:#121729;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+button{cursor:pointer}
+button.primary{background:var(--blue);color:#08101f;border-color:var(--blue);font-weight:600}
+button:hover{border-color:var(--blue)}
+table{border-collapse:collapse;width:100%}
+td,th{padding:4px 3px;text-align:center}
+th.lane{text-align:left;width:90px;color:var(--dim);font-weight:600;font-size:13px}
+.step{width:100%;aspect-ratio:1;border-radius:7px;border:1px solid var(--line);background:#141a2e;cursor:pointer;padding:0}
+.step.on{background:var(--blue);border-color:#9fd0ff}
+.step.cur{outline:2px solid var(--yellow);outline-offset:1px}
+.step.on.lead.on{background:var(--pink)}
+.step.on.bass.on{background:var(--green)}
+.step.on.snare.on{background:#ff9f6b}
+.step.on.hat.on{background:#b39cff}
+.tiny{font-size:12px;color:var(--dim)}
+.jams{display:grid;gap:10px}
+.jam{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.jam b{color:var(--blue)}
+.parts{display:grid;gap:8px}
+.part{border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.part b{color:var(--pink)}
+.mini{display:grid;grid-template-columns:repeat(16,10px);gap:2px}
+.mini i{width:10px;height:10px;border-radius:2px;background:#141a2e;display:block}
+.mini i.on{background:var(--blue)}
+.msg{color:var(--green);font-size:14px}
+.tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.tabs button.active{background:var(--blue);color:#08101f}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Feather Jam</h1>
+<p class="sub">Start a jam, add one lane at a time, and hear everybody's parts play together.</p>
+
+<div class="tabs">
+  <button id="tabJams" class="active">jam rooms</button>
+  <button id="tabMake">make a part</button>
+</div>
+
+<div class="card" id="viewJams">
+  <h2 style="font-size:18px;margin:0 0 10px">Open jams</h2>
+  <div class="row">
+    <input id="newTitle" value="my little jam" size="20" aria-label="jam title">
+    <label>bpm</label><input id="newBpm" type="number" value="110" min="50" max="220" style="width:80px">
+    <button class="primary" id="newJam">start a jam</button>
+    <span class="msg" id="jamMsg"></span>
+  </div>
+  <div class="jams" id="jams"><span class="tiny">loading…</span></div>
+</div>
+
+<div class="card" id="viewMake" style="display:none">
+  <div class="row">
+    <label>jam</label><select id="jamPick"></select>
+    <input id="bird" value="gurt" size="10" aria-label="your bird name">
+    <label>lane</label>
+    <select id="lane">
+      <option value="kick">kick</option><option value="snare">snare</option>
+      <option value="hat">hat</option><option value="bass">bass</option>
+      <option value="lead" selected>lead</option>
+    </select>
+    <button class="primary" id="play">play</button>
+    <button id="stop">stop</button>
+    <span class="tiny" id="stepLabel">step 1</span>
+  </div>
+  <table id="grid"></table>
+  <div class="row" style="margin-top:12px">
+    <button id="clear">clear</button>
+    <button id="random">surprise me</button>
+    <button class="primary" id="addPart">add my part</button>
+    <span class="msg" id="partMsg"></span>
+  </div>
+</div>
+
+<div class="card" id="viewSession" style="display:none">
+  <h2 id="sessionTitle" style="font-size:18px;margin:0 0 4px"></h2>
+  <p class="tiny" id="sessionInfo"></p>
+  <div class="row">
+    <button class="primary" id="playJam">play the whole jam</button>
+    <button id="stopJam">stop</button>
+    <button id="back">back to jams</button>
+  </div>
+  <div class="parts" id="parts"></div>
+</div>
+</div>
+
+<script>
+const LANES=[['kick','kick'],['snare','snare'],['hat','hat'],['bass','bass'],['lead','lead']];
+const NOTES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+let pattern={kick:new Array(16).fill(0),snare:new Array(16).fill(0),hat:new Array(16).fill(0),bass:new Array(16).fill(0),lead:new Array(16).fill(0)};
+let step=0, playing=false, timer=null, cur=-1, sessions=[], current=null, jamParts=[];
+
+const grid=document.getElementById('grid');
+LANES.forEach(([key,label])=>{
+  const tr=document.createElement('tr');
+  const th=document.createElement('th'); th.className='lane'; th.textContent=label; tr.appendChild(th);
+  for(let i=0;i<16;i++){
+    const td=document.createElement('td');
+    const b=document.createElement('button');
+    b.className='step '+key; b.dataset.lane=key; b.dataset.i=i;
+    b.onclick=()=>{ const v=pattern[key][i]; if(v===0){ pattern[key][i]= key==='lead'||key==='bass' ? NOTES[Math.floor(Math.random()*12)]+'2' : 1; } else pattern[key][i]=0; draw(); };
+    td.appendChild(b); tr.appendChild(td);
+  }
+  grid.appendChild(tr);
+});
+function draw(){
+  grid.querySelectorAll('.step').forEach(b=>{
+    const v=pattern[b.dataset.lane][+b.dataset.i];
+    b.classList.toggle('on', v!==0);
+    b.classList.toggle('cur', playing && +b.dataset.i===cur);
+  });
+}
+let actx=null;
+function audio(){ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); return actx; }
+function blip(freq,dur,type,vol,when){
+  const c=audio(); const o=c.createOscillator(); const g=c.createGain();
+  o.type=type; o.frequency.value=freq; g.gain.value=vol;
+  o.connect(g); g.connect(c.destination); o.start(when); o.stop(when+dur);
+}
+function kickAt(t){ const c=audio(); const o=c.createOscillator(); const g=c.createGain(); o.type='sine'; o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(45,t+0.12); g.gain.setValueAtTime(0.9,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.22); o.connect(g); g.connect(c.destination); o.start(t); o.stop(t+0.24); }
+function noise(t,dur,vol){ const c=audio(); const n=Math.floor(c.sampleRate*dur); const buf=c.createBuffer(1,n,c.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n); const src=c.createBufferSource(); src.buffer=buf; const f=c.createBiquadFilter(); f.type='highpass'; f.frequency.value=1200; const g=c.createGain(); g.gain.value=vol; src.connect(f); f.connect(g); g.connect(c.destination); src.start(t); }
+function noteFreq(n){ const m=/^([A-G]#?)(\d)$/.exec(n); if(!m) return 220; const semi=NOTES.indexOf(m[1]); const oct=+m[2]; return 440*Math.pow(2,(semi-9+(oct-4)*12)/12); }
+function fireLane(lane, pat, i, when){
+  if(!pat||!pat[lane]||!pat[lane][i]) return;
+  const v=pat[lane][i];
+  if(lane==='kick') kickAt(when);
+  else if(lane==='snare') noise(when,0.14,0.35);
+  else if(lane==='hat') noise(when,0.05,0.12);
+  else if(lane==='bass') blip(noteFreq(v),0.22,'triangle',0.35,when);
+  else blip(noteFreq(v),0.16,'square',0.14,when);
+}
+function fire(i,when){ LANES.forEach(([k])=>fireLane(k,pattern,i,when)); }
+function start(parts,bpm,label){
+  audio(); stop(); playing=true; step=0;
+  const spb=60/bpm/4;
+  timer=setInterval(()=>{
+    const c=audio();
+    if(parts&&parts.length) parts.forEach(p=>fireLane(p.lane,p.pattern,step,c.currentTime+0.02));
+    else fire(step,c.currentTime+0.02);
+    cur=step; draw(); document.getElementById('stepLabel').textContent='step '+(step+1);
+    step=(step+1)%16;
+  },spb*1000);
+  document.getElementById('play').textContent='playing';
+}
+function stop(){ playing=false; if(timer) clearInterval(timer); timer=null; cur=-1; draw(); document.getElementById('play').textContent='play'; document.getElementById('stepLabel').textContent='step 1'; }
+document.getElementById('play').onclick=()=>playing?stop():start(null, bpmVal());
+document.getElementById('stop').onclick=stop;
+function bpmVal(){ return Math.max(50,Math.min(220,+document.getElementById('newBpm').value||110)); }
+document.getElementById('clear').onclick=()=>{ LANES.forEach(([k])=>pattern[k]=new Array(16).fill(0)); draw(); };
+document.getElementById('random').onclick=()=>{
+  pattern.kick=Array.from({length:16},(_,i)=>i%4===0?1:0);
+  pattern.snare=Array.from({length:16},(_,i)=>i%8===4?1:0);
+  pattern.hat=Array.from({length:16},(_,i)=>i%2===1?1:0);
+  pattern.bass=Array.from({length:16},(_,i)=>i%4===0?NOTES[[0,7,9,5][i%4]]+'2':0);
+  pattern.lead=Array.from({length:16},(_,i)=>(i%2===0&&Math.random()<0.6)?NOTES[Math.floor(Math.random()*12)]+'3':0);
+  draw();
+};
+
+const API_BASES = location.protocol==='https:' ? [] : ['http://localhost:8600',''];
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const TOPIC = 'gurt-feather-jam';
+async function api(path, opts){
+  for(const base of API_BASES){
+    try{ const r=await fetch(base+'/api/featherjam'+path, opts); if(r.ok) return await r.json(); }catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(obj){
+  for(const h of NTFY_HOSTS){
+    try{ const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}); if(r.ok) return true; }catch(e){}
+  }
+  return false;
+}
+async function ntfyGet(){
+  const out={sessions:[],parts:[],votes:[]};
+  for(const h of NTFY_HOSTS){
+    try{ const r=await fetch(h+'/'+TOPIC+'/json?poll=1&since=24h'); if(!r.ok) continue; const t=await r.text();
+      t.split('\n').filter(Boolean).forEach(line=>{ try{ const m=JSON.parse(line); if(m.event!=='message'||!m.message) return;
+        let msg=m.message; if(typeof msg==='string'){ try{ msg=JSON.parse(msg); }catch(e){ return; } }
+        if(msg.session) out.sessions.push(msg.session);
+        if(msg.part) out.parts.push(msg.part);
+        if(msg.vote) out.votes.push(msg.vote);
+      }catch(e){} });
+      if(out.sessions.length||out.parts.length||out.votes.length) return out;
+    }catch(e){}
+  }
+  return out;
+}
+function saveLocal(key, rec){
+  const l=JSON.parse(localStorage.getItem(key)||'[]'); l.unshift(rec); localStorage.setItem(key, JSON.stringify(l.slice(0,60)));
+}
+function localList(key){ try{ return JSON.parse(localStorage.getItem(key)||'[]'); }catch(e){ return []; } }
+function show(which){
+  document.getElementById('viewJams').style.display=which==='jams'?'block':'none';
+  document.getElementById('viewMake').style.display=which==='make'?'block':'none';
+  document.getElementById('viewSession').style.display=which==='session'?'block':'none';
+  document.getElementById('tabJams').classList.toggle('active',which==='jams');
+  document.getElementById('tabMake').classList.toggle('active',which==='make');
+}
+document.getElementById('tabJams').onclick=()=>{ show('jams'); loadJams(); };
+document.getElementById('tabMake').onclick=()=>{ show('make'); loadJams(); };
+document.getElementById('back').onclick=()=>{ show('jams'); loadJams(); };
+
+document.getElementById('newJam').onclick=async()=>{
+  const title=document.getElementById('newTitle').value.trim()||'untitled jam';
+  const bpm=+document.getElementById('newBpm').value||110;
+  const bird=document.getElementById('bird').value.trim()||'gurt';
+  const d=await api('/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,bpm,bird})});
+  const msg=document.getElementById('jamMsg');
+  if(d&&d.ok){ msg.textContent='jam started!'; }
+  else{
+    const rec={id:'jam'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),title,bpm,bird,created:new Date().toISOString(),votes:0};
+    const ok=await ntfyPost({session:rec});
+    saveLocal('fjams',rec);
+    msg.textContent=ok?'jam started on the shared board!':'jam started locally (offline)';
+  }
+  loadJams();
+};
+document.getElementById('addPart').onclick=async()=>{
+  const session=document.getElementById('jamPick').value;
+  if(!session){ document.getElementById('partMsg').textContent='pick a jam first'; return; }
+  const bird=document.getElementById('bird').value.trim()||'gurt';
+  const lane=document.getElementById('lane').value;
+  const d=await api('/part',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session,bird,lane,pattern})});
+  const msg=document.getElementById('partMsg');
+  if(d&&d.ok){ msg.textContent='part added!'; }
+  else{
+    const rec={id:'part'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),session,bird,lane,pattern,created:new Date().toISOString(),votes:0};
+    const ok=await ntfyPost({part:rec});
+    saveLocal('fparts',rec);
+    msg.textContent=ok?'part added to the shared jam!':'part added locally (offline)';
+  }
+  loadJams();
+};
+function mini(p){ const h=document.createElement('div'); h.className='mini'; for(let i=0;i<16;i++){ const on=Object.keys(p||{}).some(k=>p[k]&&p[k][i]); const el=document.createElement('i'); if(on) el.className='on'; h.appendChild(el); } return h; }
+async function loadJams(){
+  const d=await api('/sessions');
+  sessions=(d&&d.sessions)?d.sessions.slice():[];
+  const shared=await ntfyGet();
+  shared.sessions.forEach(s=>{ if(!sessions.some(x=>x.id===s.id)) sessions.push(s); });
+  localList('fjams').forEach(s=>{ if(!sessions.some(x=>x.id===s.id)) sessions.push(s); });
+  const voteCount={};
+  shared.votes.forEach(v=>{ voteCount[v.part]=(voteCount[v.part]||0)+1; });
+  sessions.forEach(s=>{ if(voteCount[s.id]) s.votes=(Number(s.votes)||0)+voteCount[s.id]; });
+  const box=document.getElementById('jams'); box.innerHTML='';
+  const pick=document.getElementById('jamPick');
+  const keep=pick.value; pick.innerHTML='';
+  sessions.forEach(s=>{
+    const o=document.createElement('option'); o.value=s.id; o.textContent=s.title+' ('+s.bpm+' bpm)'; pick.appendChild(o);
+    const row=document.createElement('div'); row.className='jam';
+    const b=document.createElement('b'); b.textContent=s.title;
+    const who=document.createElement('span'); who.className='tiny'; who.textContent='by '+s.bird+' · '+s.bpm+' bpm · '+s.votes+' votes';
+    const open=document.createElement('button'); open.textContent='open';
+    open.onclick=()=>openJam(s.id);
+    row.appendChild(b); row.appendChild(who); row.appendChild(open);
+    box.appendChild(row);
+  });
+  if(keep && sessions.some(s=>s.id===keep)) pick.value=keep;
+  if(!sessions.length) box.innerHTML='<span class="tiny">no jams yet. start one!</span>';
+}
+async function openJam(id){
+  let d=await api('/session/'+id);
+  if(!d||!d.session){
+    const known=sessions.find(x=>x.id===id);
+    if(!known){ show('jams'); return; }
+    d={session:known,parts:[]};
+  }
+  current=d.session;
+  let rawParts=(d.parts||[]).slice();
+  const shared=await ntfyGet();
+  shared.parts.forEach(p=>{ if(p.session===id && !rawParts.some(x=>x.id===p.id)) rawParts.push(p); });
+  localList('fparts').forEach(p=>{ if(p.session===id && !rawParts.some(x=>x.id===p.id)) rawParts.push(p); });
+  const votes={};
+  shared.votes.forEach(v=>{ if(v.session===id) votes[v.part]=(votes[v.part]||0)+1; });
+  localList('fvotes').forEach(v=>{ if(v.session===id) votes[v.part]=(votes[v.part]||0)+1; });
+  jamParts=rawParts.map(p=>{ let pat={}; try{ pat=typeof p.pattern==='string'?JSON.parse(p.pattern):p.pattern; }catch(e){} return {lane:p.lane,pattern:pat,id:p.id,bird:p.bird,votes:(Number(p.votes)||0)+(votes[p.id]||0)}; });
+  document.getElementById('sessionTitle').textContent=current.title;
+  document.getElementById('sessionInfo').textContent=current.bpm+' bpm · started by '+current.bird+' · '+jamParts.length+' parts';
+  const box=document.getElementById('parts'); box.innerHTML='';
+  if(!jamParts.length) box.innerHTML='<span class="tiny">no parts yet. be the first bird.</span>';
+  jamParts.forEach(p=>{
+    const row=document.createElement('div'); row.className='part';
+    const b=document.createElement('b'); b.textContent=p.lane;
+    const who=document.createElement('span'); who.className='tiny'; who.textContent='by '+p.bird+' · '+p.votes+' votes';
+    const vote=document.createElement('button'); vote.textContent='like';
+    vote.onclick=async()=>{
+      const who=document.getElementById('bird').value.trim()||'gurt';
+      const d=await api('/vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session:current.id,part:p.id,bird:who})});
+      if(!d||!d.ok){ const rec={session:current.id,part:p.id,bird:who}; await ntfyPost({vote:rec}); saveLocal('fvotes',rec); }
+      openJam(current.id);
+    };
+    row.appendChild(b); row.appendChild(who); row.appendChild(mini(p.pattern)); row.appendChild(vote);
+    box.appendChild(row);
+  });
+  show('session');
+}
+document.getElementById('playJam').onclick=()=>start(jamParts, current?current.bpm:110);
+document.getElementById('stopJam').onclick=stop;
+draw(); loadJams();
+</script>
+</body>
+</html>
