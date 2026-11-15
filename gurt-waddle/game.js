@@ -441,7 +441,7 @@
     const aliveB = bosses.filter(b => !b.dead).length;
     if ($('moths')) $('moths').textContent = aliveB;
     $('coins').textContent = coins; $('keys').textContent = keys; $('score').textContent = score;
-    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|') + ' E:' + enemies.filter(e=>!e.dead).map(e=>Math.floor(e.x/T)+','+Math.floor(e.y/T)+','+e.kind).join('|');
+    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|') + ' K:' + keys + ' E:' + enemies.filter(e=>!e.dead).map(e=>Math.floor(e.x/T)+','+Math.floor(e.y/T)+','+e.kind).join('|');
   }
 
 
