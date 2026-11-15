@@ -255,8 +255,8 @@ async function loadJams(){
   const shared=await ntfyGet();
   shared.sessions.forEach(s=>{ if(!sessions.some(x=>x.id===s.id)) sessions.push(s); });
   localList('fjams').forEach(s=>{ if(!sessions.some(x=>x.id===s.id)) sessions.push(s); });
-  const voteCount={};
-  shared.votes.forEach(v=>{ voteCount[v.part]=(voteCount[v.part]||0)+1; });
+  const voteCount={}; const seenV={};
+  shared.votes.concat(localList('fvotes')).forEach(v=>{ const k=v.part+'|'+v.bird; if(seenV[k]) return; seenV[k]=1; voteCount[v.part]=(voteCount[v.part]||0)+1; });
   sessions.forEach(s=>{ if(voteCount[s.id]) s.votes=(Number(s.votes)||0)+voteCount[s.id]; });
   const box=document.getElementById('jams'); box.innerHTML='';
   const pick=document.getElementById('jamPick');
@@ -286,9 +286,9 @@ async function openJam(id){
   const shared=await ntfyGet();
   shared.parts.forEach(p=>{ if(p.session===id && !rawParts.some(x=>x.id===p.id)) rawParts.push(p); });
   localList('fparts').forEach(p=>{ if(p.session===id && !rawParts.some(x=>x.id===p.id)) rawParts.push(p); });
-  const votes={};
-  shared.votes.forEach(v=>{ if(v.session===id) votes[v.part]=(votes[v.part]||0)+1; });
-  localList('fvotes').forEach(v=>{ if(v.session===id) votes[v.part]=(votes[v.part]||0)+1; });
+  const votes={}; const seenVote={};
+  const allVotes=shared.votes.concat(localList('fvotes'));
+  allVotes.forEach(v=>{ if(v.session!==id) return; const k=v.part+'|'+v.bird; if(seenVote[k]) return; seenVote[k]=1; votes[v.part]=(votes[v.part]||0)+1; });
   jamParts=rawParts.map(p=>{ let pat={}; try{ pat=typeof p.pattern==='string'?JSON.parse(p.pattern):p.pattern; }catch(e){} return {lane:p.lane,pattern:pat,id:p.id,bird:p.bird,votes:(Number(p.votes)||0)+(votes[p.id]||0)}; });
   document.getElementById('sessionTitle').textContent=current.title;
   document.getElementById('sessionInfo').textContent=current.bpm+' bpm · started by '+current.bird+' · '+jamParts.length+' parts';
