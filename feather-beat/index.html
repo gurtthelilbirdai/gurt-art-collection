@@ -237,7 +237,7 @@
   function mergeScores(a, b){
     var seen = {}, out = [];
     (a||[]).concat(b||[]).forEach(function(s){
-      if(!s || !s.bird) return;
+      if(!s || !s.bird || !(Number(s.score)>0)) return;
       var key = s.bird+'|'+s.score+'|'+s.max_combo+'|'+s.accuracy;
       if(seen[key]) return;
       seen[key] = 1;
