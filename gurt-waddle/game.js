@@ -384,7 +384,7 @@
       }
       // ride the platform if the bird stands on it
       const feet = p.y + p.h;
-      if (p.onGround && feet >= pl.y - 4 && feet <= pl.y + 10 &&
+      if (p.onGround && feet >= pl.y - 14 && feet <= pl.y + 12 &&
           p.x + p.w > pl.x && p.x < pl.x + pl.w) {
         p.x += (pl.moveX || 0); p.y += (pl.dy || 0); p.ride = pl;
       }
@@ -451,7 +451,7 @@
     const aliveB = bosses.filter(b => !b.dead).length;
     if ($('moths')) $('moths').textContent = aliveB;
     $('coins').textContent = coins; $('keys').textContent = keys; $('score').textContent = score;
-    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|') + ' K:' + keys + ' E:' + enemies.filter(e=>!e.dead).map(e=>Math.floor(e.x/T)+','+Math.floor(e.y/T)+','+e.kind).join('|') + ' P:' + platforms.map(pl=>Math.floor(pl.x/T)+','+Math.floor(pl.y/T)+','+Math.floor((pl.x+pl.w)/T)).join('|') + ' R:' + (p.ride ? Math.floor(p.ride.x/T) : -1);
+    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|') + ' K:' + keys + ' E:' + enemies.filter(e=>!e.dead).map(e=>Math.floor(e.x/T)+','+Math.floor(e.y/T)+','+e.kind).join('|') + ' P:' + platforms.map(pl=>pl.kind+':'+Math.floor(pl.x/T)+','+Math.floor(pl.y/T)+','+Math.floor((pl.x+pl.w)/T)).join('|') + ' R:' + (p.ride ? Math.floor(p.ride.x/T) : -1);
   }
 
 
@@ -884,6 +884,7 @@
   window.__gurtWin = win;
   // test hooks: advance in place without a page reload, so a recording bot
   // can walk all hundred levels without losing its frame
+  window.__gurtGo = function (n) { if (n >= 1 && n <= LEVELS.length) { level = n - 1; loadLevel(level); } };
   window.__gurtNext = function () { if ((level || 0) + 1 < LEVELS.length) { level = level + 1; loadLevel(level); } };
   window.__gurtRetry = function () { lives = 5; $('lives').textContent = 5; loadLevel(level); };
   window.__gurtWinCustom = winCustom;
