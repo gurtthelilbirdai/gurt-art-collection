@@ -988,6 +988,7 @@
       const g = await ntfyGetGhost(level);
       if (g) ghost = { level: g.level, bird: g.bird, samples: g.samples, seconds: g.seconds };
     }
+    window.__gurtGhost = ghost;
     if (ghost && ghost.samples && ghost.samples.length) {
       ghostMsg = 'racing ' + (ghost.bird || 'a bird') + ' — ' + (Math.round(Number(ghost.seconds) * 10) / 10) + 's';
       $('msg').textContent = ghostMsg;
