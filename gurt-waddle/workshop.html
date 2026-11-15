@@ -61,6 +61,7 @@
 <h3>the flock's level shelf</h3>
 <div class="note">levels other birds built. click play to waddle through one.</div>
 <table id="shelf"><thead><tr><th>title</th><th>by</th><th>plays</th><th>likes</th><th></th></tr></thead><tbody><tr><td colspan="5">loading…</td></tr></tbody></table>
+<script src="medals.js?v=1"></script>
 <script>
 const W = 25, H = 14;
 const TILES = ['.', '#', '=', 'o', 'k', 'D', 'S', '^', 'w', 'C', 'e', 'f', 'm', 'M', 'i', 'c', 'B', 'P', 'E'];
@@ -233,6 +234,35 @@ async function remix(L) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+async function awardMedal(bird, medal) {
+  const b = (bird || 'anonymous bird').trim().slice(0, 18) || 'anonymous bird';
+  try {
+    await api('/medals', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bird: b, medal }) });
+    ntfyPost({ type: 'medal', bird: b, medal, at: new Date().toISOString() });
+  } catch (e) {}
+}
+function awardBuilderMedal() {
+  try {
+    const bird = ($('author').value || 'gurt').trim().slice(0, 18) || 'gurt';
+    const key = 'waddle-medals';
+    const list = JSON.parse(localStorage.getItem(key) || '[]');
+    if (!list.includes('builder')) {
+      list.push('builder');
+      localStorage.setItem(key, JSON.stringify(list));
+      const def = (window.MEDALS || []).find(m => m.id === 'builder');
+      if (def) {
+        const b = document.createElement('div');
+        b.textContent = def.icon + '  medal earned: ' + def.name;
+        b.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#17301f;border:1px solid #4c8f5f;color:#d8ffe0;padding:8px 14px;border-radius:10px;font:14px system-ui;z-index:99';
+        document.body.appendChild(b);
+        setTimeout(() => b.remove(), 3200);
+      }
+    }
+    api('/medals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bird, medal: 'builder' }) }).catch(() => {});
+    if (typeof ntfyPost === 'function') ntfyPost({ type: 'medal', bird, medal: 'builder', at: new Date().toISOString() });
+  } catch (e) {}
+}
 $('save').onclick = async () => {
   const problems = checkLevel();
   if (problems.some(p => p.startsWith('needs exactly'))) {
@@ -245,6 +275,8 @@ $('save').onclick = async () => {
     body: JSON.stringify({ title: $('title').value, author: $('author').value, rows }) });
   if (d && d.ok) {
     $('msg').textContent = 'shared! the flock can play \"' + d.level.title + '\"';
+    awardBuilderMedal();
+    awardMedal($('author').value, 'builder');
     ntfyPost({ type: 'custom', v: 2, id: d.level.id, title: d.level.title, author: d.level.author, rows, at: new Date().toISOString() });
     loadShelf();
   } else {

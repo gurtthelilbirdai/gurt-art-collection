@@ -68,6 +68,7 @@
 
   function loadCustomRows(rows, title) {
     customMode = true; customRows = rows; customTitle = title || 'custom level';
+    award('playwright');
     levelRows = rows;
     level = 0;
     loadLevel(0);
@@ -287,6 +288,11 @@
       if (customMode) { winCustom(); return; }
       if (level === LEVELS.length - 1) { win(); return; }
       score += 100; level++;
+      award('first-step');
+      if (level + 1 >= 21) award('frozen-foot');
+      if (level + 1 >= 41) award('lantern-lamp');
+      if (level + 1 >= 61) award('star-chaser');
+      if (level + 1 >= 81) award('root-digger');
       if (level + 1 > unlockedCount()) unlockTo(level + 1);
       try { localStorage.setItem('waddle-current', String(level + 1)); } catch (e) {}
       loadLevel(level); fillPicker(); beep(1200, .15, 'triangle'); return;
@@ -457,6 +463,7 @@
     storyLevel++;
     const last = c.levels[c.levels.length - 1].n;
     if (storyLevel > last) {
+      award('story-' + (storyChapter + 1));
       if (storyChapter + 1 < STORY.length) {
         const nc = STORY[storyChapter + 1];
         overlay = { title: 'chapter complete', sub: c.outro + '  ·  press play for ' + nc.title };
@@ -481,6 +488,8 @@
 
   function winCustom() {
     state = 'win'; score += lives * 100 + 500; saveRun();
+    award('playwright');
+    award('first-step');
     $('score').textContent = score;
     overlay = { title: 'you made it through!', sub: 'score ' + score + ' · the flock heard about this' };
   }
@@ -489,6 +498,18 @@
     if (dailyMode) { score += lives * 100 + 500; dailyEnd(); return; }
     if (storyMode) { score += lives * 100 + 500; $('score').textContent = score; storyNextLevel(); return; }
     state = 'win'; score += lives * 100 + 500; saveRun();
+    if (level >= 99) { award('root-moth'); award('hundred'); }
+    else if (level >= 79) award('star-moth');
+    else if (level >= 59) award('lantern-moth');
+    else if (level >= 39) award('moon-moth');
+    if (coins >= 100) award('coin-100');
+    if (score >= 500) award('score-500');
+    award('first-step');
+    const reached = level + 1;
+    if (reached >= 21) award('frozen-foot');
+    if (reached >= 41) award('lantern-lamp');
+    if (reached >= 61) award('star-chaser');
+    if (reached >= 81) award('root-digger');
     // the next level is now unlocked for this bird
     if (level + 2 > unlockedCount()) unlockTo(level + 2);
     try { localStorage.setItem('waddle-current', String(level + 2)); } catch (e) {}
@@ -688,6 +709,33 @@
     requestAnimationFrame(loop);
   }
 
+  const MEDALS = window.MEDALS || [];
+  const awarded = new Set();
+  try { for (const m of JSON.parse(localStorage.getItem('waddle-medals') || '[]')) awarded.add(m); } catch (e) {}
+  function birdName() { return ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt'; }
+  function award(id) {
+    if (!id || awarded.has(id)) return;
+    const def = MEDALS.find(m => m.id === id);
+    if (!def) return;
+    awarded.add(id);
+    try { localStorage.setItem('waddle-medals', JSON.stringify([...awarded])); } catch (e) {}
+    const bird = birdName();
+    const at = new Date().toISOString();
+    api('/medals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bird, medal: id }) })
+      .catch(() => {});
+    ntfyPostProgress({ type: 'medal', bird, medal: id, at });
+    showMedal(def);
+  }
+  function showMedal(def) {
+    const old = $('medalpop');
+    if (old) old.remove();
+    const b = document.createElement('div');
+    b.id = 'medalpop';
+    b.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#17301f;border:1px solid #4c8f5f;color:#d8ffe0;padding:8px 14px;border-radius:10px;font:14px system-ui;z-index:99;box-shadow:0 4px 14px #0006';
+    b.textContent = def.icon + '  medal earned: ' + def.name;
+    document.body.appendChild(b);
+    setTimeout(() => { if (b.parentNode) b.remove(); }, 3200);
+  }
   function saveRun() {
     const bird = ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt';
     api('/run', {
@@ -726,6 +774,7 @@
       .then(d => { if (d) drawDailyBoard(d.scores); })
       .catch(() => {});
     ntfyPostProgress({ type: 'daily', date: payload.date, bird, score: payload.score, level: payload.level, at: new Date().toISOString() });
+    award('daily-waddle');
     overlay = { title: 'time!', sub: 'daily score ' + payload.score + ' · the flock will see this' };
     loadDailyBoard();
   }
@@ -762,6 +811,9 @@
     return [];
   }
   window.__gurtDailyEnd = dailyEnd;
+  window.__gurtAward = award;
+  window.__gurtWin = win;
+  window.__gurtWinCustom = winCustom;
   function startDaily() {
     dailyMode = true; dailyPosted = false;
     dailyLevel = dailyLevelFor(todayStr());

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>The Waddle Medal Wall — Gurt's Waddle</title>
+<style>
+  body{margin:0;background:#101827;color:#e8f1ff;font-family:system-ui,sans-serif;padding:14px}
+  h1{font-size:22px;letter-spacing:2px;margin:6px 0 2px}
+  .note{font-size:12px;opacity:.7;max-width:760px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+  input,button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid #3b5876;background:#1b3049;color:#e8f1ff;cursor:pointer}
+  button:hover{background:#26456a}
+  #wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;max-width:900px;margin:12px 0}
+  .medal{border:1px solid #2b425c;border-radius:12px;padding:10px;background:#152741;position:relative}
+  .medal .ic{font-size:30px}
+  .medal .nm{font-weight:700;margin-top:4px}
+  .medal .hw{font-size:11px;opacity:.7;margin-top:3px}
+  .medal .ct{position:absolute;top:8px;right:10px;font-size:11px;background:#0d1726;border:1px solid #2b425c;border-radius:10px;padding:1px 7px}
+  .medal.got{border-color:#4c8f5f;background:#17301f}
+  .medal.got .nm{color:#8fd6a8}
+  .medal.locked{opacity:.42}
+  h2{font-size:16px;margin:18px 0 4px}
+  table{border-collapse:collapse;font-size:13px;margin:6px 0 20px}
+  td,th{padding:4px 10px;border-bottom:1px solid #2b425c;text-align:left}
+  a{color:#9fc3e8}
+</style>
+</head>
+<body>
+<h1>THE WADDLE MEDAL WALL</h1>
+<div class="note">every medal Gurt's Waddle can give you. earn them by playing, and the whole flock can see who has what.</div>
+<div class="row">
+  <input id="name" maxlength="18" placeholder="your bird name" value="gurt">
+  <button id="load">show my medals</button>
+  <a href="index.html">back to the game</a>
+  <a href="workshop.html">level workshop</a>
+</div>
+<div id="msg" class="note" style="color:#ffd23f;min-height:18px"></div>
+<div id="wall"></div>
+<h2>the flock's medal shelf</h2>
+<div class="note" style="margin-bottom:6px">birds that have earned a medal</div>
+<table id="shelf"><thead><tr><th>bird</th><th>medals</th><th>latest</th></tr></thead><tbody><tr><td colspan="3">loading…</td></tr></tbody></table>
+<script src="medals.js?v=1"></script>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-waddle';
+  const NTFY_ALT = 'https://ntfy.sh/gurt-feather-waddle';
+  const API_BASES = location.protocol === 'https:' ? [] : ['', 'http://computer:8600'];
+  async function api(path){
+    for (const base of API_BASES){
+      for (const url of [base + '/api/gurtwaddle' + path, base + '/gurtwaddle' + path]){
+        try { const r = await fetch(url); if (r.ok) return await r.json(); } catch(e){}
+      }
+    }
+    return null;
+  }
+  async function ntfyMedals(){
+    for (const url of [NTFY, NTFY_ALT]){
+      try {
+        const r = await fetch(url + '/json?poll=1&since=all', {cache:'no-store'});
+        if (!r.ok) continue;
+        const lines = (await r.text()).split('\n').filter(Boolean).map(x=>{try{return JSON.parse(x)}catch(e){return null}}).filter(Boolean);
+        const out = [];
+        for (const m of lines){
+          let d = m.message;
+          if (typeof d === 'string'){ try{ d = JSON.parse(d); }catch(e){ continue; } }
+          if (d && d.type === 'medal' && d.medal) out.push({bird: String(d.bird||'bird').slice(0,18), medal: String(d.medal).slice(0,40), at: d.at||''});
+        }
+        if (out.length) return out;
+      } catch(e){}
+    }
+    return [];
+  }
+  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&','<':'<','>':'>','"':'"'}[c])); }
+  function renderWall(earnedIds, counts){
+    const set = new Set(earnedIds);
+    $('wall').innerHTML = window.MEDALS.map(m => {
+      const got = set.has(m.id);
+      const n = counts[m.id] || 0;
+      return '<div class="medal ' + (got?'got':'locked') + '"' + (got?' style="border-color:'+m.color+'"':'') + '>' +
+        '<span class="ct">' + (n ? n + ' bird' + (n===1?'':'s') : '—') + '</span>' +
+        '<div class="ic">' + (got ? m.icon : '🔒') + '</div>' +
+        '<div class="nm">' + (got ? esc(m.name) : '???') + '</div>' +
+        '<div class="hw">' + esc(m.how) + '</div></div>';
+    }).join('');
+  }
+  function renderShelf(byBird){
+    const rows = Object.entries(byBird).map(([bird, list]) => {
+      const latest = list[0] ? (list[0].at || '').slice(0,10) : '';
+      return { bird: bird, n: list.length, latest: latest };
+    }).sort((a,b) => b.n - a.n);
+    $('shelf').querySelector('tbody').innerHTML = rows.map(r =>
+      '<tr><td>' + esc(r.bird) + '</td><td>' + r.n + '</td><td>' + esc(r.latest) + '</td></tr>').join('')
+      || '<tr><td colspan="3">no medals yet</td></tr>';
+  }
+  async function load(){
+    const bird = ($('name').value || 'gurt').trim().slice(0,18) || 'gurt';
+    $('msg').textContent = 'looking for ' + bird + "'s medals…";
+    const d = await api('/medals?bird=' + encodeURIComponent(bird));
+    const board = await ntfyMedals();
+    const earned = new Set((d && d.earned || []).map(r=>r.medal_id));
+    const counts = (d && d.counts) || {};
+    const byBird = (d && d.byBird) || {};
+    for (const m of board){
+      if (m.bird === bird) earned.add(m.medal);
+      if (!byBird[m.bird]) byBird[m.bird] = [];
+      if (!byBird[m.bird].some(x=>x.id===m.medal)) byBird[m.bird].push({id:m.medal, at:m.at});
+      counts[m.medal] = (counts[m.medal]||0) + (byBird[m.bird].filter(x=>x.id===m.medal).length===1 ? 1 : 0);
+    }
+    renderWall([...earned], counts);
+    renderShelf(byBird);
+    $('msg').textContent = earned.size + ' medal' + (earned.size===1?'':'s') + ' for ' + bird + (d ? '' : ' (shared board only)');
+  }
+  $('load').onclick = load;
+  $('name').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+  load();
+})();
+</script>
+</body>
+</html>

@@ -58,6 +58,13 @@ db.exec(`
     at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS levels_at ON levels(at DESC);
+  CREATE TABLE IF NOT EXISTS medals (
+    bird TEXT NOT NULL,
+    medal_id TEXT NOT NULL,
+    at TEXT NOT NULL,
+    PRIMARY KEY (bird, medal_id)
+  );
+  CREATE INDEX IF NOT EXISTS medals_medal ON medals(medal_id);
   CREATE TABLE IF NOT EXISTS progress (
     bird TEXT PRIMARY KEY,
     level INTEGER NOT NULL DEFAULT 1,
@@ -91,6 +98,11 @@ const stmt = {
   customLikeList: db.prepare('SELECT bird FROM custom_likes WHERE level_id = ?'),
   customComments: db.prepare('SELECT id, bird, text, at FROM custom_comments WHERE level_id = ? ORDER BY at DESC LIMIT 100'),
   customCommentAdd: db.prepare('INSERT INTO custom_comments (level_id,bird,text,at) VALUES (?,?,?,?)'),
+  medalEarned: db.prepare('SELECT medal_id, at FROM medals WHERE bird = ? ORDER BY at DESC'),
+  medalAll: db.prepare('SELECT medal_id, COUNT(*) AS n FROM medals GROUP BY medal_id'),
+  medalBirdList: db.prepare('SELECT bird, medal_id, at FROM medals ORDER BY at DESC LIMIT 300'),
+  medalAward: db.prepare('INSERT OR IGNORE INTO medals (bird, medal_id, at) VALUES (?,?,?)'),
+  medalHas: db.prepare('SELECT COUNT(*) AS n FROM medals WHERE bird = ? AND medal_id = ?'),
   upsertProgress: db.prepare(`INSERT INTO progress (bird,level,score,coins,updated) VALUES (@bird,@level,@score,@coins,@updated)
     ON CONFLICT(bird) DO UPDATE SET level=MAX(level,excluded.level), score=MAX(score,excluded.score), coins=MAX(coins,excluded.coins), updated=excluded.updated`)
 };
@@ -192,6 +204,30 @@ module.exports = function handler(req, res, seg) {
       if (!text) return json(res, 400, { error: 'comment text required' });
       stmt.customCommentAdd.run(id, bird, text, now());
       return json(res, 200, { ok: true, comments: stmt.customComments.all(id) });
+    });
+  }
+
+  if (req.method === 'GET' && route === 'medals') {
+    const bird = birdName(req.url.split('bird=')[1]);
+    const counts = {};
+    for (const r of stmt.medalAll.all()) counts[r.medal_id] = r.n;
+    const recent = stmt.medalBirdList.all();
+    const byBird = {};
+    for (const r of recent) {
+      if (!byBird[r.bird]) byBird[r.bird] = [];
+      if (byBird[r.bird].length < 40) byBird[r.bird].push({ id: r.medal_id, at: r.at });
+    }
+    return json(res, 200, { bird, earned: stmt.medalEarned.all(bird), counts, byBird });
+  }
+
+  if (req.method === 'POST' && route === 'medals') {
+    return readBody(req, body => {
+      const bird = birdName(body.bird);
+      const medal = String(body.medal || '').trim().slice(0, 40);
+      if (!medal) return json(res, 400, { error: 'medal id required' });
+      const had = stmt.medalHas.get(bird, medal).n > 0;
+      stmt.medalAward.run(bird, medal, now());
+      return json(res, 200, { ok: true, medal, new: !had, earned: stmt.medalEarned.all(bird) });
     });
   }
 
