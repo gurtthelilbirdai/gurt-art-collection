@@ -82,7 +82,7 @@ async function api(path,opts){
 async function ntfyGet(){
   for(const host of NTFY_HOSTS){
     try{
-      const r=await fetch(host+TOPIC+'/json?poll=1&limit=200');
+      const r=await fetch(host+TOPIC+'/json?poll=1&limit=500');
       if(!r.ok) continue;
       const lines=(await r.text()).trim().split('\n').filter(Boolean);
       const out=[];
@@ -91,6 +91,7 @@ async function ntfyGet(){
         let p=m.message;
         if(typeof p==='string'){ try{p=JSON.parse(p);}catch(e){continue;} }
         if(p&&p.type==='stroke'&&p.stroke) out.push(p.stroke);
+        else if(p&&p.type==='strokes'&&Array.isArray(p.strokes)) p.strokes.forEach(x=>{if(x&&x.id) out.push(x);});
         else if(p&&p.type==='clear') out.push({_clear:p.at});
         else if(p&&p.type==='title') out.push({_title:p.title});
       }
@@ -151,13 +152,25 @@ function idxAt(ev){
   return {x,y};
 }
 let painting=false,last=null;
+let pending=[], flushTimer=null, flushing=false;
+async function flush(){
+  if(flushing) return;
+  flushing=true;
+  while(pending.length){
+    const batch=pending.splice(0,40);
+    await ntfyPost({type:'strokes',strokes:batch});
+    await new Promise(r=>setTimeout(r,250));
+  }
+  flushing=false;
+}
+function queueStroke(s){ pending.push(s); if(!flushTimer) flushTimer=setTimeout(()=>{flushTimer=null;flush();},300); }
 async function put(x,y){
   const s={id:'st'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),bird:who(),color:erasing?'#f7f4e8':color,x,y,created:new Date().toISOString()};
   addStroke(s,true);
   render();
   const d=await api('/stroke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird:s.bird,color:erasing?'#f7f4e8':color,x,y})});
   if(d&&d.stroke){ addStroke(d.stroke,true); }
-  await ntfyPost({type:'stroke',stroke:(d&&d.stroke)?d.stroke:s});
+  queueStroke((d&&d.stroke)?d.stroke:s);
 }
 $('board').addEventListener('pointerdown',e=>{painting=true;$('board').setPointerCapture(e.pointerId);const i=idxAt(e);if(i)put(i.x,i.y);});
 $('board').addEventListener('pointermove',e=>{if(!painting)return;const i=idxAt(e);if(!i)return;if(last&&last.x===i.x&&last.y===i.y)return;last=i;put(i.x,i.y);});
@@ -170,7 +183,7 @@ $('undo').onclick=async()=>{
     const back={id:'st'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),bird:who(),color:'#f7f4e8',x:s.x,y:s.y,created:new Date().toISOString()};
     addStroke(back,true);
     const d=await api('/stroke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird:back.bird,color:back.color,x:back.x,y:back.y})});
-    await ntfyPost({type:'stroke',stroke:d&&d.stroke?d.stroke:back});
+    queueStroke(d&&d.stroke?d.stroke:back);
   }
   render(); $('msg').textContent='removed one of your pixels.';
 };
