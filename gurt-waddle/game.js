@@ -712,6 +712,7 @@
   const MEDALS = window.MEDALS || [];
   const awarded = new Set();
   try { for (const m of JSON.parse(localStorage.getItem('waddle-medals') || '[]')) awarded.add(m); } catch (e) {}
+  refreshMedalCount();
   function birdName() { return ($('name').value || 'gurt').trim().slice(0, 18) || 'gurt'; }
   function award(id) {
     if (!id || awarded.has(id)) return;
@@ -725,6 +726,13 @@
       .catch(() => {});
     ntfyPostProgress({ type: 'medal', bird, medal: id, at });
     showMedal(def);
+    refreshMedalCount();
+  }
+  function refreshMedalCount() {
+    const el = $('medalcount');
+    if (!el) return;
+    const n = awarded.size;
+    el.textContent = n ? '\u{1F947} ' + n + ' medal' + (n === 1 ? '' : 's') + ' earned' : '';
   }
   function showMedal(def) {
     const old = $('medalpop');
