@@ -121,7 +121,7 @@ async function ntfyGet(){
   }
   return [];
 }
-async function ntfyPost(p){for(const h of NTFY){try{const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),6000);const r=await fetch(h+'/'+TOPIC,{method:'POST',body:JSON.stringify(p),signal:ctl.signal});clearTimeout(to);if(r.ok)return true;}catch(e){}}return false;}
+async function ntfyPost(p){let ok=false;for(const h of NTFY){try{const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),6000);const r=await fetch(h+'/'+TOPIC,{method:'POST',body:JSON.stringify(p),signal:ctl.signal});clearTimeout(to);if(r.ok)ok=true;}catch(e){}}return ok;}
 
 function mergeSnaps(snaps){
   // each bird posts a full copy of the table, so pick the copy with the
@@ -131,7 +131,9 @@ function mergeSnaps(snaps){
     const st=sn.room||sn;
     const inner=st.room||{};
     const q=inner.seq!=null?inner.seq:(st.seq||0);
-    if(q>maxSeq||(q===maxSeq&&(st._t||0)>=(base&&(base.room||base)._t||0))){maxSeq=q;base=sn;}
+    const cq=inner.cseq||st.cseq||0;
+    const bq=base?((base.room&&base.room.room?base.room.room:base.room)||{}).cseq||0:0;
+    if(cq>bq||(cq===bq&&q>maxSeq)||(cq===bq&&q===maxSeq&&(st._t||0)>=(base&&(base.room||base)._t||0))){maxSeq=q;base=sn;}
   });
   const latest=JSON.parse(JSON.stringify(base||snaps[snaps.length-1]));
   const st=latest.room&&latest.room.room?latest.room:latest;   // state object
@@ -168,6 +170,13 @@ function mergeSnaps(snaps){
     (s2.log||[]).forEach(l=>{logs[(l.ts||0)+'|'+l.bird+'|'+l.text]=l;});
   });
   st.log=Object.keys(logs).sort().map(k=>logs[k]);
+  // The last bank in the log is the truth about whose turn it is. A snapshot
+  // can be lost on the shared board, so never trust one copy alone.
+  const lastBank=[...st.log].reverse().find(l=>l.text&&l.text.indexOf('banked')===0);
+  if(lastBank&&lastBank.bird&&pl.length){
+    const i=pl.findIndex(x=>x.bird===lastBank.bird);
+    if(i>=0){const who=pl[(i+1)%pl.length].bird;lr.turnBird=who;lr.turn=(i+1)%pl.length;lr.lastBanker=lastBank.bird;}
+  }
   // The turn belongs to whoever comes after the last bird that banked a
   // score. Every snapshot carries the table talk, so this survives a stale
   // or out-of-order snapshot.
@@ -212,7 +221,10 @@ async function pushState(){
   if(!room)return;
   room._t=Date.now();
   // do NOT bump seq here: the backend owns the sequence number, and a fake
-  // bump made a stale snapshot look newer than the real one.
+  // bump made a stale snapshot look newer than the real one. Instead keep a
+  // client counter of our own moves, so the flock can still tell which copy
+  // of the table is the newest one.
+  room.room.cseq=(room.room.cseq||0)+1;
   const snap={type:'state',room:room};
   await ntfyPost(snap);
 }
