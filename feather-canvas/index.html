@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Canvas — one mural for the whole flock</title>
+<style>
+:root{--bg:#0f1a17;--card:#16241f;--line:#2c4439;--ink:#eef7f1;--dim:#9dbcae;--green:#7ee0a8;--blue:#7cc4ff}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:18px;text-align:center;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:1.7rem}h1 span{color:var(--green)}
+.sub{color:var(--dim);margin:4px 0 0;font-size:.92rem}
+main{max-width:1000px;margin:0 auto;padding:16px;display:grid;gap:16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#title{font-weight:700;font-size:1.15rem;margin:0}
+#board{display:block;width:100%;max-width:960px;margin:0 auto;image-rendering:pixelated;background:#f7f4e8;border-radius:10px;border:1px solid var(--line);cursor:crosshair;touch-action:none}
+.pal{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.sw{width:28px;height:28px;border-radius:7px;border:2px solid transparent;cursor:pointer}
+.sw.on{border-color:#fff;transform:scale(1.12)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{padding:8px 13px;border:0;border-radius:8px;background:var(--green);color:#0c1a13;font-weight:700;cursor:pointer}
+button.ghost{background:#2c4439;color:var(--ink)}
+input{padding:8px;border-radius:8px;border:1px solid var(--line);background:#0d1714;color:var(--ink);font:inherit}
+.msg{color:var(--green);font-size:.88rem;min-height:18px;margin-top:8px}
+#counts{color:var(--dim);font-size:.85rem;margin-left:auto}
+.birds{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.bird{font-size:.78rem;border:1px solid var(--line);border-radius:20px;padding:2px 9px;color:var(--dim)}
+@media(max-width:640px){.bar{gap:6px}#counts{margin-left:0}}
+</style>
+</head>
+<body>
+<header>
+<h1>Feather <span>Canvas</span></h1>
+<p class="sub">one big mural — every bird adds a pixel at a time</p>
+</header>
+<main>
+<section>
+<div class="bar">
+  <h2 id="title">the flock mural</h2>
+  <span id="counts">loading…</span>
+</div>
+<canvas id="board" width="48" height="32"></canvas>
+<div class="pal" id="pal"></div>
+<div class="tools">
+  <button class="ghost" id="erase">eraser</button>
+  <button class="ghost" id="undo">undo mine</button>
+  <button class="ghost" id="refresh">refresh</button>
+  <input id="bird" placeholder="your bird name" value="gurt" size="12">
+</div>
+<p class="msg" id="msg"></p>
+<div class="birds" id="birds"></div>
+</section>
+</main>
+<script>
+const W=48,H=32;
+const PALETTE=['#2f6f9f','#60a5fa','#b3453a','#e07a5f','#f1c40f','#f2a541','#4f9d69','#7ee0a8','#7a4f9d','#c9a0dc','#4b3f2f','#8b5a2b','#2b2a26','#8a8a8a','#ffffff','#f7f4e8'];
+const NTFY_HOSTS=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const TOPIC='/gurt-feather-canvas';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+let color=PALETTE[0], erasing=false;
+let strokes=new Map();      // id -> stroke
+let order=[];              // ids in order
+let clearedAt='';
+let mine=[];               // ids I painted (for undo)
+
+function who(){ return ($('bird').value||'gurt').trim()||'gurt'; }
+
+function apiBase(){ return location.protocol==='https:' ? '' : 'http://localhost:8600/api/feathercanvas'; }
+
+async function api(path,opts){
+  const base=apiBase(); if(!base) return null;
+  try{ const r=await fetch(base+path,opts); if(r.ok) return await r.json(); }catch(e){}
+  return null;
+}
+async function ntfyGet(){
+  for(const host of NTFY_HOSTS){
+    try{
+      const r=await fetch(host+TOPIC+'/json?poll=1&limit=200');
+      if(!r.ok) continue;
+      const lines=(await r.text()).trim().split('\n').filter(Boolean);
+      const out=[];
+      for(const line of lines){
+        let m; try{m=JSON.parse(line);}catch(e){continue;}
+        let p=m.message;
+        if(typeof p==='string'){ try{p=JSON.parse(p);}catch(e){continue;} }
+        if(p&&p.type==='stroke'&&p.stroke) out.push(p.stroke);
+        else if(p&&p.type==='clear') out.push({_clear:p.at});
+        else if(p&&p.type==='title') out.push({_title:p.title});
+      }
+      return out;
+    }catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(payload){
+  for(const host of NTFY_HOSTS){
+    try{
+      const r=await fetch(host+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      if(r.ok) return true;
+    }catch(e){}
+  }
+  return false;
+}
+
+function addStroke(s,fromMe){
+  if(!s||!s.id) return;
+  if(strokes.has(s.id)) return;
+  strokes.set(s.id,s); order.push(s.id);
+  if(fromMe) mine.push(s.id);
+}
+function applyClear(at){
+  clearedAt=at||new Date().toISOString();
+  for(const id of Array.from(strokes.keys())){
+    const s=strokes.get(id);
+    if(s.created<=clearedAt) strokes.delete(id);
+  }
+  order=order.filter(id=>strokes.has(id));
+}
+function draw(){
+  const c=$('board'),x=c.getContext('2d');
+  x.fillStyle='#f7f4e8'; x.fillRect(0,0,W,H);
+  for(const id of order){
+    const s=strokes.get(id); if(!s) continue;
+    x.fillStyle=erasing&&mine.includes(id)?'#f7f4e8':s.color;
+    x.fillRect(s.x,s.y,1,1);
+  }
+}
+function renderPal(){
+  $('pal').innerHTML=PALETTE.map(c=>`<div class="sw ${c===color&&!erasing?'on':''}" data-c="${c}" style="background:${c}"></div>`).join('');
+  $('pal').querySelectorAll('.sw').forEach(s=>s.onclick=()=>{color=s.dataset.c;erasing=false;renderPal();});
+}
+function renderBirds(){
+  const set=new Set(); for(const id of order){const s=strokes.get(id); if(s&&s.bird) set.add(s.bird);}
+  $('birds').innerHTML=Array.from(set).map(b=>`<span class="bird">${esc(b)}</span>`).join('');
+  $('counts').textContent=order.length+' pixels · '+set.size+' birds';
+}
+function render(){ draw(); renderBirds(); }
+
+function idxAt(ev){
+  const c=$('board'),r=c.getBoundingClientRect();
+  const x=Math.floor((ev.clientX-r.left)/r.width*W);
+  const y=Math.floor((ev.clientY-r.top)/r.height*H);
+  if(x<0||y<0||x>=W||y>=H) return -1;
+  return {x,y};
+}
+let painting=false,last=null;
+async function put(x,y){
+  const s={id:'st'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),bird:who(),color:erasing?'#f7f4e8':color,x,y,created:new Date().toISOString()};
+  addStroke(s,true);
+  render();
+  const d=await api('/stroke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird:s.bird,color:erasing?'#f7f4e8':color,x,y})});
+  if(d&&d.stroke){ addStroke(d.stroke,true); }
+  await ntfyPost({type:'stroke',stroke:d&&d.stroke?s:d});
+}
+$('board').addEventListener('pointerdown',e=>{painting=true;$('board').setPointerCapture(e.pointerId);const i=idxAt(e);if(i)put(i.x,i.y);});
+$('board').addEventListener('pointermove',e=>{if(!painting)return;const i=idxAt(e);if(!i)return;if(last&&last.x===i.x&&last.y===i.y)return;last=i;put(i.x,i.y);});
+window.addEventListener('pointerup',()=>{painting=false;last=null;});
+$('erase').onclick=()=>{erasing=!erasing;renderPal();};
+$('undo').onclick=()=>{
+  if(!mine.length){$('msg').textContent='you have not painted yet.';return;}
+  const id=mine.pop(); strokes.delete(id); order=order.filter(x=>x!==id);
+  render(); $('msg').textContent='removed one of your pixels.';
+};
+$('refresh').onclick=()=>load();
+
+async function load(){
+  const d=await api('/mural');
+  if(d){
+    $('title').textContent=d.title||'the flock mural';
+    if(d.cleared) applyClear(d.cleared);
+    (d.strokes||[]).forEach(s=>addStroke(s,false));
+  }
+  const shared=await ntfyGet();
+  for(const item of shared){
+    if(item._clear){ applyClear(item._clear); continue; }
+    if(item._title){ $('title').textContent=item._title; continue; }
+    addStroke(item,false);
+  }
+  render();
+}
+renderPal();
+load();
+setInterval(load, 12000);
+</script>
+</body>
+</html>
