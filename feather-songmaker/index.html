@@ -138,11 +138,32 @@ document.getElementById('random').onclick=()=>{
 };
 
 const API_BASES = location.protocol==='https:' ? [] : ['http://localhost:8600',''];
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const TOPIC = 'gurt-feather-songmaker';
 async function api(path, opts){
   for(const base of API_BASES){
     try{ const r=await fetch(base+'/api/feathersongmaker'+path, opts); if(r.ok) return await r.json(); }catch(e){}
   }
   return null;
+}
+async function ntfyPost(obj){
+  for(const h of NTFY_HOSTS){
+    try{ const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}); if(r.ok) return true; }catch(e){}
+  }
+  return false;
+}
+async function ntfyGet(){
+  const songs=[], plays=[];
+  for(const h of NTFY_HOSTS){
+    try{ const r=await fetch(h+'/'+TOPIC+'/json?poll=1&since=24h'); if(!r.ok) continue; const t=await r.text();
+      t.split('\n').filter(Boolean).forEach(line=>{ try{ const m=JSON.parse(line); const msg=m.message; if(m.event!=='message'||!msg) return;
+        if(msg.song) songs.push(msg.song);
+        if(msg.play&&msg.play.id) plays.push(msg.play.id);
+      }catch(e){} });
+      if(songs.length||plays.length) return {songs,plays};
+    }catch(e){}
+  }
+  return {songs,plays};
 }
 document.getElementById('publish').onclick=async()=>{
   const bird=document.getElementById('bird').value.trim()||'gurt';
@@ -150,7 +171,13 @@ document.getElementById('publish').onclick=async()=>{
   const bpm=+document.getElementById('bpm').value||110;
   const d=await api('/song',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird,title,bpm,pattern})});
   const msg=document.getElementById('msg');
-  if(d&&d.ok){ msg.textContent='published!'; loadSongs(); } else { msg.textContent='published locally (offline)'; saveLocal({bird,title,bpm,pattern}); loadSongs(); }
+  if(d&&d.ok){ msg.textContent='published!'; } else {
+    const rec={id:'ntfy'+Date.now(),bird,title,bpm,pattern,plays:0,created:new Date().toISOString()};
+    const ok=await ntfyPost({song:rec});
+    msg.textContent=ok?'published to the shared shelf!':'published locally (offline)';
+    if(!ok) saveLocal(rec);
+  }
+  loadSongs();
 };
 function saveLocal(s){ const l=JSON.parse(localStorage.getItem('fsongs')||'[]'); l.unshift(Object.assign({id:'local'+Date.now(),plays:0,created:new Date().toISOString()},s)); localStorage.setItem('fsongs',JSON.stringify(l.slice(0,40))); }
 function localSongs(){ try{ return JSON.parse(localStorage.getItem('fsongs')||'[]'); }catch(e){ return []; } }
@@ -158,7 +185,13 @@ function mini(p){ const h=document.createElement('div'); h.className='mini'; for
 async function loadSongs(){
   const box=document.getElementById('songs'); box.innerHTML='';
   const d=await api('/songs');
-  let list=(d&&d.songs)?d.songs:localSongs();
+  let list=(d&&d.songs)?d.songs:[];
+  const shared=await ntfyGet();
+  shared.songs.forEach(s=>{ if(!list.some(x=>x.id===s.id)) list.push(s); });
+  const playCounts={};
+  shared.plays.forEach(id=>{ playCounts[id]=(playCounts[id]||0)+1; });
+  list.forEach(s=>{ if(playCounts[s.id]) s.plays=(Number(s.plays)||0)+playCounts[s.id]; });
+  if(!list.length) list=localSongs();
   if(!list.length){ box.innerHTML='<span class="tiny">no songs yet. make one!</span>'; return; }
   list.forEach(s=>{
     let p={}; try{ p=typeof s.pattern==='string'?JSON.parse(s.pattern):(s.pattern||{}); }catch(e){}
@@ -167,7 +200,9 @@ async function loadSongs(){
     const who=document.createElement('span'); who.className='tiny'; who.textContent='by '+s.bird+' · '+s.bpm+' bpm · '+s.plays+' plays';
     row.appendChild(b); row.appendChild(who); row.appendChild(mini(p));
     const play=document.createElement('button'); play.textContent='hear it';
-    play.onclick=()=>{ stop(); pattern={kick:[],snare:[],hat:[],bass:[],lead:[]}; LANES.forEach(([k])=>pattern[k]=p[k]||new Array(16).fill(0)); document.getElementById('bpm').value=s.bpm; document.getElementById('title').value=s.title; document.getElementById('bird').value=s.bird; draw(); start(); api('/play',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:s.id})}).then(loadSongs); };
+    play.onclick=()=>{ stop(); pattern={kick:[],snare:[],hat:[],bass:[],lead:[]}; LANES.forEach(([k])=>pattern[k]=p[k]||new Array(16).fill(0)); document.getElementById('bpm').value=s.bpm; document.getElementById('title').value=s.title; document.getElementById('bird').value=s.bird; draw(); start();
+      api('/play',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:s.id})}).then(()=>loadSongs());
+      ntfyPost({play:{id:s.id}}); };
     row.appendChild(play);
     box.appendChild(row);
   });
