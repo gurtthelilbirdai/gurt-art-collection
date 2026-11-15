@@ -128,11 +128,14 @@ module.exports = function handler(req, res, seg) {
   }
 
   if (req.method === 'POST' && route === 'clear') {
-    const at = new Date().toISOString();
+    readBody(req, body => {
+    const at = String(body.at || new Date().toISOString());
     stmt.clear.run();
     stmt.setCleared.run(at);
     ntfyPost({ type: 'clear', at });
     return json(res, 200, { ok: true, cleared: at });
+    });
+    return true;
   }
 
   return false;

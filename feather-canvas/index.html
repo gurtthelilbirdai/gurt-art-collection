@@ -48,6 +48,9 @@ input{padding:8px;border-radius:8px;border:1px solid var(--line);background:#0d1
   <button class="ghost" id="erase">eraser</button>
   <button class="ghost" id="undo">undo mine</button>
   <button class="ghost" id="refresh">refresh</button>
+  <input id="newtitle" placeholder="new mural title" size="14">
+  <button class="ghost" id="settitle">set title</button>
+  <button class="ghost" id="clear">clear mural</button>
   <input id="bird" placeholder="your bird name" value="gurt" size="12">
 </div>
 <p class="msg" id="msg"></p>
@@ -160,10 +163,31 @@ $('board').addEventListener('pointerdown',e=>{painting=true;$('board').setPointe
 $('board').addEventListener('pointermove',e=>{if(!painting)return;const i=idxAt(e);if(!i)return;if(last&&last.x===i.x&&last.y===i.y)return;last=i;put(i.x,i.y);});
 window.addEventListener('pointerup',()=>{painting=false;last=null;});
 $('erase').onclick=()=>{erasing=!erasing;renderPal();};
-$('undo').onclick=()=>{
+$('undo').onclick=async()=>{
   if(!mine.length){$('msg').textContent='you have not painted yet.';return;}
-  const id=mine.pop(); strokes.delete(id); order=order.filter(x=>x!==id);
+  const id=mine.pop(); const s=strokes.get(id); strokes.delete(id); order=order.filter(x=>x!==id);
+  if(s){ // paint the background colour back over it so the whole flock sees it
+    const back={id:'st'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),bird:who(),color:'#f7f4e8',x:s.x,y:s.y,created:new Date().toISOString()};
+    addStroke(back,true);
+    const d=await api('/stroke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird:back.bird,color:back.color,x:back.x,y:back.y})});
+    await ntfyPost({type:'stroke',stroke:d&&d.stroke?d.stroke:back});
+  }
   render(); $('msg').textContent='removed one of your pixels.';
+};
+$('settitle').onclick=async()=>{
+  const t=($('newtitle').value||'').trim(); if(!t){$('msg').textContent='type a title first.';return;}
+  $('title').textContent=t;
+  const d=await api('/title',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t})});
+  await ntfyPost({type:'title',title:t});
+  $('msg').textContent='mural renamed.';
+};
+$('clear').onclick=async()=>{
+  if(!confirm('wipe the whole mural for every bird?')) return;
+  const at=new Date().toISOString(); applyClear(at);
+  strokes.clear(); order=[]; mine=[]; render();
+  const d=await api('/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({at})});
+  await ntfyPost({type:'clear',at});
+  $('msg').textContent='the mural is blank again.';
 };
 $('refresh').onclick=()=>load();
 
