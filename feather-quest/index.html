@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Quest — a quest board for small birds</title>
+<style>
+  :root{ --bg:#141021; --panel:#1e1830; --ink:#f2ecff; --dim:#a99ccb; --gold:#ffd166; --green:#7bd88f; --blue:#7fb5ff; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 50% -10%,#2a2044,#141021 60%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 18px 60px}
+  h1{margin:0 0 4px;font-size:30px}
+  .sub{color:var(--dim);margin:0 0 20px}
+  .panel{background:var(--panel);border:1px solid #36294f;border-radius:16px;padding:18px;margin-bottom:18px}
+  .panel h2{margin:0 0 12px;font-size:17px;color:var(--gold)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  input{flex:1;min-width:130px;padding:10px;border-radius:10px;border:1px solid #3b2d57;background:#120e1f;color:var(--ink);font-size:15px}
+  input.small{flex:0 0 100px;min-width:80px}
+  button{padding:10px 14px;border-radius:10px;border:1px solid #3b2d57;background:#2a2040;color:var(--ink);cursor:pointer;font-size:14px}
+  button.primary{background:var(--gold);color:#241a05;font-weight:700;border:0}
+  button.go{background:#3b2d57}
+  button.claim{background:var(--green);color:#06140d;font-weight:700;border:0}
+  button:disabled{opacity:.45;cursor:default}
+  .quests{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .quest{background:#120e1f;border:1px solid #36294f;border-radius:14px;padding:14px;display:flex;flex-direction:column}
+  .quest h3{margin:0 0 4px;font-size:16px}
+  .quest p{margin:0 0 8px;color:var(--dim);font-size:13px}
+  .meta{font-size:12px;color:var(--dim)}
+  .bar{height:9px;background:#241b38;border-radius:6px;overflow:hidden;margin:10px 0 6px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--green))}
+  .pnum{font-size:13px;color:var(--gold);font-weight:700}
+  .acts{display:flex;gap:8px;margin-top:10px}
+  .acts button{flex:1}
+  .done{border-color:var(--green)}
+  .msg{min-height:20px;color:var(--green);font-size:14px;margin-top:10px}
+  .seeds{display:flex;gap:10px;flex-wrap:wrap}
+  .seed{background:#120e1f;border:1px solid #36294f;border-radius:12px;padding:10px 14px;font-size:14px}
+  .seed b{color:var(--gold)}
+  .empty{color:var(--dim);padding:20px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Quest</h1>
+  <p class="sub">a quest board for small birds. take a quest, do the thing, claim the seeds.</p>
+
+  <div class="panel">
+    <h2>post a quest</h2>
+    <div class="row">
+      <input id="title" placeholder="quest title, e.g. count ten moths">
+      <input id="detail" placeholder="what must be done?">
+      <input id="goal" class="small" type="number" min="1" value="1" title="how many steps">
+      <input id="points" class="small" type="number" min="1" value="10" title="seed reward">
+      <input id="bird" class="small" placeholder="bird" value="gurt">
+      <button class="primary" id="add">post quest</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>the quest board</h2>
+    <div class="row" style="margin-bottom:12px">
+      <input id="me" placeholder="your bird name" value="gurt">
+      <button class="go" id="reload">show my progress</button>
+    </div>
+    <div class="quests" id="board"></div>
+  </div>
+
+  <div class="panel">
+    <h2>seed ledger</h2>
+    <p class="meta">seeds are the shared currency of the quest board.</p>
+    <div class="seeds" id="seeds"></div>
+  </div>
+</div>
+<script>
+const API_BASES = location.protocol === 'https:' ? [] : ['', 'http://computer:8600'];
+const LS = 'fq-quests';
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = '/gurt-feather-quest';
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){var codes={38:38,60:60,62:62,34:34,39:39};return '&#'+codes[c.charCodeAt(0)]+';';});}
+function me(){return ($('me').value||'gurt').trim().slice(0,18)||'gurt';}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+
+async function api(path, opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{var r=await fetch(API_BASES[i]+'/api/featherquest'+path,opts); if(r.ok) return await r.json();}catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(obj){
+  for(var i=0;i<NTFY_HOSTS.length;i++){
+    try{var r=await fetch(NTFY_HOSTS[i]+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}); if(r.ok) return true;}catch(e){}
+  }
+  return false;
+}
+async function ntfyEvents(){
+  for(var i=0;i<NTFY_HOSTS.length;i++){
+    try{
+      var r=await fetch(NTFY_HOSTS[i]+TOPIC+'/json?poll=1&since=all');
+      if(!r.ok) continue;
+      var txt=await r.text(); var out=[];
+      txt.split('\n').forEach(function(line){
+        if(!line.trim()) return;
+        try{var env=JSON.parse(line); if(env.event!=='message') return; var m=JSON.parse(env.message); if(m) out.push(m);}catch(e){}
+      });
+      if(out.length) return out;
+    }catch(e){}
+  }
+  return [];
+}
+function merge(local, events){
+  var map={}; var order=[];
+  function put(q){ if(!q||!q.id) return; if(!map[q.id]){order.push(q.id); map[q.id]=Object.assign({},q); return;} var base=map[q.id];
+    map[q.id]=Object.assign({},base,q,{progress:Math.max(base.progress||0,q.progress||0),claimed:base.claimed||q.claimed}); }
+  local.forEach(put);
+  events.forEach(function(ev){
+    if(ev.type==='quest' && ev.quest) put(ev.quest);
+    else if(ev.type==='progress' && ev.id){ var base=map[ev.id]||{id:ev.id,progress:0,claimed:false};
+      put(Object.assign({},base,{progress:Math.max(base.progress||0,ev.progress||0)})); }
+  });
+  return order.map(function(id){return map[id];});
+}
+async function load(){
+  var bird=me();
+  var d=await api('/quests?bird='+encodeURIComponent(bird));
+  var local=localLoad();
+  var quests;
+  if(d && d.quests && d.quests.length){ quests=d.quests; localSave(d.quests); }
+  else {
+    var evs=await ntfyEvents();
+    quests=merge(local,evs);
+  }
+  render(quests);
+  if(d && d.seeds){ renderSeeds(d.seeds, d.totalSeeds); }
+}
+function render(list){
+  var tb=$('board');
+  if(!list.length){ tb.innerHTML='<div class="empty">no quests yet. post the first one.</div>'; return; }
+  list.sort(function(a,b){ return (a.claimed?1:0)-(b.claimed?1:0) || (b.points-a.points); });
+  tb.innerHTML=list.map(function(q){
+    var pct=Math.min(100, Math.round((q.progress||0)/(q.goal||1)*100));
+    var started=q.progress>0;
+    var done=q.progress>=(q.goal||1);
+    var btn = q.claimed ? '<button disabled>claimed ✓</button>'
+      : done ? '<button class="claim">claim '+q.points+' seeds</button>'
+      : started ? '<button class="go" data-act="step">+1 step</button>'
+      : '<button class="go" data-act="start">start quest</button>';
+    return '<div class="quest'+(q.claimed?' done':'')+'" data-id="'+esc(q.id)+'">'+
+      '<h3>'+esc(q.title)+'</h3><p>'+esc(q.detail||'')+'</p>'+
+      '<div class="meta">posted by '+esc(q.bird)+' · '+q.points+' seeds · '+q.takers+' bird'+(q.takers===1?'':'s')+' taking it</div>'+
+      '<div class="bar"><i style="width:'+pct+'%"></i></div>'+
+      '<div class="pnum">'+(q.progress||0)+' / '+(q.goal||1)+'</div>'+
+      '<div class="acts">'+btn+'</div></div>';
+  }).join('');
+  tb.querySelectorAll('.quest').forEach(function(el){
+    var id=el.getAttribute('data-id');
+    var b=el.querySelector('button[data-act]')||el.querySelector('button.claim');
+    if(!b) return;
+    b.onclick=async function(){
+      var bird=me();
+      if(b.classList.contains('claim')){
+        var r=await api('/quest/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,bird:bird})});
+        if(r&&r.ok){ $('msg').textContent='claimed '+r.points+' seeds!'; ntfyPost({type:'claimed',id:id,bird:bird,points:r.points}); load(); }
+        else $('msg').textContent=(r&&r.error)||'could not claim that one.';
+        return;
+      }
+      var act=b.getAttribute('data-act');
+      var amount = act==='start' ? 1 : 1;
+      var r=await api('/quest/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,bird:bird,amount:amount})});
+      if(r&&r.ok){ $('msg').textContent='step logged.'; ntfyPost({type:'progress',id:id,bird:bird,progress:r.quest.progress,goal:r.quest.goal}); load(); }
+      else {
+        // offline fallback: keep it in local storage
+        var l=localLoad(); var q=l.find(function(x){return x.id===id;});
+        if(!q){ q={id:id,title:'(offline quest)',goal:1,points:10,progress:0,claimed:false}; l.push(q); }
+        q.progress=Math.min(q.goal||1,(q.progress||0)+1); localSave(l);
+        $('msg').textContent='step logged on this bird only.'; render(merge(l,[]));
+      }
+    };
+  });
+}
+function renderSeeds(seeds, total){
+  var box=$('seeds');
+  if(!seeds||!seeds.length){ box.innerHTML='<div class="empty">no seeds claimed yet.</div>'; return; }
+  box.innerHTML='<div class="seed"><b>'+(total||0)+'</b> seeds claimed by the flock</div>'+
+    seeds.map(function(s){return '<div class="seed">'+esc(s.bird)+' — <b>'+s.seeds+'</b></div>';}).join('');
+}
+$('add').onclick=async function(){
+  var title=$('title').value.trim();
+  if(!title){ $('msg').textContent='the quest needs a title.'; return; }
+  var body={title:title,detail:$('detail').value.trim(),goal:parseInt($('goal').value,10)||1,points:parseInt($('points').value,10)||10,bird:me()};
+  var d=await api('/quest/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(d&&d.quest){
+    var l=localLoad(); l.push(d.quest); localSave(l);
+    ntfyPost({type:'quest',quest:d.quest});
+    $('msg').textContent='quest posted to the board.';
+    $('title').value=''; $('detail').value=''; load();
+  } else {
+    var l=localLoad(); l.push({id:'loc'+Date.now(),title:body.title,detail:body.detail,goal:body.goal,points:body.points,bird:body.bird,progress:0,claimed:false,takers:0});
+    localSave(l); ntfyPost({type:'quest',quest:l[l.length-1]});
+    $('msg').textContent='quest posted on this bird only.'; $('title').value=''; load();
+  }
+};
+$('reload').onclick=load;
+$('me').onchange=load;
+load();
+</script>
+</body>
+</html>
