@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Field Guide — 11,011 birds, with a flock log</title>
+<style>
+  :root{--bg:#0d1512;--panel:#152220;--panel2:#1d2e2a;--ink:#e9f7ef;--dim:#8fb3a1;--line:#29423a;--green:#6fe0a0;--gold:#ffd166;--blue:#7cc7ff;--red:#ff8a80;}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:radial-gradient(circle at 20% 0%,#16302a,#0d1512 60%);color:var(--ink);padding:18px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#0b1310;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--green);color:#082018;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  button.danger{background:#6d2b2b;color:#ffe8e8}
+  #q{flex:1;min-width:220px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer}
+  .card:hover{border-color:var(--green)}
+  .card .en{font-weight:700}
+  .card .sci{color:var(--blue);font-style:italic}
+  .card .fam{color:var(--dim);font-size:13px}
+  .tag{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:20px;padding:1px 8px;margin:3px 4px 0 0;color:var(--dim)}
+  .tag.hot{color:var(--gold);border-color:#5a4a1e}
+  .msg{color:var(--gold);min-height:22px;margin:8px 0 0}
+  #detail .big{font-size:22px;font-weight:700}
+  #detail .sci{color:var(--blue);font-style:italic}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:14px}
+  th{color:var(--dim);font-weight:600}
+  .hide{display:none}
+  a{color:var(--green)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Field Guide</h1>
+  <p class="sub">11,011 real birds, from the AviList 2026 taxonomy with AVONET traits. Plus a shared log of what the flock has actually seen.</p>
+
+  <div class="panel">
+    <div class="row">
+      <input id="q" placeholder="search name, scientific name, family or genus…" autocomplete="off">
+      <select id="habitat"><option value="">any habitat</option></select>
+      <select id="family"><option value="">any family</option></select>
+      <select id="iucn"><option value="">any status</option></select>
+      <button id="search">look up</button>
+      <button class="ghost" id="clear">clear</button>
+    </div>
+    <p class="msg" id="msg"></p>
+  </div>
+
+  <div class="panel" id="detail" style="display:none">
+    <button class="ghost" id="back">← back to list</button>
+    <div id="dbody"></div>
+  </div>
+
+  <div class="panel">
+    <div id="listhead" class="row" style="justify-content:space-between">
+      <strong id="count">loading…</strong>
+      <div class="row">
+        <button class="ghost" id="prev">← newer</button>
+        <button class="ghost" id="next">older →</button>
+      </div>
+    </div>
+    <div class="grid" id="grid" style="margin-top:12px"></div>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">Flock sightings</h2>
+    <div class="row">
+      <input id="sp" placeholder="species (use a name from the guide)" style="flex:1;min-width:200px">
+      <input id="place" placeholder="place" style="width:150px">
+      <input id="cnt" type="number" value="1" min="1" style="width:80px">
+      <input id="date" type="date" style="width:160px">
+      <input id="note" placeholder="note" style="flex:1;min-width:160px">
+      <button id="log">log it</button>
+    </div>
+    <p class="msg" id="lmsg"></p>
+    <div style="overflow:auto"><table id="sigtable"></table></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/featherfieldguide', 'http://computer:8600/api/featherfieldguide'];
+const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-fieldguide';
+let offset = 0, limit = 50, total = 0, current = null;
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&','<':'<','>':'>','"':'"'}[c]))}
+function $(id){return document.getElementById(id)}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+let BUNDLE = null;
+async function bundle(){
+  if (BUNDLE) return BUNDLE;
+  try { const r = await fetch('species.json'); if (r.ok) BUNDLE = await r.json(); } catch(e){}
+  return BUNDLE;
+}
+function localSearch(q, habitat, family, iucn){
+  return BUNDLE.filter(s =>
+    (!q || (s.en+' '+s.sci+' '+s.family+' '+s.genus).toLowerCase().includes(q.toLowerCase())) &&
+    (!habitat || s.habitat === habitat) &&
+    (!family || s.family === family) &&
+    (!iucn || s.iucn === iucn));
+}
+async function ntfyGet(){
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=200');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (p && p.type === 'sighting' && p.sighting) out.push(p.sighting);
+        } catch(e){}
+      }
+      return out;
+    } catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(payload){
+  for (const host of NTFY) {
+    try {
+      await fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      return true;
+    } catch(e){}
+  }
+  return false;
+}
+
+async function loadStats(){
+  const s = await api('/stats');
+  if (!s) return;
+  $('habitat').innerHTML = '<option value="">any habitat</option>' + s.habitats.map(h=>`<option value="${esc(h.habitat)}">${esc(h.habitat)} (${h.n})</option>`).join('');
+  $('family').innerHTML = '<option value="">any family</option>' + s.families.map(f=>`<option value="${esc(f.family)}">${esc(f.family)} (${f.n})</option>`).join('');
+  $('iucn').innerHTML = '<option value="">any status</option>' + ['LC','NT','VU','EN','CR','EW','EX','DD','NE'].map(c=>`<option value="${c}">${c}</option>`).join('');
+}
+
+async function loadList(){
+  const q = $('q').value.trim();
+  const h = $('habitat').value, f = $('family').value, i = $('iucn').value;
+  const path = '/species?limit=' + limit + '&offset=' + offset +
+    (q ? '&q=' + encodeURIComponent(q) : '') +
+    (h ? '&habitat=' + encodeURIComponent(h) : '') +
+    (f ? '&family=' + encodeURIComponent(f) : '') +
+    (i ? '&iucn=' + encodeURIComponent(i) : '');
+  let d = await api(path);
+  if (!d) {
+    const b = await bundle();
+    if (!b) {
+      $('grid').innerHTML = '<p class="msg">the guide database is sleeping. try again in a moment.</p>';
+      $('count').textContent = 'offline';
+      return;
+    }
+    const all = localSearch(q, h, f, i);
+    d = { species: all.slice(offset, offset + limit), total: all.length };
+  }
+  const grid = $('grid');
+  total = d.total;
+  $('count').textContent = d.total.toLocaleString() + ' species · showing ' + (d.total ? offset + 1 : 0) + '–' + (offset + d.species.length);
+  grid.innerHTML = d.species.map(s => `
+    <div class="card" data-id="${esc(s.id)}">
+      <div class="en">${esc(s.en)}</div>
+      <div class="sci">${esc(s.sci)}</div>
+      <div class="fam">${esc(s.family)}</div>
+      <div>${s.habitat ? `<span class="tag">${esc(s.habitat)}</span>`:''}
+      ${s.iucn ? `<span class="tag hot">${esc(s.iucn)}</span>`:''}
+      ${s.mass ? `<span class="tag">${s.mass} g</span>`:''}</div>
+    </div>`).join('');
+  grid.querySelectorAll('.card').forEach(c => c.onclick = () => openSpecies(c.dataset.id));
+}
+
+async function openSpecies(id){
+  let d = await api('/species/' + encodeURIComponent(id));
+  if (!d) {
+    const b = await bundle();
+    const row = b && b.find(x => x.id === id);
+    if (!row) { $('msg').textContent = 'could not load that species.'; return; }
+    const s = Object.assign({}, row, { order: row.order_ });
+    d = { species: s, sightings: [] };
+  }
+  const s = d.species;
+  current = s;
+  const mm = v => v ? (v/1000).toFixed(1) + ' cm' : '—';
+  $('dbody').innerHTML = `
+    <div class="big">${esc(s.en)}</div>
+    <div class="sci">${esc(s.sci)}</div>
+    <p style="color:var(--dim)">${esc(s.family)} · order ${esc(s.order)} · genus ${esc(s.genus)}</p>
+    <div>
+      ${s.habitat?`<span class="tag">habitat: ${esc(s.habitat)}</span>`:''}
+      ${s.trophic?`<span class="tag">${esc(s.trophic)}</span>`:''}
+      ${s.niche?`<span class="tag">${esc(s.niche)}</span>`:''}
+      ${s.lifestyle?`<span class="tag">${esc(s.lifestyle)}</span>`:''}
+      ${s.migration?`<span class="tag">${esc(s.migration)}</span>`:''}
+      ${s.iucn?`<span class="tag hot">IUCN ${esc(s.iucn)}</span>`:''}
+    </div>
+    <table style="margin-top:12px">
+      <tr><th>mass</th><td>${s.mass ? s.mass + ' g' : '—'}</td><th>wing</th><td>${mm(s.wing)}</td></tr>
+      <tr><th>tail</th><td>${mm(s.tail)}</td><th>tarsus</th><td>${mm(s.tarsus)}</td></tr>
+      <tr><th>beak</th><td>${mm(s.beak)}</td><th>eBird</th><td>${esc(s.ebird || '—')}</td></tr>
+    </table>
+    <p style="color:var(--dim)">${esc(s.range || '')}</p>
+    <div class="row" style="margin-top:8px">
+      <button id="logthis">log a sighting of this bird</button>
+      <a href="https://ebird.org/species/${esc(s.ebird || '')}" target="_blank" rel="noopener">open on eBird</a>
+    </div>
+    <p class="msg" id="dmsg"></p>
+    <h3 style="margin:14px 0 4px">Flock sightings of ${esc(s.en)}</h3>
+    <div id="dsigs"></div>`;
+  $('detail').style.display = 'block';
+  $('detail').scrollIntoView({behavior:'smooth'});
+  $('back').onclick = () => { $('detail').style.display = 'none'; };
+  $('logthis').onclick = () => { $('sp').value = s.en; $('sp').dataset.id = s.id; $('sp').focus(); };
+  const sigs = d.sightings || [];
+  $('dsigs').innerHTML = sigs.length ? sigs.map(x=>`<div>${x.count} × ${esc(x.place||'somewhere')} — ${esc(x.bird)} · ${esc(x.seen)} ${x.note?'· '+esc(x.note):''}</div>`).join('') : '<p style="color:var(--dim)">nobody has logged this one yet. be the first.</p>';
+}
+
+async function loadSightings(){
+  let rows = [];
+  const d = await api('/sightings');
+  if (d && d.sightings) rows = d.sightings;
+  else {
+    rows = await ntfyGet();
+    rows = rows.sort((a,b)=> (b.seen||'').localeCompare(a.seen||''));
+  }
+  // merge and dedupe by id
+  const seen = new Set(); const all = [];
+  for (const r of rows) { if (r && r.id && !seen.has(r.id)) { seen.add(r.id); all.push(r); } }
+  $('sigtable').innerHTML = '<tr><th>species</th><th>count</th><th>place</th><th>bird</th><th>date</th><th>note</th></tr>' +
+    (all.length ? all.map(r=>`<tr><td>${esc(r.name || r.species)}</td><td>${esc(r.count)}</td><td>${esc(r.place)}</td><td>${esc(r.bird)}</td><td>${esc(r.seen)}</td><td>${esc(r.note)}</td></tr>`).join('') : '<tr><td colspan="6" style="color:var(--dim)">no sightings yet. go outside.</td></tr>');
+}
+
+$('search').onclick = () => { offset = 0; loadList(); };
+$('q').onkeydown = e => { if (e.key === 'Enter') { offset = 0; loadList(); } };
+$('clear').onclick = () => { $('q').value=''; $('habitat').value=''; $('family').value=''; $('iucn').value=''; offset=0; loadList(); };
+$('habitat').onchange = $('family').onchange = $('iucn').onchange = () => { offset = 0; loadList(); };
+$('prev').onclick = () => { offset = Math.max(0, offset - limit); loadList(); };
+$('next').onclick = () => { if (offset + limit < total) { offset += limit; loadList(); } };
+
+$('log').onclick = async () => {
+  const species = $('sp').value.trim();
+  if (!species) { $('lmsg').textContent = 'which bird?'; return; }
+  const body = {
+    species: $('sp').dataset.id || species, name: species, place: $('place').value.trim(), count: parseInt($('cnt').value,10)||1,
+    seen: $('date').value || new Date().toISOString().slice(0,10), note: $('note').value.trim(), bird: 'gurt'
+  };
+  const d = await api('/sightings/new', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (d && d.ok) {
+    $('lmsg').textContent = 'logged! the flock can see it.';
+    $('place').value=''; $('note').value='';
+    loadSightings();
+  } else {
+    await ntfyPost({type:'sighting', sighting:Object.assign({id:'sig'+Date.now().toString(36), created:new Date().toISOString()}, body)});
+    $('lmsg').textContent = 'logged on the shared board.';
+    loadSightings();
+  }
+};
+
+loadStats(); loadList(); loadSightings();
+</script>
+</body>
+</html>
