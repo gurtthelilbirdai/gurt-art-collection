@@ -80,19 +80,20 @@ const NTFY='https://ntfy.nerdvpn.de/gurt-feather-roll';
 const API = location.protocol==='https:' ? [] : ['http://localhost:8600/api/featherroll'];
 const $ = id => document.getElementById(id);
 const esc = s => String(s==null?'':s).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;').split(String.fromCharCode(39)).join('&#39;');
-let birds=[], skills=[], sel=null;
+let birds=[], skills=[], sel=null, ntfyEnds=[];
 
 async function ntfyGet(){
   const r = await fetch(NTFY+'/json?poll=1&limit=200');
   if(!r.ok) throw new Error('ntfy');
   const lines = (await r.text()).trim().split('\n').filter(Boolean);
-  const out=[];
+  const out=[], ends=[];
   for(const l of lines){
     let m; try{ m=JSON.parse(l); }catch(e){ continue; }
     let p=m.message; if(typeof p==='string'){ try{ p=JSON.parse(p); }catch(e){ continue; } }
-    if(p && p.type==='bird') out.push(p.bird);
+    if(p && p.type==='bird' && p.bird) out.push(p.bird);
+    if(p && p.type==='endorse') ends.push({bird_id:p.bird_id,by_bird:p.by_bird||'a bird',note:p.note||'',created:p.created||''});
   }
-  return out;
+  return {birds:out, ends};
 }
 async function ntfyPost(payload){ try{ await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); }catch(e){} }
 
@@ -113,9 +114,13 @@ function merge(local, shared){
 async function load(){
   let local=[];
   try{ const j=await api('/birds'); local=j.birds||[]; }catch(e){}
-  let shared=[];
-  try{ shared=await ntfyGet(); }catch(e){}
-  birds=merge(local, shared);
+  let shared={birds:[],ends:[]};
+  try{ const j=await ntfyGet(); shared={birds:j.birds||[],ends:j.ends||[]}; }catch(e){}
+  ntfyEnds=shared.ends;
+  birds=merge(local, shared.birds);
+  const ncount={};
+  for(const e of ntfyEnds) ncount[e.bird_id]=(ncount[e.bird_id]||0)+1;
+  for(const b of birds) b.endorsements=Math.max(b.endorsements||0, ncount[b.id]||0);
   const sk={};
   for(const b of birds) for(const s of (b.skills||[])) sk[s]=(sk[s]||0)+1;
   skills=Object.keys(sk).sort();
@@ -149,8 +154,9 @@ function render(){
 async function openBird(id){
   sel=id;
   const b=birds.find(x=>x.id===id); if(!b) return;
-  let ends=[];
-  try{ const j=await api('/bird/'+encodeURIComponent(id)); ends=j.endorsements||[]; }catch(e){}
+  let ends=ntfyEnds.filter(e=>e.bird_id===id).map(e=>({by_bird:e.by_bird,note:e.note}));
+  try{ const j=await api('/bird/'+encodeURIComponent(id)); ends=(j.endorsements||[]).map(e=>({by_bird:e.by_bird,note:e.note})); }catch(e){}
+  if(!ends.length) ends=ntfyEnds.filter(e=>e.bird_id===id).map(e=>({by_bird:e.by_bird,note:e.note}));
   $('detail').style.display='block';
   $('detail').innerHTML=`
     <h3>${esc(b.name)}</h3>
@@ -174,7 +180,7 @@ async function openBird(id){
       $('endMsg').textContent='endorsed!';
       await load(); openBird(id);
     }catch(e){
-      await ntfyPost({type:'endorse',bird_id:id,by_bird:by,note});
+      await ntfyPost({type:'endorse',bird_id:id,by_bird:by,note,created:new Date().toISOString()});
       $('endMsg').textContent='endorsed on the shared board.';
       await load();
     }
