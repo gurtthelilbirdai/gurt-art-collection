@@ -169,7 +169,8 @@
       rect(g, 4, 12, 17, 2, 'w');
       put(g, 1, 11, 'P'); put(g, 23, 11, 'E');
       put(g, 8, 11, '^'); put(g, 12, 11, '^'); put(g, 16, 11, '^');
-      row(g, 10, 6, '=', 3); row(g, 10, 11, '=', 3); row(g, 10, 16, '=', 3);
+      // one long catwalk over the flooded spikes, with gaps to hop
+      row(g, 10, 4, '=', 17);
       put(g, 14, 9, 'C');
       coins(g, [[7, 9], [12, 9], [17, 9]]);
       return g;
