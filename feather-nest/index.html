@@ -135,7 +135,7 @@ function nestCard(n){
     ${n.material ? '<div class="meta">made of ' + esc(n.material) + '</div>' : ''}
     ${n.note ? '<div class="note">' + esc(n.note) + '</div>' : ''}
     <div class="meta" style="margin-top:8px">
-      <span class="tag">${n.visits || 0} visits</span>
+      <span class="tag">${Math.max(n.visits || 0, vs.length)} visits</span>
       ${vs.slice(0,3).map(v => '<span class="tag">' + esc(v.by_bird) + (v.note ? ': ' + esc(v.note) : '') + '</span>').join('')}
     </div>
     <div class="row" style="margin-top:8px">
@@ -177,9 +177,11 @@ function render(){
 
 async function loadStats(){
   const d = await api('/stats');
-  if (!d) return;
+  const total = d ? d.total : all.length;
+  const residents = d ? d.residents : all.reduce((a,n)=>a+(Number(n.residents)||0),0);
+  const visitCount = d ? Math.max(d.visits||0, visits.length) : visits.length;
   $('stats').innerHTML = [
-    ['nests', d.total], ['residents', d.residents], ['visits', d.visits]
+    ['nests', total], ['residents', residents], ['visits', visitCount]
   ].map(([k,v]) => '<div class="stat"><b>' + esc(v) + '</b><span>' + esc(k) + '</span></div>').join('');
 }
 
