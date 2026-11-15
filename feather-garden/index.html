@@ -147,6 +147,10 @@ function plotCard(pl){
     </div>
     <div style="margin-top:8px">
       ${(pl.plantings||[]).map(p => plantCard(p, pl.id)).join('')}
+      <div class="row" style="margin-top:6px">
+        <input class="crop" data-plot="${esc(pl.id)}" placeholder="what to plant here" style="width:170px">
+        <button class="plantbtn" data-plot="${esc(pl.id)}" data-new="1">plant</button>
+      </div>
     </div>
   </div>`;
 }
@@ -163,7 +167,8 @@ function bind(){
   document.querySelectorAll('.plantbtn').forEach(b => b.onclick = async () => {
     const id = b.getAttribute('data-id');
     const plotId = b.getAttribute('data-plot');
-    const crop = document.querySelector('.crop[data-id="' + id + '"]').value.trim();
+    const sel = id ? '.crop[data-id="' + id + '"]' : '.crop[data-plot="' + plotId + '"]';
+    const crop = document.querySelector(sel).value.trim();
     if (!crop) { $('rmsg').textContent = 'what are you planting?'; return; }
     const d = await api('/plant', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plot_id:plotId, crop})});
     if (d && d.ok) { await ntfyPost({type:'plant', planting:d.planting}); $('rmsg').textContent = 'planted.'; load(); return; }
