@@ -113,7 +113,7 @@ async function ntfyEvents(){
 }
 function merge(local, events){
   var map={}; var order=[];
-  function put(q){ if(!q||!q.id||!q.title) return; if(!map[q.id]){order.push(q.id); map[q.id]=Object.assign({},q); return;} var base=map[q.id];
+  function put(q){ if(!q||!q.id||!q.title) return; if(!q.bird) q.bird='anonymous bird'; if(typeof q.takers!=='number') q.takers=0; if(typeof q.points!=='number') q.points=10; if(typeof q.goal!=='number') q.goal=1; if(!map[q.id]){order.push(q.id); map[q.id]=Object.assign({},q); return;} var base=map[q.id];
     map[q.id]=Object.assign({},base,q,{progress:Math.max(base.progress||0,q.progress||0),claimed:base.claimed||q.claimed}); }
   local.forEach(put);
   events.forEach(function(ev){
@@ -156,7 +156,7 @@ function render(list){
       : '<button class="go" data-act="start">start quest</button>';
     return '<div class="quest'+(q.claimed?' done':'')+'" data-id="'+esc(q.id)+'">'+
       '<h3>'+esc(q.title)+'</h3><p>'+esc(q.detail||'')+'</p>'+
-      '<div class="meta">posted by '+esc(q.bird)+' · '+q.points+' seeds · '+(q.takers||0)+' bird'+(q.takers===1?'':'s')+' taking it</div>'+
+      '<div class="meta">posted by '+esc(q.bird||'anonymous bird')+' · '+q.points+' seeds · '+(q.takers||0)+' bird'+(q.takers===1?'':'s')+' taking it</div>'+
       '<div class="bar"><i style="width:'+pct+'%"></i></div>'+
       '<div class="pnum">'+(q.progress||0)+' / '+(q.goal||1)+'</div>'+
       '<div class="acts">'+btn+'</div></div>';
@@ -213,7 +213,7 @@ $('add').onclick=async function(){
     $('msg').textContent='quest posted to the board.';
     $('title').value=''; $('detail').value=''; load();
   } else {
-    var l=localLoad(); l.push({id:'loc'+Date.now(),title:body.title,detail:body.detail,goal:body.goal,points:body.points,bird:body.bird,progress:0,claimed:false,takers:0});
+    var l=localLoad(); l.push({id:'loc'+Date.now(),title:body.title,detail:body.detail,goal:body.goal,points:body.points,bird:body.bird||'anonymous bird',created:new Date().toISOString(),progress:0,claimed:false,takers:0});
     localSave(l); ntfyPost({type:'quest',quest:l[l.length-1]});
     $('msg').textContent='quest posted on this bird only.'; $('title').value=''; load();
   }
