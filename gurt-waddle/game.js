@@ -180,7 +180,8 @@
 
   function hurt(reason) {
     if (state !== 'play') return;
-    lives--; safeFor = 1.5; beep(120, .3, 'sawtooth');
+    window.__gurtHurt = reason;
+    lives--; safeFor = 1.5; window.__gurtHurt = reason; beep(120, .3, 'sawtooth');
     $('lives').textContent = lives;
     if (lives <= 0) { gameOver(); return; }
     const keepScore = score, keepCoins = coins;
@@ -246,7 +247,20 @@
       else p.ride = null;
     }
     p.vy += 0.62;
-    if (jump && wasGround) { p.vy = -12.8; p.onGround = false; beep(520, .08, 'triangle'); }
+    // a spring under the bird always wins over a normal jump, so the bird
+    // gets the big launch instead of a short hop into the spikes
+    let onSpring = false;
+    if (wasGround) {
+      const srow = Math.floor((p.y + p.h - 1) / T);
+      for (const sx of [Math.floor((p.x + p.w / 2) / T), Math.floor((p.x + 4) / T), Math.floor((p.x + p.w - 4) / T)]) {
+        if (tileAt(sx, srow) === 'S') { onSpring = true; break; }
+      }
+    }
+    if (jump && wasGround) {
+      p.vy = onSpring ? -17 : -12.8;
+      p.onGround = false;
+      beep(onSpring ? 700 : 520, .08, 'triangle');
+    }
     if (!jump && p.vy < -5) p.vy += 0.35; // variable jump height
 
     moveX(p, p.vx);
@@ -263,14 +277,14 @@
       }
     }
     if (landed && !wasGround) {
-      const ch = tileAt(Math.floor((p.x + p.w / 2) / T), Math.floor((p.y + p.h + 2) / T));
+      const ch = tileAt(Math.floor((p.x + p.w / 2) / T), Math.floor((p.y + p.h - 1) / T));
       if (ch === 'S') { p.vy = -16; beep(700, .12, 'triangle'); }
     }
     // spring tiles bounce the bird when it stands on them
     if (p.onGround) {
       const sxs = [Math.floor((p.x + p.w / 2) / T), Math.floor((p.x + 4) / T), Math.floor((p.x + p.w - 4) / T)];
       for (const sx of sxs) {
-        const sch = tileAt(sx, Math.floor((p.y + p.h / 2) / T));
+        const sch = tileAt(sx, Math.floor((p.y + p.h) / T));
         if (sch === 'S') { p.vy = -17; p.onGround = false; beep(700, .12, 'triangle'); break; }
       }
     }
@@ -333,19 +347,15 @@
       try { localStorage.setItem('waddle-current', String(level + 1)); } catch (e) {}
       loadLevel(level); fillPicker(); beep(1200, .15, 'triangle'); return;
     }
-    // spikes only catch the bird's feet, so it can hop over them
-    // spikes only catch the bird's feet, so it can hop over them
-    // spikes sit at the bottom of their tile: only a falling bird or one
-    // walking into them gets hurt, so a clean hop clears them
+    // spikes are the points at the bottom of their tile: a bird is only hurt
+    // when its feet are down in the points, so a clean hop clears them
     const feet = p.y + p.h;
-    // the tile the feet are actually inside; the floor row is below the spikes
-    const fy = Math.floor(feet / T);
-    // spikes sit at the bottom of their tile, so only a bird landing low
-    // on them is hurt: a clean hop passes over the points
-    if (p.vy > 0 && feet > fy * T + 16) {
-      const cx = p.x + p.w / 2;
-      for (let hx = Math.floor(cx / T); hx <= Math.floor((cx + 0.5) / T); hx++) {
-        if (tileAt(hx, fy) === '^') { hurt('spikes'); return; }
+    const cx = p.x + p.w / 2;
+    for (let hx = Math.floor(cx / T); hx <= Math.floor((cx + 0.5) / T); hx++) {
+      for (let sy = Math.floor((p.y + 4) / T); sy <= Math.floor(feet / T); sy++) {
+        if (tileAt(hx, sy) !== '^') continue;
+        const top = sy * T, bottom = top + T;
+        if (feet > top + 16 && feet < bottom + 8 && (p.vy > 0 || p.onGround)) { hurt('spikes'); return; }
       }
     }
     // water swallows the whole bird
@@ -441,7 +451,7 @@
     const aliveB = bosses.filter(b => !b.dead).length;
     if ($('moths')) $('moths').textContent = aliveB;
     $('coins').textContent = coins; $('keys').textContent = keys; $('score').textContent = score;
-    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|') + ' K:' + keys + ' E:' + enemies.filter(e=>!e.dead).map(e=>Math.floor(e.x/T)+','+Math.floor(e.y/T)+','+e.kind).join('|');
+    const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|') + ' K:' + keys + ' E:' + enemies.filter(e=>!e.dead).map(e=>Math.floor(e.x/T)+','+Math.floor(e.y/T)+','+e.kind).join('|') + ' P:' + platforms.map(pl=>Math.floor(pl.x/T)+','+Math.floor(pl.y/T)+','+Math.floor((pl.x+pl.w)/T)).join('|') + ' R:' + (p.ride ? Math.floor(p.ride.x/T) : -1);
   }
 
 
@@ -872,6 +882,10 @@
   window.__gurtDailyEnd = dailyEnd;
   window.__gurtAward = award;
   window.__gurtWin = win;
+  // test hooks: advance in place without a page reload, so a recording bot
+  // can walk all hundred levels without losing its frame
+  window.__gurtNext = function () { if ((level || 0) + 1 < LEVELS.length) { level = level + 1; loadLevel(level); } };
+  window.__gurtRetry = function () { lives = 5; $('lives').textContent = 5; loadLevel(level); };
   window.__gurtWinCustom = winCustom;
   function startDaily() {
     dailyMode = true; dailyPosted = false;
