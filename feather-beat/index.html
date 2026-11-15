@@ -90,7 +90,40 @@
   let chart = [], notes = [], running = false, score = 0, combo = 0, maxCombo = 0;
   let hits = 0, judged = 0, hp = 100, lastJudge = '', judgeT = 0, ended = false;
 
-  const API = '/api/featherbeat';
+  const API_BASES = location.protocol === 'https:' ? [] : ['', 'http://computer:8600'];
+  const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+  const TOPIC = '/gurt-feather-beat-v1';
+  const LS = 'fb-scores-v1';
+
+  async function api(path, opts){
+    for(var i=0;i<API_BASES.length;i++){
+      try{ var r=await fetch(API_BASES[i]+'/api/featherbeat'+path,opts); if(r.ok) return await r.json(); }catch(e){}
+    }
+    return null;
+  }
+  async function ntfyPost(obj){
+    for(var i=0;i<NTFY_HOSTS.length;i++){
+      try{ var r=await fetch(NTFY_HOSTS[i]+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}); if(r.ok) return true; }catch(e){}
+    }
+    return false;
+  }
+  async function ntfyEvents(){
+    for(var i=0;i<NTFY_HOSTS.length;i++){
+      try{
+        var r=await fetch(NTFY_HOSTS[i]+TOPIC+'/json?poll=1&since=all');
+        if(!r.ok) continue;
+        var txt=await r.text(); var out=[];
+        txt.split('\n').forEach(function(line){
+          if(!line.trim()) return;
+          try{ var env=JSON.parse(line); if(env.event!=='message') return; var m=JSON.parse(env.message); if(m) out.push(m); }catch(e){}
+        });
+        if(out.length) return out;
+      }catch(e){}
+    }
+    return [];
+  }
+  function localScores(){ try{ return JSON.parse(localStorage.getItem(LS)||'[]'); }catch(e){ return []; } }
+  function localSave(list){ try{ localStorage.setItem(LS, JSON.stringify(list.slice(0,50))); }catch(e){} }
 
   function loadChart(){
     return fetch('chart.json').then(r=>r.json()).then(c=>{ chart = c; });
@@ -161,10 +194,31 @@
 
   function submit(sc, acc, mc){
     const bird = ($('bird').value || 'gurt').trim().slice(0,18) || 'gurt';
-    fetch(API + '/score', { method:'POST', headers:{'Content-Type':'application/json'},
+    api('/score', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ bird, score: sc, accuracy: acc, max_combo: mc }) })
-      .then(r=>r.json()).then(d=>{ if(d && d.scores) renderBoard(d.scores); })
-      .catch(()=>{});
+      .then(d=>{ if(d && d.scores){ renderBoard(d.scores); return; }
+        var list = localScores();
+        list.push({bird:bird, score:sc, accuracy:acc, max_combo:mc, created:new Date().toISOString()});
+        localSave(list);
+        ntfyPost({type:'score', bird:bird, score:sc, accuracy:acc, max_combo:mc});
+        renderBoard(sortScores(list));
+      });
+  }
+
+  function sortScores(list){
+    return list.slice().sort(function(a,b){ return (b.score||0)-(a.score||0) || (b.accuracy||0)-(a.accuracy||0); }).slice(0,20);
+  }
+  function mergeScores(a, b){
+    var seen = {}, out = [];
+    (a||[]).concat(b||[]).forEach(function(s){
+      if(!s || !s.bird) return;
+      var key = s.bird+'|'+s.score+'|'+s.max_combo+'|'+s.created;
+      if(seen[key]) return;
+      seen[key] = 1;
+      out.push({bird:String(s.bird).slice(0,24), score:Number(s.score)||0,
+        accuracy:Number(s.accuracy)||0, max_combo:Number(s.max_combo)||0, created:s.created||''});
+    });
+    return sortScores(out);
   }
 
   function renderBoard(scores){
@@ -180,10 +234,24 @@
   function esc(v){ var m={'&':'&','<':'<','>':'>'}; return String(v==null?'':v).replace(/[&<>]/g,function(ch){return m[ch];}); }
 
   function loadBoard(){
-    fetch(API + '/scores').then(r=>r.json()).then(d=>{ if(d && d.scores) renderBoard(d.scores); }).catch(()=>{});
-    const bird = ($('bird').value || 'gurt').trim() || 'gurt';
-    fetch(API + '/best/' + encodeURIComponent(bird)).then(r=>r.json())
-      .then(d=>{ if(d) $('best').textContent = 'best: ' + (d.best||0); }).catch(()=>{});
+    var bird = ($('bird').value || 'gurt').trim() || 'gurt';
+    api('/scores').then(function(d){
+      var local = localScores();
+      if(d && d.scores){ renderBoard(mergeScores(d.scores, local)); return; }
+      renderBoard(sortScores(local));
+      ntfyEvents().then(function(evs){
+        var shared = evs.filter(function(m){ return m.type==='score'; }).map(function(m){
+          return {bird:m.bird, score:m.score, accuracy:m.accuracy, max_combo:m.max_combo, created:m.created||''};
+        });
+        renderBoard(mergeScores(shared, local));
+      });
+    });
+    api('/best/' + encodeURIComponent(bird)).then(function(d){
+      if(d){ $('best').textContent = 'best: ' + (d.best||0); return; }
+      var mine = localScores().filter(function(s){ return s.bird===bird; });
+      var best = mine.reduce(function(m,s){ return Math.max(m, s.score||0); }, 0);
+      $('best').textContent = 'best: ' + best;
+    });
   }
 
   function start(){
