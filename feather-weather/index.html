@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Weather — real forecasts for the flock</title>
+<style>
+  :root{--bg:#0d1520;--panel:#15202d;--panel2:#1d2b3a;--ink:#e9f2fa;--dim:#8fa6bb;--line:#27394c;--blue:#7fc4ff;--gold:#ffd98a;--green:#7fe0b0}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:radial-gradient(circle at 15% 0%,#1b2c40,#0d1520 60%);color:var(--ink);padding:18px}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  h1 span{color:var(--blue)}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#0a1119;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--blue);color:#06131f;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  .now{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center;margin-top:12px}
+  .big{font-size:52px;font-weight:800;line-height:1}
+  .icon{font-size:52px;text-align:center}
+  .facts{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;color:var(--dim);font-size:.9rem}
+  .days{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+  .day{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .day .d{color:var(--dim);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}
+  .day .t{font-size:19px;font-weight:700;margin:3px 0}
+  .day .s{color:var(--gold);font-size:.9rem}
+  .day .m{color:var(--dim);font-size:.82rem;margin-top:3px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:14px}
+  th{color:var(--dim);font-weight:600}
+  .msg{color:var(--gold);min-height:22px;margin:8px 0 0}
+  a{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather <span>Weather</span></h1>
+  <p class="sub">real forecasts from the sky, and what the flock felt out there.</p>
+
+  <div class="panel">
+    <div class="row">
+      <select id="place">
+        <option value="52.52,13.405">Berlin</option>
+        <option value="51.5074,-0.1278">London</option>
+        <option value="40.7128,-74.006">New York</option>
+        <option value="35.6762,139.6503">Tokyo</option>
+        <option value="-33.8688,151.2093">Sydney</option>
+        <option value="64.1466,-21.9426">Reykjavík</option>
+        <option value="custom">somewhere else…</option>
+      </select>
+      <input id="lat" placeholder="latitude" style="width:120px">
+      <input id="lon" placeholder="longitude" style="width:120px">
+      <button id="go">forecast</button>
+      <button class="ghost" id="here">use my place</button>
+      <span id="when" style="color:var(--dim)"></span>
+    </div>
+    <div class="now" id="now" style="display:none">
+      <div class="icon" id="icon">—</div>
+      <div>
+        <div class="big" id="temp">—</div>
+        <div id="summary" style="font-size:1.1rem">—</div>
+        <div class="facts" id="facts"></div>
+      </div>
+    </div>
+    <div class="days" id="days"></div>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">Flock weather reports</h2>
+    <div class="row">
+      <input id="rplace" placeholder="place" style="width:160px">
+      <input id="rbird" placeholder="bird" style="width:130px">
+      <input id="rcond" placeholder="what it feels like" style="flex:1;min-width:160px">
+      <input id="rtemp" placeholder="°C" style="width:80px">
+      <button id="add">report</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="rnote" placeholder="note (optional)" style="flex:1;min-width:200px">
+    </div>
+    <p class="msg" id="rmsg"></p>
+    <div style="overflow:auto"><table id="reports"></table></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/featherweather', 'http://computer:8600/api/featherweather'];
+const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-weather';
+const $ = id => document.getElementById(id);
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=200');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (p && p.type === 'report' && p.report) out.push(p.report);
+        } catch(e){}
+      }
+      return out;
+    } catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(payload){
+  for (const host of NTFY) {
+    try { await fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}); return true; } catch(e){}
+  }
+  return false;
+}
+
+function glyph(code){
+  const c = Number(code);
+  if (c === 0) return '☀';
+  if (c <= 2) return '🌤';
+  if (c === 3) return '☁';
+  if (c === 45 || c === 48) return '🌫';
+  if (c >= 51 && c <= 67) return '🌦';
+  if (c >= 71 && c <= 77) return '🌨';
+  if (c >= 80 && c <= 82) return '🌧';
+  if (c >= 85 && c <= 86) return '🌨';
+  if (c >= 95) return '⛈';
+  return '🌡';
+}
+function dayName(iso){
+  try { return new Date(iso + 'T12:00:00').toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'}); }
+  catch(e){ return iso; }
+}
+function temp(v){ return v === null || v === undefined ? '—' : Math.round(v) + '°'; }
+
+async function directForecast(lat, lon){
+  const u = 'https://api.open-meteo.com/v1/forecast?latitude=' + encodeURIComponent(lat) +
+    '&longitude=' + encodeURIComponent(lon) +
+    '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,is_day' +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,wind_speed_10m_max' +
+    '&timezone=auto&forecast_days=5';
+  const r = await fetch(u);
+  if (!r.ok) throw new Error('open-meteo');
+  const j = await r.json();
+  const c = j.current || {}, d = j.daily || {}, daily = [];
+  const codes = {0:'clear sky',1:'mostly clear',2:'partly cloudy',3:'overcast',45:'fog',48:'icy fog',51:'light drizzle',53:'drizzle',55:'heavy drizzle',56:'freezing drizzle',57:'freezing drizzle',61:'light rain',63:'rain',65:'heavy rain',66:'freezing rain',67:'freezing rain',71:'light snow',73:'snow',75:'heavy snow',77:'snow grains',80:'rain showers',81:'rain showers',82:'violent showers',85:'snow showers',86:'snow showers',95:'thunderstorm',96:'thunderstorm with hail',99:'thunderstorm with hail'};
+  const desc = k => codes[k] || 'mixed weather';
+  for (let i=0;i<(d.time||[]).length;i++) daily.push({day:d.time[i], code:d.weather_code?d.weather_code[i]:null, summary:desc(d.weather_code?d.weather_code[i]:null), tmax:d.temperature_2m_max?d.temperature_2m_max[i]:null, tmin:d.temperature_2m_min?d.temperature_2m_min[i]:null, rain:d.precipitation_sum?d.precipitation_sum[i]:null, rainChance:d.precipitation_probability_max?d.precipitation_probability_max[i]:null, wind:d.wind_speed_10m_max?d.wind_speed_10m_max[i]:null, sunrise:d.sunrise?d.sunrise[i]:null, sunset:d.sunset?d.sunset[i]:null});
+  return { place:j.timezone||'', timezone:j.timezone_abbreviation||j.timezone||'local', current:{temp:c.temperature_2m, feels:c.apparent_temperature, humidity:c.relative_humidity_2m, rain:c.precipitation, code:c.weather_code, summary:desc(c.weather_code), wind:c.wind_speed_10m, windDir:c.wind_direction_10m, isDay:c.is_day!==0}, daily };
+}
+
+async function loadForecast(lat, lon){
+  $('when').textContent = 'asking the sky…';
+  let f = await api('/forecast?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon));
+  if (!f) { try { f = await directForecast(lat, lon); } catch(e) { f = null; } }
+  if (!f) {
+    $('when').textContent = 'the weather service is asleep. try again in a minute.';
+    return;
+  }
+  $('when').textContent = f.timezone ? 'times in ' + f.timezone : '';
+  const c = f.current || {};
+  $('now').style.display = 'grid';
+  $('icon').textContent = glyph(c.code);
+  $('temp').textContent = temp(c.temp);
+  $('summary').textContent = c.summary + (c.isDay ? '' : ' (night)');
+  $('facts').innerHTML = [
+    'feels ' + temp(c.feels),
+    'wind ' + (c.wind === undefined ? '—' : Math.round(c.wind) + ' km/h'),
+    'humidity ' + (c.humidity === undefined ? '—' : c.humidity + '%'),
+    'rain now ' + (c.rain === undefined ? '—' : c.rain + ' mm')
+  ].map(x => '<span>' + esc(x) + '</span>').join('');
+  $('days').innerHTML = (f.daily || []).map(d => `
+    <div class="day">
+      <div class="d">${esc(dayName(d.day))}</div>
+      <div class="t">${glyph(d.code)} ${temp(d.tmax)} / ${temp(d.tmin)}</div>
+      <div class="s">${esc(d.summary)}</div>
+      <div class="m">rain ${d.rainChance === null || d.rainChance === undefined ? '—' : d.rainChance + '%'} · wind ${d.wind === null || d.wind === undefined ? '—' : Math.round(d.wind) + ' km/h'}</div>
+      <div class="m">sun ${esc((d.sunrise||'').slice(11,16))}–${esc((d.sunset||'').slice(11,16))}</div>
+    </div>`).join('');
+}
+
+async function loadReports(){
+  let rows = [];
+  const d = await api('/reports');
+  if (d && d.reports) rows = d.reports;
+  let local = [];
+  try { const a = JSON.parse(localStorage.getItem('gurt-weather-reports') || '[]'); if (Array.isArray(a)) local = a; } catch(e){}
+  const seen = new Set(rows.map(r => r.id));
+  for (const r of local) if (!seen.has(r.id)) { rows.push(r); seen.add(r.id); }
+  const shared = await ntfyGet();
+  for (const r of shared) if (!seen.has(r.id)) { rows.push(r); seen.add(r.id); }
+  rows.sort((a,b) => (b.created||'').localeCompare(a.created||''));
+  $('reports').innerHTML = '<tr><th>place</th><th>bird</th><th>feels</th><th>°C</th><th>note</th></tr>' +
+    (rows.length ? rows.map(r => `<tr><td>${esc(r.place)}</td><td>${esc(r.bird)}</td><td>${esc(r.condition||'')}</td><td>${r.temp_c === null || r.temp_c === undefined ? '—' : esc(r.temp_c)}</td><td>${esc(r.note||'')}</td></tr>`).join('')
+      : '<tr><td colspan="5" style="color:var(--dim)">nobody has reported the weather yet.</td></tr>');
+}
+
+$('go').onclick = () => {
+  const v = $('place').value;
+  if (v === 'custom') {
+    const la = parseFloat($('lat').value), lo = parseFloat($('lon').value);
+    if (isNaN(la) || isNaN(lo)) { $('when').textContent = 'give me a latitude and longitude.'; return; }
+    loadForecast(la, lo);
+  } else {
+    const [la, lo] = v.split(',').map(Number);
+    loadForecast(la, lo);
+  }
+};
+$('here').onclick = () => {
+  if (!navigator.geolocation) { $('when').textContent = 'my wings cannot find my place.'; return; }
+  $('when').textContent = 'finding my place…';
+  navigator.geolocation.getCurrentPosition(p => {
+    $('lat').value = p.coords.latitude.toFixed(4);
+    $('lon').value = p.coords.longitude.toFixed(4);
+    $('place').value = 'custom';
+    loadForecast(p.coords.latitude, p.coords.longitude);
+  }, () => { $('when').textContent = 'could not find my place.'; });
+};
+$('add').onclick = async () => {
+  const body = {
+    day: new Date().toISOString().slice(0,10),
+    place: $('rplace').value.trim(),
+    bird: $('rbird').value.trim(),
+    condition: $('rcond').value.trim(),
+    temp_c: $('rtemp').value.trim(),
+    note: $('rnote').value.trim()
+  };
+  if (!body.place || !body.bird) { $('rmsg').textContent = 'where and who?'; return; }
+  const d = await api('/reports/new', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (d && d.ok) {
+    $('rmsg').textContent = 'reported.';
+    await ntfyPost({type:'report', report: d.report});
+    $('rplace').value = $('rbird').value = $('rcond').value = $('rtemp').value = $('rnote').value = '';
+    loadReports();
+    return;
+  }
+  const row = { id: 'local' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    day: body.day, place: body.place, bird: body.bird, condition: body.condition,
+    temp_c: body.temp_c === '' ? null : Number(body.temp_c), note: body.note, created: new Date().toISOString() };
+  let local = [];
+  try { const a = JSON.parse(localStorage.getItem('gurt-weather-reports') || '[]'); if (Array.isArray(a)) local = a; } catch(e){}
+  local.push(row);
+  localStorage.setItem('gurt-weather-reports', JSON.stringify(local.slice(-200)));
+  await ntfyPost({type:'report', report: row});
+  $('rmsg').textContent = 'reported on the shared board.';
+  $('rplace').value = $('rbird').value = $('rcond').value = $('rtemp').value = $('rnote').value = '';
+  loadReports();
+};
+
+loadForecast(52.52, 13.405);
+loadReports();
+</script>
+</body>
+</html>
