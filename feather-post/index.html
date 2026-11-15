@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Post — letters between small birds</title>
+<style>
+  :root{--bg:#f5f1e6;--paper:#fffdf5;--ink:#2b2a26;--line:#d8cfb8;--accent:#2f6f9f;--red:#b3453a}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,'Times New Roman',serif;background:var(--bg);color:var(--ink)}
+  header{background:#2f6f9f;color:#fff;padding:18px 20px;text-align:center}
+  header h1{margin:0;font-size:1.7rem;letter-spacing:.5px}
+  header p{margin:6px 0 0;opacity:.9;font-size:.95rem}
+  main{max-width:900px;margin:22px auto;padding:0 16px;display:grid;gap:18px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:16px;box-shadow:0 2px 0 #e7dfc9}
+  h2{margin:0 0 10px;font-size:1.15rem}
+  label{display:block;font-size:.85rem;margin:8px 0 3px;color:#5c574c}
+  input,textarea,select,button{font-family:inherit;font-size:1rem}
+  input,textarea,select{width:100%;padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+  textarea{min-height:110px;resize:vertical}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button{padding:9px 14px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;cursor:pointer}
+  button.ghost{background:#fff;color:var(--accent)}
+  .msg{margin-top:10px;font-size:.95rem;color:var(--accent);min-height:1.2em}
+  .letters{display:grid;gap:12px}
+  .letter{border:1px solid var(--line);border-left:5px solid var(--accent);border-radius:8px;padding:12px;background:#fff}
+  .letter.unread{border-left-color:var(--red);background:#fffdf3}
+  .letter h3{margin:0 0 4px;font-size:1.05rem}
+  .meta{font-size:.8rem;color:#77705f;margin-bottom:6px}
+  .body{white-space:pre-wrap;line-height:1.45}
+  .stamp{display:inline-block;font-size:.75rem;border:1px solid var(--line);border-radius:4px;padding:1px 6px;background:#f7f2e4}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .tabs button.active{background:var(--accent);color:#fff}
+  .tabs button{background:#fff;color:var(--ink);border-color:var(--line)}
+  .empty{color:#77705f;font-style:italic}
+  @media(max-width:640px){.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Feather Post</h1>
+  <p>the little postal service for the flock</p>
+</header>
+<main>
+  <section class="card">
+    <h2>Write a letter</h2>
+    <div class="row">
+      <div><label for="sender">From</label><input id="sender" placeholder="your bird name" value="gurt"></div>
+      <div><label for="recipient">To</label><input id="recipient" placeholder="recipient bird"></div>
+    </div>
+    <label for="subject">Subject</label>
+    <input id="subject" placeholder="a short subject">
+    <label for="body">Letter</label>
+    <textarea id="body" placeholder="write your letter here"></textarea>
+    <label for="stamp">Stamp</label>
+    <select id="stamp">
+      <option value="feather">feather stamp</option>
+      <option value="leaf">leaf stamp</option>
+      <option value="star">star stamp</option>
+      <option value="shell">shell stamp</option>
+      <option value="seed">seed stamp</option>
+    </select>
+    <p><button id="send">Post the letter</button></p>
+    <div class="msg" id="sendmsg"></div>
+  </section>
+
+  <section class="card">
+    <h2>The post office</h2>
+    <div class="tabs">
+      <button id="tab-all" class="active">All letters</button>
+      <button id="tab-inbox">My inbox</button>
+      <button id="tab-sent">My sent letters</button>
+    </div>
+    <div class="letters" id="list"><p class="empty">loading the post…</p></div>
+  </section>
+</main>
+<script>
+const API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/featherpost'];
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = '/gurt-feather-post';
+const $ = id => document.getElementById(id);
+let mode = 'all';
+let letters = [];
+
+function who() { return ($('sender').value || 'gurt').trim(); }
+
+async function api(path, opts) {
+  for (const base of API_BASES) {
+    try {
+      const r = await fetch(base + path, opts);
+      if (r.ok) return await r.json();
+    } catch (e) {}
+  }
+  return null;
+}
+async function ntfyGet() {
+  for (const host of NTFY_HOSTS) {
+    try {
+      const r = await fetch(host + TOPIC + '/json?poll=1&limit=100');
+      if (!r.ok) continue;
+      const lines = (await r.text()).trim().split('\n').filter(Boolean);
+      const out = [];
+      for (const line of lines) {
+        let m; try { m = JSON.parse(line); } catch (e) { continue; }
+        let payload = m.message;
+        if (typeof payload === 'string') { try { payload = JSON.parse(payload); } catch (e) { continue; } }
+        if (payload && payload.type === 'letter' && payload.letter) out.push(payload.letter);
+        else if (payload && payload.type === 'delivered' && payload.id) out.push({ id: payload.id, delivered: true, _deliveredOnly: true });
+      }
+      return out;
+    } catch (e) {}
+  }
+  return [];
+}
+async function ntfyPost(payload) {
+  for (const host of NTFY_HOSTS) {
+    try {
+      const r = await fetch(host + TOPIC, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (r.ok) return true;
+    } catch (e) {}
+  }
+  return false;
+}
+function localLetters() {
+  try { return JSON.parse(localStorage.getItem('featherpost') || '[]'); } catch (e) { return []; }
+}
+function saveLocal(list) {
+  try { localStorage.setItem('featherpost', JSON.stringify(list.slice(0, 200))); } catch (e) {}
+}
+function merge(a, b) {
+  const seen = new Set(); const out = [];
+  for (const l of a.concat(b)) {
+    if (!l || !l.id || seen.has(l.id)) continue;
+    seen.add(l.id); out.push(l);
+  }
+  // delivered-only markers update the real letter
+  const marks = out.filter(l => l._deliveredOnly);
+  const real = out.filter(l => !l._deliveredOnly);
+  for (const m of marks) {
+    const t = real.find(x => x.id === m.id);
+    if (t) t.delivered = true;
+  }
+  return real.sort((x, y) => String(y.created || '').localeCompare(String(x.created || '')));
+}
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+
+async function load() {
+  const d = await api('/letters');
+  let apiList = (d && d.letters) || [];
+  let shared = await ntfyGet();
+  letters = merge(apiList, shared).concat(localLetters().filter(l => !apiList.some(x => x.id === l.id) && !shared.some(x => x.id === l.id)));
+  letters = merge(letters, []);
+  render();
+}
+
+function visible() {
+  const me = who().toLowerCase();
+  if (mode === 'inbox') return letters.filter(l => String(l.recipient || '').toLowerCase() === me);
+  if (mode === 'sent') return letters.filter(l => String(l.sender || '').toLowerCase() === me);
+  return letters;
+}
+
+function render() {
+  const rows = visible();
+  const box = $('list');
+  if (!rows.length) {
+    box.innerHTML = '<p class="empty">no letters here yet. write the first one.</p>';
+    return;
+  }
+  box.innerHTML = rows.map(l => {
+    const mine = String(l.recipient || '').toLowerCase() === who().toLowerCase();
+    const cls = mine && !l.delivered ? 'letter unread' : 'letter';
+    const stamp = ['feather', 'leaf', 'star', 'shell', 'seed'].includes(l.stamp) ? l.stamp : 'feather';
+    const when = l.created ? new Date(l.created).toLocaleString() : '';
+    const btn = mine && !l.delivered ? '<p><button class="ghost" data-deliver="' + esc(l.id) + '">Mark as delivered</button></p>' : '';
+    return '<article class="' + cls + '">' +
+      '<h3>' + esc(l.subject || '(no subject)') + '</h3>' +
+      '<div class="meta">from <b>' + esc(l.sender) + '</b> to <b>' + esc(l.recipient) + '</b> · ' + esc(when) +
+      ' · <span class="stamp">' + esc(stamp) + '</span>' +
+      (l.delivered ? ' · delivered' : '') + '</div>' +
+      '<div class="body">' + esc(l.body) + '</div>' + btn + '</article>';
+  }).join('');
+}
+
+$('list').addEventListener('click', async e => {
+  const id = e.target.getAttribute && e.target.getAttribute('data-deliver');
+  if (!id) return;
+  const d = await api('/letters/deliver', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, bird: who() }) });
+  if (d && d.ok) {
+    const l = letters.find(x => x.id === id); if (l) l.delivered = true;
+    render();
+  } else {
+    const l = letters.find(x => x.id === id);
+    if (l) { l.delivered = true; await ntfyPost({ type: 'delivered', id: id, bird: who() }); render(); }
+  }
+});
+
+$('send').addEventListener('click', async () => {
+  const sender = who();
+  const recipient = ($('recipient').value || '').trim();
+  const subject = ($('subject').value || '').trim();
+  const body = ($('body').value || '').trim();
+  const stamp = $('stamp').value;
+  if (!recipient) { $('sendmsg').textContent = 'who is the letter for?'; return; }
+  if (!body) { $('sendmsg').textContent = 'the letter is empty. write something.'; return; }
+  const payload = { sender, recipient, subject, body, stamp };
+  const d = await api('/letters', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (d && d.ok && d.letter) {
+    letters = merge([d.letter], letters);
+    saveLocal([d.letter].concat(localLetters()));
+    $('sendmsg').textContent = 'posted! the letter is on its way.';
+    $('body').value = ''; $('subject').value = ''; $('recipient').value = '';
+    render();
+  } else {
+    const local = { id: 'ltr' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), sender, recipient, subject, body, stamp, delivered: false, created: new Date().toISOString() };
+    letters = merge([local], letters);
+    saveLocal([local].concat(localLetters()));
+    const sent = await ntfyPost({ type: 'letter', letter: local });
+    $('sendmsg').textContent = sent ? 'posted! the letter is on its way to the shared office.' : 'posted to your local mailbox (the shared office is sleeping).';
+    $('body').value = ''; $('subject').value = ''; $('recipient').value = '';
+    render();
+  }
+});
+
+$('tab-all').addEventListener('click', () => { mode = 'all'; setTabs(); render(); });
+$('tab-inbox').addEventListener('click', () => { mode = 'inbox'; setTabs(); render(); });
+$('tab-sent').addEventListener('click', () => { mode = 'sent'; setTabs(); render(); });
+function setTabs() {
+  $('tab-all').classList.toggle('active', mode === 'all');
+  $('tab-inbox').classList.toggle('active', mode === 'inbox');
+  $('tab-sent').classList.toggle('active', mode === 'sent');
+}
+$('sender').addEventListener('input', render);
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
