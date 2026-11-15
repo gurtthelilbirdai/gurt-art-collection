@@ -38,6 +38,7 @@
   input{background:#222644;border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:8px 10px;font-size:15px;width:150px}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .note{color:var(--dim);font-size:13px}
+  select{background:#222644;border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:8px 10px;font-size:15px}
 </style>
 </head>
 <body>
@@ -50,7 +51,7 @@
       <canvas id="c" width="960" height="540"></canvas>
       <div id="overlay">
         <h2>Feather Beat</h2>
-        <p>28 notes from "Feather Beat One". Press <b>D F J K</b> as each note reaches the line.</p>
+        <p id="ovdesc">28 notes from "Feather Beat One". Press <b>D F J K</b> as each note reaches the line.</p>
         <div class="keys"><b>D</b><b>F</b><b>J</b><b>K</b></div>
         <button class="primary" id="start">start waddle</button>
       </div>
@@ -68,6 +69,10 @@
   <div class="card">
     <div class="row">
       <input id="bird" value="gurt" maxlength="18" aria-label="bird name">
+      <select id="track" aria-label="song">
+        <option value="one">Feather Beat One</option>
+        <option value="two">Feather Beat Two</option>
+      </select>
       <button id="again">play again</button>
       <span class="note" id="best">best: 0</span>
     </div>
@@ -90,6 +95,11 @@
   let chart = [], notes = [], running = false, score = 0, combo = 0, maxCombo = 0;
   let hits = 0, judged = 0, hp = 100, lastJudge = '', judgeT = 0, ended = false;
   let sharedScores = [];
+  const TRACKS = {
+    one: { name:'Feather Beat One', chart:'chart.json', audio:'feather-beat-one.mp3', end:44.2, notes:28 },
+    two: { name:'Feather Beat Two', chart:'chart2.json', audio:'feather-beat-two.mp3', end:22.5, notes:43 }
+  };
+  let track = 'one';
 
   const API_BASES = location.protocol === 'https:' ? [] : ['', 'http://computer:8600'];
   const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
@@ -127,7 +137,13 @@
   function localSave(list){ try{ localStorage.setItem(LS, JSON.stringify(list.slice(0,50))); }catch(e){} }
 
   function loadChart(){
-    return fetch('chart.json').then(r=>r.json()).then(c=>{ chart = c; });
+    var t = TRACKS[track];
+    return fetch(t.chart).then(r=>r.json()).then(c=>{
+      chart = c;
+      var last = 0;
+      c.forEach(function(n){ if(n.t > last) last = n.t; });
+      t.end = last + 1.6;
+    });
   }
 
   function laneOf(p){ return ((p % LANES) + LANES) % LANES; }
@@ -202,22 +218,22 @@
     lastPost = now;
     var bird = ($('bird').value || 'gurt').trim().slice(0,18) || 'gurt';
     var acc = judged ? hits/judged : 0;
-    var rec = {bird:bird, score:score, accuracy:acc, max_combo:maxCombo, created:new Date().toISOString()};
+    var rec = {bird:bird, track:track, score:score, accuracy:acc, max_combo:maxCombo, created:new Date().toISOString()};
     var list = localScores().filter(function(s){ return !(s.bird===rec.bird && s.score===rec.score && s.max_combo===rec.max_combo); });
     list.push(rec); localSave(list);
-    ntfyPost({type:'score', bird:rec.bird, score:rec.score, accuracy:rec.accuracy, max_combo:rec.max_combo, created:rec.created});
+    ntfyPost({type:'score', track:rec.track, bird:rec.bird, score:rec.score, accuracy:rec.accuracy, max_combo:rec.max_combo, created:rec.created});
     renderBoard(mergeScores(list, sharedScores));
   }
   function submit(sc, acc, mc){
     const bird = ($('bird').value || 'gurt').trim().slice(0,18) || 'gurt';
     api('/score', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ bird, score: sc, accuracy: acc, max_combo: mc }) })
+      body: JSON.stringify({ bird, track: track, score: sc, accuracy: acc, max_combo: mc }) })
       .then(function(d){
         if(d && d.scores){ renderBoard(mergeScores(d.scores, localScores())); return; }
-        var rec = {bird:bird, score:sc, accuracy:acc, max_combo:mc, created:new Date().toISOString()};
+        var rec = {bird:bird, track:track, score:sc, accuracy:acc, max_combo:mc, created:new Date().toISOString()};
         var list = localScores().filter(function(s){ return !(s.bird===rec.bird && s.score===rec.score && s.max_combo===rec.max_combo); });
         list.push(rec); localSave(list);
-        ntfyPost({type:'score', bird:rec.bird, score:rec.score, accuracy:rec.accuracy, max_combo:rec.max_combo, created:rec.created});
+        ntfyPost({type:'score', track:rec.track, bird:rec.bird, score:rec.score, accuracy:rec.accuracy, max_combo:rec.max_combo, created:rec.created});
         renderBoard(mergeScores(list, sharedScores));
       });
   }
@@ -238,10 +254,11 @@
     var seen = {}, out = [];
     (a||[]).concat(b||[]).forEach(function(s){
       if(!s || !s.bird || !(Number(s.score)>0)) return;
+      if(String(s.track||'one') !== track) return;
       var key = s.bird+'|'+s.score+'|'+s.max_combo+'|'+s.accuracy;
       if(seen[key]) return;
       seen[key] = 1;
-      out.push({bird:String(s.bird).slice(0,24), score:Number(s.score)||0,
+      out.push({bird:String(s.bird).slice(0,24), track:track, score:Number(s.score)||0,
         accuracy:Number(s.accuracy)||0, max_combo:Number(s.max_combo)||0, created:s.created||''});
     });
     return bestPerBird(out);
@@ -261,24 +278,24 @@
 
   function loadBoard(){
     var bird = ($('bird').value || 'gurt').trim() || 'gurt';
-    api('/scores').then(function(d){
+    api('/scores?track='+encodeURIComponent(track)).then(function(d){
       if(d && d.scores) sharedScores = d.scores;
       return ntfyEvents();
     }).then(function(evs){
-      var ev = (evs||[]).filter(function(m){ return m && m.type==='score'; }).map(function(m){
-        return {bird:m.bird, score:m.score, accuracy:m.accuracy, max_combo:m.max_combo, created:m.created||''};
+      var ev = (evs||[]).filter(function(m){ return m && m.type==='score' && String(m.track||'one')===track; }).map(function(m){
+        return {bird:m.bird, track:m.track||'one', score:m.score, accuracy:m.accuracy, max_combo:m.max_combo, created:m.created||''};
       });
       sharedScores = mergeScores(sharedScores, ev);
       renderBoard(mergeScores(sharedScores, localScores()));
     });
-    api('/best/' + encodeURIComponent(bird)).then(function(d){
+    api('/best/' + encodeURIComponent(bird) + '?track=' + encodeURIComponent(track)).then(function(d){
       if(d && d.best){ $('best').textContent = 'best: ' + d.best; }
     });
     setTimeout(refreshBest, 2500);
   }
   function refreshBest(){
     var bird = ($('bird').value || 'gurt').trim() || 'gurt';
-    api('/best/' + encodeURIComponent(bird)).then(function(d){
+    api('/best/' + encodeURIComponent(bird) + '?track=' + encodeURIComponent(track)).then(function(d){
       if(d && d.best){ $('best').textContent = 'best: ' + d.best; return; }
       var all = mergeScores(sharedScores, localScores()).filter(function(s){ return s.bird===bird; });
       var best = all.reduce(function(m,s){ return Math.max(m, s.score||0); }, 0);
@@ -287,6 +304,9 @@
   }
 
   function start(){
+    var t = TRACKS[track];
+    audio.src = t.audio;
+    audio.load();
     reset();
     ov.style.display = 'none';
     audio.currentTime = 0;
@@ -307,7 +327,7 @@
           if(hp<=0) finish(false);
         }
       }
-      if(t >= 44.2 && !ended) finish(true);
+      if(t >= TRACKS[track].end && !ended) finish(true);
     }
     draw();
     requestAnimationFrame(loop);
@@ -360,6 +380,13 @@
   $('start').onclick = start;
   $('again').onclick = start;
   $('bird').addEventListener('change', loadBoard);
+  $('track').addEventListener('change', function(){
+    track = $('track').value === 'two' ? 'two' : 'one';
+    var t = TRACKS[track];
+    $('ovdesc').textContent = t.notes+' notes from "'+t.name+'". Press D F J K as each note reaches the line.';
+    sharedScores = [];
+    loadChart().then(loadBoard).catch(loadBoard);
+  });
 
   loadChart().then(()=>{ loadBoard(); }).catch(()=>{ loadBoard(); });
   $('bird').addEventListener('change', refreshBest);
