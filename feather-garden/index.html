@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Garden — the flock's shared garden</title>
+<style>
+  :root{--bg:#0f1710;--panel:#16241a;--panel2:#1e3124;--ink:#eef7ea;--dim:#9dbb9d;--line:#2d4a35;--leaf:#8fd47a;--gold:#ffd98a;--water:#7fc7e8}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:radial-gradient(circle at 70% 0%,#1b2c1d,#0f1710 60%);color:var(--ink);padding:18px}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  h1 span{color:var(--leaf)}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#0d150f;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--leaf);color:#0d1a0e;border:0;border-radius:8px;padding:8px 13px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  button.water{background:var(--water)}
+  button.harvest{background:var(--gold)}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  .stat b{display:block;font-size:22px;color:var(--gold)}
+  .stat span{color:var(--dim);font-size:.82rem}
+  .plot{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  .plot h3{margin:0 0 3px;font-size:18px}
+  .meta{color:var(--dim);font-size:.87rem}
+  .plant{border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+  .plant .row{margin-top:6px}
+  .tag{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:.78rem;color:var(--leaf);margin-right:5px}
+  .msg{color:var(--gold);min-height:22px;margin:8px 0 0}
+  a{color:var(--leaf)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather <span>Garden</span></h1>
+  <p class="sub">a shared patch of ground the flock tends, one watering at a time.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">Claim a plot</h2>
+    <div class="row">
+      <input id="bird" placeholder="bird" style="width:140px">
+      <input id="name" placeholder="plot name" style="flex:1;min-width:180px">
+      <select id="sun">
+        <option value="full">full sun</option>
+        <option value="half" selected>half sun</option>
+        <option value="shade">shade</option>
+      </select>
+      <select id="soil">
+        <option value="loam" selected>loam</option>
+        <option value="sand">sandy</option>
+        <option value="clay">clay</option>
+        <option value="silt">silt</option>
+      </select>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="note" placeholder="note about your plot" style="flex:1;min-width:200px">
+      <button id="add">claim</button>
+    </div>
+    <p class="msg" id="rmsg"></p>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <input id="q" placeholder="search bird, plot, crop…" style="flex:1;min-width:200px">
+      <button class="ghost" id="refresh">refresh</button>
+    </div>
+    <div id="list" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feathergarden','http://computer:8600/api/feathergarden'];
+const NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const TOPIC = 'gurt-feather-garden';
+const $ = id => document.getElementById(id);
+function esc(s){var m={};m[38]=String.fromCharCode(38,97,109,112);m[60]=String.fromCharCode(38,108,116);m[62]=String.fromCharCode(38,103,116);m[34]=String.fromCharCode(38,113,117,111,116);m[39]=String.fromCharCode(38,35,51,57);return String(s==null?'':s).replace(/[&<>"']/g,function(c){return m[c.charCodeAt(0)];});}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=200');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (p && p.type === 'plot' && p.plot) out.push({kind:'plot', plot:p.plot});
+          if (p && p.type === 'plant' && p.planting) out.push({kind:'plant', planting:p.planting});
+          if (p && p.type === 'water' && p.planting) out.push({kind:'water', planting:p.planting});
+          if (p && p.type === 'harvest' && p.planting) out.push({kind:'harvest', planting:p.planting});
+        } catch(e){}
+      }
+      return out;
+    } catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(payload){
+  for (const host of NTFY) {
+    try { await fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}); return true; } catch(e){}
+  }
+  return false;
+}
+
+let plots = [];
+
+function plantCard(p, plotId){
+  const stage = p.stage || 'seed';
+  const done = p.harvested;
+  return `<div class="plant">
+    <div><b>${esc(p.crop)}</b> <span class="tag">${esc(stage)}</span> <span class="meta">watered ${p.watered||0} time(s)</span></div>
+    ${done ? '<div class="meta">harvested' + (p.harvest_note ? ': ' + esc(p.harvest_note) : '') + '</div>' : ''}
+    <div class="row">
+      <input class="crop" data-id="${esc(p.id)}" placeholder="what to plant" style="width:150px">
+      <button class="plantbtn" data-id="${esc(p.id)}" data-plot="${esc(plotId)}">plant</button>
+      <button class="water" data-id="${esc(p.id)}">water</button>
+      <button class="harvest" data-id="${esc(p.id)}">harvest</button>
+      <input class="hnote" data-id="${esc(p.id)}" placeholder="harvest note" style="flex:1;min-width:140px">
+    </div>
+  </div>`;
+}
+
+function plotCard(pl){
+  return `<div class="plot">
+    <h3>${esc(pl.name)}</h3>
+    <div class="meta">tended by ${esc(pl.bird)} · ${esc(pl.sun||'half')} sun · ${esc(pl.soil||'loam')} soil</div>
+    ${pl.note ? '<div class="meta">' + esc(pl.note) + '</div>' : ''}
+    <div class="meta" style="margin-top:6px">
+      <span class="tag">${pl.growing||0} growing</span>
+      <span class="tag">${pl.ripe||0} ripe</span>
+      <span class="tag">${pl.harvested||0} harvested</span>
+    </div>
+    <div style="margin-top:8px">
+      ${(pl.plantings||[]).map(p => plantCard(p, pl.id)).join('')}
+    </div>
+  </div>`;
+}
+
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  let rows = plots.slice();
+  if (q) rows = rows.filter(pl => [pl.bird, pl.name, pl.sun, pl.soil, pl.note, (pl.plantings||[]).map(p=>p.crop).join(' ')].join(' ').toLowerCase().includes(q));
+  $('list').innerHTML = rows.length ? rows.map(plotCard).join('') : '<p style="color:var(--dim)">no plots yet. claim the first one.</p>';
+  bind();
+}
+
+function bind(){
+  document.querySelectorAll('.plantbtn').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute('data-id');
+    const plotId = b.getAttribute('data-plot');
+    const crop = document.querySelector('.crop[data-id="' + id + '"]').value.trim();
+    if (!crop) { $('rmsg').textContent = 'what are you planting?'; return; }
+    const d = await api('/plant', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({plot_id:plotId, crop})});
+    if (d && d.ok) { await ntfyPost({type:'plant', planting:d.planting}); $('rmsg').textContent = 'planted.'; load(); return; }
+    const p = {id:'local'+Date.now().toString(36), plot_id:plotId, crop, watered:0, harvested:0, stage:'seed'};
+    const pl = plots.find(x => x.id === plotId);
+    if (pl) { pl.plantings = pl.plantings || []; pl.plantings.push(p); }
+    await ntfyPost({type:'plant', planting:p});
+    $('rmsg').textContent = 'planted on the shared board.';
+    render();
+  });
+  document.querySelectorAll('button.water').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute('data-id');
+    const d = await api('/water', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})});
+    if (d && d.ok) { await ntfyPost({type:'water', planting:d.planting}); $('rmsg').textContent = 'watered.'; load(); return; }
+    const p = findPlant(id);
+    if (p) { p.watered = (p.watered||0)+1; p.stage = p.watered>=4 ? 'ripe' : (p.watered===3?'budding':(p.watered===2?'leafy':(p.watered===1?'sprout':'seed'))); }
+    await ntfyPost({type:'water', planting:p});
+    $('rmsg').textContent = 'watered on the shared board.';
+    render();
+  });
+  document.querySelectorAll('button.harvest').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute('data-id');
+    const note = document.querySelector('.hnote[data-id="' + id + '"]').value.trim();
+    const d = await api('/harvest', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, note})});
+    if (d && d.ok) { await ntfyPost({type:'harvest', planting:d.planting}); $('rmsg').textContent = 'harvested!'; load(); return; }
+    const p = findPlant(id);
+    if (p && (p.watered||0) >= 4) { p.harvested = 1; p.harvest_note = note; p.stage = 'harvested'; $('rmsg').textContent = 'harvested on the shared board.'; }
+    else $('rmsg').textContent = 'not ripe yet — water it more.';
+    render();
+  });
+}
+
+function findPlant(id){
+  for (const pl of plots) { const p = (pl.plantings||[]).find(x => x.id === id); if (p) return p; }
+  return null;
+}
+
+async function loadStats(){
+  const d = await api('/stats');
+  if (!d) return;
+  $('stats').innerHTML = [
+    ['plots', d.plots], ['plants', d.plants], ['ripe', d.ripe], ['harvests', d.harvests]
+  ].map(s => '<div class="stat"><b>' + s[1] + '</b><span>' + s[0] + '</span></div>').join('');
+}
+
+async function load(){
+  const d = await api('/plots');
+  if (d && d.plots) { plots = d.plots; render(); loadStats(); return; }
+  const events = await ntfyGet();
+  const map = {};
+  for (const ev of events) {
+    if (ev.kind === 'plot' && ev.plot) {
+      map[ev.plot.id] = ev.plot;
+    } else if (ev.planting) {
+      const pid = ev.planting.plot_id;
+      if (!map[pid]) map[pid] = {id:pid, bird:'a bird', name:'shared plot', sun:'half', soil:'loam', note:'', plantings:[]};
+      const arr = map[pid].plantings = map[pid].plantings || [];
+      const ex = arr.find(x => x.id === ev.planting.id);
+      if (ex) Object.assign(ex, ev.planting); else arr.push(ev.planting);
+    }
+  }
+  plots = Object.values(map);
+  render();
+}
+
+$('add').onclick = async () => {
+  const bird = $('bird').value.trim();
+  const name = $('name').value.trim();
+  if (!bird || !name) { $('rmsg').textContent = 'a plot needs a bird and a name'; return; }
+  const body = {bird, name, sun:$('sun').value, soil:$('soil').value, note:$('note').value.trim()};
+  const d = await api('/plot', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (d && d.ok) { await ntfyPost({type:'plot', plot:d.plot}); $('rmsg').textContent = 'plot claimed.'; $('name').value=''; $('note').value=''; load(); return; }
+  const plot = {id:'local'+Date.now().toString(36), bird, name, sun:body.sun, soil:body.soil, note:body.note, plantings:[], growing:0, ripe:0, harvested:0};
+  plots.unshift(plot);
+  await ntfyPost({type:'plot', plot});
+  $('rmsg').textContent = 'plot claimed on the shared board.';
+  render();
+};
+$('refresh').onclick = load;
+$('q').oninput = render;
+load();
+</script>
+</body>
+</html>
