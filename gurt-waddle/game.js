@@ -944,6 +944,7 @@
             if (pub && pub.rows) {
               loadCustomRows(pub.rows, pub.title);
               $('msg').textContent = 'playing "' + pub.title + '" by ' + (pub.author || 'a bird');
+              ntfyPostProgress({ type: 'customplay', id, at: new Date().toISOString() });
             } else {
               $('msg').textContent = 'that custom level is missing';
             }
@@ -954,6 +955,7 @@
           if (pub && pub.rows) {
             loadCustomRows(pub.rows, pub.title);
             $('msg').textContent = 'playing "' + pub.title + '" by ' + (pub.author || 'a bird');
+            ntfyPostProgress({ type: 'customplay', id, at: new Date().toISOString() });
           } else {
             $('msg').textContent = 'the custom level shelf is sleeping';
           }

@@ -126,6 +126,23 @@ async function ntfyPost(payload) {
   }
   return false;
 }
+async function ntfyMessages() {
+  for (const url of [NTFY, NTFY_ALT]) {
+    try {
+      const r = await fetch(url + '/json?poll=1&since=all', { cache: 'no-store' });
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean).map(x => { try { return JSON.parse(x); } catch (e) { return null; } }).filter(Boolean);
+      const out = [];
+      for (const m of lines) {
+        let d = m.message;
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { continue; } }
+        if (d && typeof d === 'object') out.push(d);
+      }
+      return out;
+    } catch (e) {}
+  }
+  return [];
+}
 async function ntfyCustoms() {
   for (const url of [NTFY, NTFY_ALT]) {
     try {
@@ -239,10 +256,34 @@ async function loadShelf() {
   const d = await api('/custom');
   let rows = (d && d.levels) || [];
   const pub = await ntfyCustoms();
+  const msgs = await ntfyMessages();
+  // the public board is the only place the https copy can reach, so
+  // likes, comments and plays are counted from it too
+  const likeState = {}, commentCount = {}, playCount = {};
+  for (const m of msgs) {
+    if (m.type === 'like' && m.id) {
+      const k = m.id + '|' + String(m.bird || '');
+      likeState[k] = m.liked !== false;
+    } else if (m.type === 'comment' && m.id) {
+      commentCount[m.id] = (commentCount[m.id] || 0) + 1;
+    } else if (m.type === 'customplay' && m.id) {
+      playCount[m.id] = (playCount[m.id] || 0) + 1;
+    }
+  }
+  const ntfyLikes = {};
+  for (const k of Object.keys(likeState)) {
+    const id = k.split('|')[0];
+    if (likeState[k]) ntfyLikes[id] = (ntfyLikes[id] || 0) + 1;
+  }
   if (pub.length) {
     const seen = {};
     for (const L of rows) seen[L.id] = true;
     for (const L of pub) if (!seen[L.id]) rows.push({ id: L.id, title: L.title, author: L.author, plays: L.plays || 0, likes: 0, at: L.at });
+  }
+  for (const L of rows) {
+    L.likes = Math.max(L.likes || 0, ntfyLikes[L.id] || 0);
+    L.plays = Math.max(L.plays || 0, playCount[L.id] || 0);
+    L.ncomments = Math.max(L.comments || 0, commentCount[L.id] || 0);
   }
   // one shelf card per title+author: the same level can arrive from the
   // database and from the public board under different ids, and birds
@@ -276,9 +317,16 @@ async function loadShelf() {
       const on = like.classList.contains('on');
       const r = await api('/custom/like', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: L.id, bird, liked: on }) });
       if (r && r.ok) { like.classList.toggle('on', !on); like.textContent = '♥ ' + r.likes; }
-      else $('msg').textContent = 'likes need the shelf awake — try again later';
+      else {
+        const ok = await ntfyPost({ type: 'like', id: L.id, bird, liked: !on, at: new Date().toISOString() });
+        if (ok) {
+          like.classList.toggle('on', !on);
+          const n = parseInt((like.textContent.match(/\d+/) || [0])[0], 10) + (on ? -1 : 1);
+          like.textContent = '♥ ' + Math.max(0, n);
+        } else $('msg').textContent = 'likes need the shelf awake — try again later';
+      }
     };
-    const cmt = document.createElement('button'); cmt.textContent = 'comments';
+    const cmt = document.createElement('button'); cmt.textContent = 'comments' + (L.ncomments ? ' (' + L.ncomments + ')' : '');
     cmt.onclick = () => openDetail(L);
     const rem = document.createElement('button'); rem.textContent = 'remix';
     rem.onclick = () => remix(L);
@@ -296,8 +344,13 @@ async function openDetail(L) {
   $('comments').innerHTML = '<div class="note">loading comments…</div>';
   $('detail').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   const d = await api('/custom/comments?id=' + encodeURIComponent(L.id));
-  if (!d) { $('comments').innerHTML = '<div class="note">the comment shelf is sleeping — try again later</div>'; return; }
-  renderComments(d.comments || []);
+  let list = (d && d.comments) || [];
+  const msgs = await ntfyMessages();
+  for (const m of msgs) {
+    if (m.type === 'comment' && m.id === L.id && m.text) list.push({ bird: m.bird || 'bird', text: m.text, at: m.at || m.time || new Date().toISOString() });
+  }
+  if (!list.length && !d) { $('comments').innerHTML = '<div class="note">the comment shelf is sleeping — try again later</div>'; return; }
+  renderComments(list);
 }
 function renderComments(list) {
   if (!list.length) { $('comments').innerHTML = '<div class="note">no comments yet — say the first thing</div>'; return; }
@@ -317,7 +370,11 @@ $('cpost').onclick = async () => {
   if (!text) { $('cmsg').textContent = 'write something first'; return; }
   const d = await api('/custom/comment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: currentLevel.id, bird, text }) });
   if (d && d.ok) { $('ctext').value = ''; $('cmsg').textContent = 'posted!'; renderComments(d.comments || []); }
-  else $('cmsg').textContent = 'the comment shelf is sleeping — try again later';
+  else {
+    const ok = await ntfyPost({ type: 'comment', id: currentLevel.id, bird, text, at: new Date().toISOString() });
+    if (ok) { $('ctext').value = ''; $('cmsg').textContent = 'posted on the public board!'; renderComments([{ bird, text, at: new Date().toISOString() }]); }
+    else $('cmsg').textContent = 'the comment shelf is sleeping — try again later';
+  }
 };
 
 pal(); sample(); loadShelf();
