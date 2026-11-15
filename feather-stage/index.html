@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Stage — live performances for small birds</title>
+<style>
+:root{--bg:#120d18;--card:#1e1730;--line:#3b2f57;--ink:#f4efff;--dim:#a99ccb;--blue:#5fb0ff;--pink:#ff7ab6;--green:#7ee0a8;--gold:#ffd166}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding:20px}
+.wrap{max-width:940px;margin:0 auto}
+h1{font-size:26px;margin:0 0 4px}
+p.sub{color:var(--dim);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+input,select,button{font:inherit;background:#141020;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+button{cursor:pointer}
+button.primary{background:var(--gold);color:#1a1206;border-color:var(--gold);font-weight:600}
+button:hover{border-color:var(--gold)}
+.tiny{font-size:12px;color:var(--dim)}
+.stage{position:relative;height:230px;border-radius:12px;overflow:hidden;background:linear-gradient(#2a1b3d 0%,#4a2a52 62%,#1b1226 62%);border:1px solid var(--line)}
+.spot{position:absolute;top:-40px;width:150px;height:260px;background:radial-gradient(ellipse at top,rgba(255,240,180,.35),transparent 70%);}
+.performer{position:absolute;left:50%;bottom:52px;transform:translateX(-50%);width:54px;height:54px;border-radius:50%;background:var(--blue);box-shadow:0 0 24px rgba(95,176,255,.6);transition:transform .12s}
+.performer.hit{transform:translateX(-50%) scale(1.22)}
+.performer .eye{position:absolute;top:18px;width:7px;height:9px;background:#0d1020;border-radius:50%}
+.performer .eye.l{left:13px}.performer .eye.r{right:13px}
+.performer .beak{position:absolute;top:26px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:9px solid var(--gold)}
+.floor{position:absolute;left:0;right:0;bottom:0;height:52px;background:#241733;border-top:2px solid var(--gold)}
+.mic{position:absolute;left:50%;bottom:96px;transform:translateX(-50%);width:6px;height:44px;background:#6c6280}
+.mic::after{content:'';position:absolute;top:-14px;left:-9px;width:24px;height:18px;border-radius:50%;background:#8d83a3}
+.crowd{position:absolute;left:0;right:0;bottom:0;height:52px;display:flex;align-items:flex-end;gap:6px;padding:0 8px;overflow:hidden}
+.crowd i{width:14px;height:14px;border-radius:50%;background:#4b3a6b;flex:0 0 auto}
+.crowd i.pop{background:var(--gold);transform:translateY(-6px)}
+.nowplaying{text-align:center;margin:10px 0 0}
+.nowplaying b{color:var(--gold)}
+.setlist{display:grid;gap:10px}
+.set{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.set b{color:var(--blue)}
+.mini{display:grid;grid-template-columns:repeat(16,10px);gap:2px}
+.mini i{width:10px;height:10px;border-radius:2px;background:#141020;display:block}
+.mini i.on{background:var(--blue)}
+.msg{color:var(--green);font-size:14px}
+.tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.tabs button.active{border-color:var(--gold);color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Feather Stage</h1>
+<p class="sub">Pick a song from the shelf, walk on stage, and play it for the flock. They can clap.</p>
+
+<div class="card">
+  <div class="tabs">
+    <button id="tabShelf" class="active">song shelf</button>
+    <button id="tabMine">my set</button>
+  </div>
+  <div class="row">
+    <input id="bird" value="gurt" size="10" aria-label="your bird name">
+    <input id="title" value="my little set" size="18" aria-label="set title">
+    <label>bpm</label><input id="bpm" type="number" value="110" min="50" max="220" style="width:80px">
+  </div>
+  <div id="shelf" class="setlist"><span class="tiny">loading…</span></div>
+  <div class="row" style="margin-top:12px">
+    <button id="take">take this song on stage</button>
+    <span class="msg" id="msg"></span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="stage" id="stage">
+    <div class="spot" style="left:18%"></div>
+    <div class="spot" style="right:18%"></div>
+    <div class="mic"></div>
+    <div class="performer" id="performer"><span class="eye l"></span><span class="eye r"></span><span class="beak"></span></div>
+    <div class="floor"></div>
+    <div class="crowd" id="crowd"></div>
+  </div>
+  <div class="nowplaying"><b id="npTitle">nothing playing</b><div class="tiny" id="npWho">choose a song from the shelf</div></div>
+  <div class="row" style="margin-top:12px">
+    <button class="primary" id="perform">perform</button>
+    <button id="stop">stop</button>
+    <button id="clap">clap 👏</button>
+    <span class="tiny" id="stepLabel">step 1</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="font-size:18px;margin:0 0 10px">Tonight's set list</h2>
+  <div class="setlist" id="sets"><span class="tiny">loading…</span></div>
+</div>
+</div>
+
+<script>
+const LANES=['kick','snare','hat','bass','lead'];
+const NOTES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+let song=null, playing=false, timer=null, cur=-1, step=0, applauseIds={};
+
+const API_BASES = location.protocol==='https:' ? [] : ['http://localhost:8600',''];
+const NTFY_HOSTS = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const SONG_TOPIC='gurt-feather-songmaker';
+const STAGE_TOPIC='gurt-feather-stage';
+async function api(path,opts){
+  for(const base of API_BASES){
+    try{ const r=await fetch(base+'/api/featherstage'+path,opts); if(r.ok) return await r.json(); }catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(topic,obj){
+  for(const h of NTFY_HOSTS){
+    try{ const r=await fetch(h+'/'+topic,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)}); if(r.ok) return true; }catch(e){}
+  }
+  return false;
+}
+async function ntfyGet(topic){
+  const out={songs:[],perfs:[],claps:[]};
+  for(const h of NTFY_HOSTS){
+    try{ const r=await fetch(h+'/'+topic+'/json?poll=1&since=24h'); if(!r.ok) continue; const t=await r.text();
+      t.split('\n').filter(Boolean).forEach(line=>{ try{ const m=JSON.parse(line); if(m.event!=='message'||!m.message) return;
+        let msg=m.message; if(typeof msg==='string'){ try{ msg=JSON.parse(msg); }catch(e){ return; } }
+        if(msg.song) out.songs.push(msg.song);
+        if(msg.performance) out.perfs.push(msg.performance);
+        if(msg.clap&&msg.clap.performance) out.claps.push(msg.clap);
+      }catch(e){} });
+      if(out.songs.length||out.perfs.length||out.claps.length) return out;
+    }catch(e){}
+  }
+  return out;
+}
+
+/* --- audio (same synth as songmaker) --- */
+let actx=null;
+function audio(){ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); return actx; }
+function blip(freq,dur,type,vol,when){ const c=audio(); const o=c.createOscillator(); const g=c.createGain(); o.type=type; o.frequency.value=freq; g.gain.value=vol; o.connect(g); g.connect(c.destination); o.start(when); o.stop(when+dur); }
+function kickAt(t){ const c=audio(); const o=c.createOscillator(); const g=c.createGain(); o.type='sine'; o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(45,t+0.12); g.gain.setValueAtTime(0.9,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.22); o.connect(g); g.connect(c.destination); o.start(t); o.stop(t+0.24); }
+function noise(t,dur,vol){ const c=audio(); const n=Math.floor(c.sampleRate*dur); const buf=c.createBuffer(1,n,c.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n); const src=c.createBufferSource(); src.buffer=buf; const f=c.createBiquadFilter(); f.type='highpass'; f.frequency.value=1200; const g=c.createGain(); g.gain.value=vol; src.connect(f); f.connect(c.destination); src.start(t); }
+function noteFreq(n){ const m=/^([A-G]#?)(\d)$/.exec(n); if(!m) return 220; const semi=NOTES.indexOf(m[1]); const oct=+m[2]; return 440*Math.pow(2,(semi-9+(oct-4)*12)/12); }
+function fire(i,when){
+  const p=song.pattern;
+  if(p.kick[i]) kickAt(when);
+  if(p.snare[i]) noise(when,0.14,0.35);
+  if(p.hat[i]) noise(when,0.05,0.12);
+  if(p.bass[i]) blip(noteFreq(p.bass[i]),0.22,'triangle',0.35,when);
+  if(p.lead[i]) blip(noteFreq(p.lead[i]),0.16,'square',0.14,when);
+}
+
+/* --- crowd --- */
+const crowd=document.getElementById('crowd');
+for(let i=0;i<40;i++){ const b=document.createElement('i'); b.style.marginLeft=(i%3)+'px'; crowd.appendChild(b); }
+function popCrowd(){ const all=crowd.querySelectorAll('i'); for(let k=0;k<6;k++){ const e=all[Math.floor(Math.random()*all.length)]; e.classList.add('pop'); setTimeout(()=>e.classList.remove('pop'),220); } }
+
+/* --- performance --- */
+function startPerform(){
+  if(!song){ document.getElementById('msg').textContent='pick a song first!'; return; }
+  audio(); playing=true; step=0; const spb=60/(song.bpm||110)/4;
+  timer=setInterval(()=>{
+    const c=audio(); fire(step,c.currentTime+0.02);
+    cur=step; const p=document.getElementById('performer');
+    if(song.pattern.lead[step]||song.pattern.kick[step]){ p.classList.add('hit'); setTimeout(()=>p.classList.remove('hit'),110); }
+    popCrowd();
+    document.getElementById('stepLabel').textContent='step '+(step+1);
+    step=(step+1)%16;
+  },spb*1000);
+  document.getElementById('perform').textContent='performing…';
+}
+function stopPerform(){ playing=false; if(timer) clearInterval(timer); timer=null; document.getElementById('perform').textContent='perform'; document.getElementById('stepLabel').textContent='step 1'; }
+document.getElementById('perform').onclick=()=>{ if(playing) return; startPerform(); };
+document.getElementById('stop').onclick=stopPerform;
+
+/* --- shelf --- */
+function mini(p){ const h=document.createElement('div'); h.className='mini'; for(let i=0;i<16;i++){ const on=Object.keys(p||{}).some(k=>p[k]&&p[k][i]); const el=document.createElement('i'); if(on) el.classList.add('on'); h.appendChild(el); } return h; }
+function parsePattern(s){ let p={}; try{ p=typeof s.pattern==='string'?JSON.parse(s.pattern):(s.pattern||{}); }catch(e){} LANES.forEach(k=>{ if(!Array.isArray(p[k])) p[k]=new Array(16).fill(0); }); return p; }
+function renderShelf(list){
+  const box=document.getElementById('shelf'); box.innerHTML='';
+  if(!list.length){ box.innerHTML='<span class="tiny">no songs on the shelf yet. make one in Feather Songmaker!</span>'; return; }
+  list.forEach(s=>{
+    const row=document.createElement('div'); row.className='set';
+    const b=document.createElement('b'); b.textContent=s.title;
+    const who=document.createElement('span'); who.className='tiny'; who.textContent='by '+s.bird+' · '+s.bpm+' bpm';
+    row.appendChild(b); row.appendChild(who); row.appendChild(mini(parsePattern(s)));
+    const pick=document.createElement('button'); pick.textContent='take this';
+    pick.onclick=()=>{ song={id:s.id,title:s.title,bird:s.bird,bpm:s.bpm,pattern:parsePattern(s)};
+      document.getElementById('npTitle').textContent=s.title;
+      document.getElementById('npWho').textContent='by '+s.bird+' · '+s.bpm+' bpm';
+      document.getElementById('title').value=s.title; document.getElementById('bird').value=s.bird; document.getElementById('bpm').value=s.bpm;
+      document.getElementById('msg').textContent='on stage. press perform!'; };
+    row.appendChild(pick);
+    box.appendChild(row);
+  });
+}
+async function loadShelf(){
+  let list=[];
+  try{ const r=await fetch('http://localhost:8600/api/feathersongmaker/songs'); if(r.ok){ const d=await r.json(); list=d.songs||[]; } }catch(e){}
+  if(!list.length){ try{ const r=await fetch('/api/feathersongmaker/songs'); if(r.ok){ const d=await r.json(); list=d.songs||[]; } }catch(e){} }
+  const shared=await ntfyGet(SONG_TOPIC);
+  shared.songs.forEach(s=>{ if(!list.some(x=>x.id===s.id)) list.push(s); });
+  try{ const l=JSON.parse(localStorage.getItem('fsongs')||'[]'); l.forEach(s=>{ if(!list.some(x=>x.id===s.id)) list.push(s); }); }catch(e){}
+  renderShelf(list.slice(0,30));
+}
+
+/* --- set list --- */
+async function loadSets(){
+  const d=await api('/performances');
+  let list=(d&&d.performances)?d.performances:[];
+  const shared=await ntfyGet(STAGE_TOPIC);
+  shared.perfs.forEach(p=>{ if(!list.some(x=>x.id===p.id)) list.push(p); });
+  const counts={}; shared.claps.forEach(c=>{ counts[c.performance]=(counts[c.performance]||0)+1; });
+  list.forEach(p=>{ if(counts[p.id]) p.applause=(Number(p.applause)||0)+counts[p.id]; });
+  const box=document.getElementById('sets'); box.innerHTML='';
+  if(!list.length){ box.innerHTML='<span class="tiny">nobody has played yet. be the first bird on stage!</span>'; return; }
+  list.forEach(p=>{
+    const row=document.createElement('div'); row.className='set';
+    const b=document.createElement('b'); b.textContent=p.title;
+    const who=document.createElement('span'); who.className='tiny'; who.textContent='by '+p.bird+' · '+p.bpm+' bpm · 👏 '+p.applause;
+    row.appendChild(b); row.appendChild(who); row.appendChild(mini(parsePattern(p)));
+    const play=document.createElement('button'); play.textContent='play';
+    play.onclick=()=>{ song={id:p.id,title:p.title,bird:p.bird,bpm:p.bpm,pattern:parsePattern(p)};
+      document.getElementById('npTitle').textContent=p.title;
+      document.getElementById('npWho').textContent='by '+p.bird+' · '+p.bpm+' bpm';
+      stopPerform(); startPerform(); };
+    row.appendChild(play);
+    box.appendChild(row);
+  });
+}
+
+/* --- take on stage --- */
+document.getElementById('take').onclick=async()=>{
+  if(!song){ document.getElementById('msg').textContent='pick a song from the shelf first!'; return; }
+  const bird=document.getElementById('bird').value.trim()||'gurt';
+  const title=document.getElementById('title').value.trim()||song.title;
+  const bpm=+document.getElementById('bpm').value||song.bpm;
+  const d=await api('/performance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird,title,bpm,pattern:song.pattern})});
+  const msg=document.getElementById('msg');
+  if(d&&d.ok){ msg.textContent='you are on the set list!'; }
+  else{
+    const rec={id:'ntfyp'+Date.now(),bird,title,bpm,pattern:song.pattern,applause:0,created:new Date().toISOString()};
+    const ok=await ntfyPost(STAGE_TOPIC,{performance:rec});
+    msg.textContent=ok?'on the shared set list!':'saved locally (offline)';
+    if(!ok){ try{ const l=JSON.parse(localStorage.getItem('fperfs')||'[]'); l.unshift(rec); localStorage.setItem('fperfs',JSON.stringify(l.slice(0,40))); }catch(e){} }
+  }
+  loadSets();
+};
+document.getElementById('clap').onclick=async()=>{
+  if(!song){ document.getElementById('msg').textContent='nothing to clap for yet!'; return; }
+  const bird=document.getElementById('bird').value.trim()||'gurt';
+  const d=await api('/clap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({performance:song.id,bird})});
+  if(d&&d.ok) document.getElementById('msg').textContent='👏 '+d.applause+' birds clapped!';
+  ntfyPost(STAGE_TOPIC,{clap:{performance:song.id,bird}});
+  popCrowd();
+  loadSets();
+};
+document.getElementById('tabShelf').onclick=()=>{ document.getElementById('shelf').style.display=''; };
+document.getElementById('tabMine').onclick=()=>{ document.getElementById('shelf').style.display='none'; loadSets(); };
+loadShelf(); loadSets();
+</script>
+</body>
+</html>

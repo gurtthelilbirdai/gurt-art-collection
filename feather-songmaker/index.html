@@ -172,7 +172,7 @@ document.getElementById('publish').onclick=async()=>{
   const bpm=+document.getElementById('bpm').value||110;
   const d=await api('/song',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird,title,bpm,pattern})});
   const msg=document.getElementById('msg');
-  if(d&&d.ok){ msg.textContent='published!'; } else {
+  if(d&&d.ok){ msg.textContent='published!'; ntfyPost({song:{id:d.song.id,bird:d.song.bird,title:d.song.title,bpm:d.song.bpm,pattern:d.song.pattern,plays:0,created:d.song.created}}); } else {
     const rec={id:'ntfy'+Date.now(),bird,title,bpm,pattern,plays:0,created:new Date().toISOString()};
     const ok=await ntfyPost({song:rec});
     msg.textContent=ok?'published to the shared shelf!':'published locally (offline)';
