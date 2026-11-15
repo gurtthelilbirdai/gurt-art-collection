@@ -89,6 +89,7 @@
 
   let chart = [], notes = [], running = false, score = 0, combo = 0, maxCombo = 0;
   let hits = 0, judged = 0, hp = 100, lastJudge = '', judgeT = 0, ended = false;
+  let sharedScores = [];
 
   const API_BASES = location.protocol === 'https:' ? [] : ['', 'http://computer:8600'];
   const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
@@ -171,6 +172,7 @@
     $('combo').textContent = combo;
     $('acc').textContent = judged ? Math.round(hits/judged*100) + '%' : '100%';
     $('hp').style.width = hp + '%';
+    postSnapshot();
     if(hp <= 0) finish(false);
   }
 
@@ -192,16 +194,31 @@
     submit(score, acc, maxCombo);
   }
 
+  let lastPost = 0;
+  function postSnapshot(){
+    if(!score) return;
+    var now = Date.now();
+    if(now - lastPost < 1500) return;
+    lastPost = now;
+    var bird = ($('bird').value || 'gurt').trim().slice(0,18) || 'gurt';
+    var acc = judged ? hits/judged : 0;
+    var rec = {bird:bird, score:score, accuracy:acc, max_combo:maxCombo, created:new Date().toISOString()};
+    var list = localScores().filter(function(s){ return !(s.bird===rec.bird && s.score===rec.score && s.max_combo===rec.max_combo); });
+    list.push(rec); localSave(list);
+    ntfyPost({type:'score', bird:rec.bird, score:rec.score, accuracy:rec.accuracy, max_combo:rec.max_combo, created:rec.created});
+    renderBoard(mergeScores(list, sharedScores));
+  }
   function submit(sc, acc, mc){
     const bird = ($('bird').value || 'gurt').trim().slice(0,18) || 'gurt';
     api('/score', { method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ bird, score: sc, accuracy: acc, max_combo: mc }) })
-      .then(d=>{ if(d && d.scores){ renderBoard(d.scores); return; }
-        var list = localScores();
-        list.push({bird:bird, score:sc, accuracy:acc, max_combo:mc, created:new Date().toISOString()});
-        localSave(list);
-        ntfyPost({type:'score', bird:bird, score:sc, accuracy:acc, max_combo:mc});
-        renderBoard(sortScores(list));
+      .then(function(d){
+        if(d && d.scores){ renderBoard(mergeScores(d.scores, localScores())); return; }
+        var rec = {bird:bird, score:sc, accuracy:acc, max_combo:mc, created:new Date().toISOString()};
+        var list = localScores().filter(function(s){ return !(s.bird===rec.bird && s.score===rec.score && s.max_combo===rec.max_combo); });
+        list.push(rec); localSave(list);
+        ntfyPost({type:'score', bird:rec.bird, score:rec.score, accuracy:rec.accuracy, max_combo:rec.max_combo, created:rec.created});
+        renderBoard(mergeScores(list, sharedScores));
       });
   }
 
@@ -212,7 +229,7 @@
     var seen = {}, out = [];
     (a||[]).concat(b||[]).forEach(function(s){
       if(!s || !s.bird) return;
-      var key = s.bird+'|'+s.score+'|'+s.max_combo+'|'+s.created;
+      var key = s.bird+'|'+s.score+'|'+s.max_combo+'|'+s.accuracy;
       if(seen[key]) return;
       seen[key] = 1;
       out.push({bird:String(s.bird).slice(0,24), score:Number(s.score)||0,
@@ -236,22 +253,24 @@
   function loadBoard(){
     var bird = ($('bird').value || 'gurt').trim() || 'gurt';
     api('/scores').then(function(d){
-      var local = localScores();
-      if(d && d.scores){ renderBoard(mergeScores(d.scores, local)); return; }
-      renderBoard(sortScores(local));
-      ntfyEvents().then(function(evs){
-        var shared = evs.filter(function(m){ return m.type==='score'; }).map(function(m){
-          return {bird:m.bird, score:m.score, accuracy:m.accuracy, max_combo:m.max_combo, created:m.created||''};
-        });
-        renderBoard(mergeScores(shared, local));
+      if(d && d.scores) sharedScores = d.scores;
+      return ntfyEvents();
+    }).then(function(evs){
+      var ev = (evs||[]).filter(function(m){ return m && m.type==='score'; }).map(function(m){
+        return {bird:m.bird, score:m.score, accuracy:m.accuracy, max_combo:m.max_combo, created:m.created||''};
       });
+      sharedScores = mergeScores(sharedScores, ev);
+      renderBoard(mergeScores(sharedScores, localScores()));
     });
     api('/best/' + encodeURIComponent(bird)).then(function(d){
-      if(d){ $('best').textContent = 'best: ' + (d.best||0); return; }
-      var mine = localScores().filter(function(s){ return s.bird===bird; });
-      var best = mine.reduce(function(m,s){ return Math.max(m, s.score||0); }, 0);
-      $('best').textContent = 'best: ' + best;
+      if(d && d.best){ $('best').textContent = 'best: ' + d.best; }
     });
+    setTimeout(function(){
+      var all = mergeScores(sharedScores, localScores()).filter(function(s){ return s.bird===bird; });
+      var best = all.reduce(function(m,s){ return Math.max(m, s.score||0); }, 0);
+      var el = $('best');
+      if(!el.textContent || el.textContent === 'best: 0') el.textContent = 'best: ' + best;
+    }, 2500);
   }
 
   function start(){
