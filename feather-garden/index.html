@@ -208,7 +208,13 @@ function findPlant(id){
 
 async function loadStats(){
   const d = await api('/stats');
-  if (!d) return;
+  if (!d) {
+    let plants=0, ripe=0, harvests=0;
+    for (const pl of plots) for (const p of (pl.plantings||[])) { plants++; if ((p.watered||0)>=4 && !p.harvested) ripe++; if (p.harvested) harvests++; }
+    $('stats').innerHTML = [['plots',plots.length],['plants',plants],['ripe',ripe],['harvests',harvests]]
+      .map(s => '<div class="stat"><b>' + s[1] + '</b><span>' + s[0] + '</span></div>').join('');
+    return;
+  }
   $('stats').innerHTML = [
     ['plots', d.plots], ['plants', d.plants], ['ripe', d.ripe], ['harvests', d.harvests]
   ].map(s => '<div class="stat"><b>' + s[1] + '</b><span>' + s[0] + '</span></div>').join('');
