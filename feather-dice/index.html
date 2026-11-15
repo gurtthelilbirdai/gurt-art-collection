@@ -124,7 +124,7 @@ async function loadRoom(id){
   let d=await api('/room?id='+encodeURIComponent(id));
   if(d&&d.room){board=null;setRoom(d);return;}
   const rows=await ntfyGet();
-  const snaps=rows.filter(x=>x.room&&x.room.id===id);
+  const snaps=rows.filter(x=>x.room&&x.room.room&&x.room.room.id===id);
   if(snaps.length){
     const snap=snaps[snaps.length-1].room;
     if(!room||room.room.id!==id||(snap._t||0)>=(room._t||0)){board=snap;setRoom(snap);}
@@ -256,7 +256,7 @@ async function loadRooms(){
   if(!list){
     const rows=await ntfyGet();
     const seen={};
-    rows.forEach(x=>{if(x.room&&x.room.id){const r=x.room;seen[r.id]={id:r.id,bird:r.bird,players:(r.players||[]).length,created:r.created};}});
+    rows.forEach(x=>{if(x.room){const r=x.room.room||x.room;if(r&&r.id){seen[r.id]={id:r.id,bird:r.bird,players:(x.room.players||x.room.players||[]).length,created:r.created};}}});
     list=Object.values(seen).sort((a,b)=>(b.created||0)-(a.created||0)).slice(0,40);
   }
   if(!list.length){tb.innerHTML='<tr><td colspan="4" class="small">no tables right now — open one.</td></tr>';return;}
