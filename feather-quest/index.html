@@ -118,8 +118,12 @@ function merge(local, events){
   local.forEach(put);
   events.forEach(function(ev){
     if(ev.type==='quest' && ev.quest) put(ev.quest);
-    else if(ev.type==='progress' && ev.id && map[ev.id]){ var base=map[ev.id];
-      put(Object.assign({},base,{progress:Math.max(base.progress||0,ev.progress||0)})); }
+    else if(ev.type==='progress' && ev.id){
+      var base=map[ev.id];
+      if(!base && ev.title){ put({id:ev.id,title:ev.title,detail:ev.detail||'',goal:ev.goal||1,points:ev.points||10,bird:ev.bird||'gurt',progress:ev.progress||0,claimed:false,takers:0}); return; }
+      if(base) put(Object.assign({},base,{progress:Math.max(base.progress||0,ev.progress||0)}));
+    }
+    else if(ev.type==='claimed' && ev.id && map[ev.id]){ var b2=map[ev.id]; put(Object.assign({},b2,{claimed:true})); }
   });
   return order.map(function(id){return map[id];});
 }
@@ -136,7 +140,9 @@ async function load(){
   render(quests);
   if(d && d.seeds){ renderSeeds(d.seeds, d.totalSeeds); }
 }
+var current=[];
 function render(list){
+  current=list||[];
   var tb=$('board');
   if(!list.length){ tb.innerHTML='<div class="empty">no quests yet. post the first one.</div>'; return; }
   list.sort(function(a,b){ return (a.claimed?1:0)-(b.claimed?1:0) || (b.points-a.points); });
@@ -164,7 +170,15 @@ function render(list){
       if(b.classList.contains('claim')){
         var r=await api('/quest/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,bird:bird})});
         if(r&&r.ok){ $('msg').textContent='claimed '+r.points+' seeds!'; ntfyPost({type:'claimed',id:id,bird:bird,points:r.points}); load(); }
-        else $('msg').textContent=(r&&r.error)||'could not claim that one.';
+        else {
+          // offline claim: mark it claimed locally and tell the flock
+          var l=localLoad(); var q=l.find(function(x){return x.id===id;});
+          if(!q){ q=Object.assign({}, current.find(function(x){return x.id===id;})||{}, {id:id}); l.push(q); }
+          q.claimed=true; q.claimedBy=bird; q.claimedPoints=q.points||10; localSave(l);
+          ntfyPost({type:'claimed',id:id,bird:bird,points:q.claimedPoints,title:q.title});
+          $('msg').textContent='claimed '+q.claimedPoints+' seeds on this bird only.';
+          render(merge(l,[]));
+        }
         return;
       }
       var act=b.getAttribute('data-act');
@@ -172,10 +186,11 @@ function render(list){
       var r=await api('/quest/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,bird:bird,amount:amount})});
       if(r&&r.ok){ $('msg').textContent='step logged.'; ntfyPost({type:'progress',id:id,bird:bird,progress:r.quest.progress,goal:r.quest.goal}); load(); }
       else {
-        // offline fallback: keep it in local storage
+        // offline fallback (public https copy): keep it in local storage and tell the flock
         var l=localLoad(); var q=l.find(function(x){return x.id===id;});
-        if(!q){ q={id:id,title:'(offline quest)',goal:1,points:10,progress:0,claimed:false}; l.push(q); }
+        if(!q){ q=Object.assign({}, current.find(function(x){return x.id===id;})||{}, {id:id,title:'(offline quest)',goal:1,points:10,progress:0,claimed:false,bird:bird,takers:0}); l.push(q); }
         q.progress=Math.min(q.goal||1,(q.progress||0)+1); localSave(l);
+        ntfyPost({type:'progress',id:id,bird:bird,progress:q.progress,goal:q.goal,title:q.title,detail:q.detail,points:q.points});
         $('msg').textContent='step logged on this bird only.'; render(merge(l,[]));
       }
     };
