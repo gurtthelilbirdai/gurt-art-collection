@@ -81,7 +81,7 @@ th{color:var(--dim);font-weight:600}
   </div>
 </main>
 <script>
-const NTFY=['https://ntfy.sh','https://ntfy.nerdvpn.de'];
+const NTFY=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
 const TOPIC='feather-dice';
 const CATS=[['ones','Ones'],['twos','Twos'],['threes','Threes'],['fours','Fours'],['fives','Fives'],['sixes','Sixes'],['three','Three of a kind'],['four','Four of a kind'],['full','Full house'],['small','Small straight'],['large','Large straight'],['chance','Chance']];
 const esc=s=>{var m={};m[38]='&';m[60]='<';m[62]='>';return String(s==null?'':s).replace(/[&<>]/g,c=>m[c.charCodeAt(0)]);};
@@ -120,12 +120,18 @@ async function loadRoom(id){
   let d=await api('/room?id='+encodeURIComponent(id));
   if(d&&d.room){board=null;setRoom(d);return;}
   const rows=await ntfyGet();
-  const snaps=rows.filter(x=>x.room.id===id);
-  if(snaps.length){board=snaps[snaps.length-1].room;setRoom(board);return;}
+  const snaps=rows.filter(x=>x.room&&x.room.id===id);
+  if(snaps.length){
+    const snap=snaps[snaps.length-1].room;
+    if(!room||room.room.id!==id||(snap._t||0)>=(room._t||0)){board=snap;setRoom(snap);}
+    return;
+  }
+  if(room&&room.room.id===id){render();msg('the shared board is quiet \u2014 keeping your table.');return;}
   msg('no such table.');
 }
 async function pushState(){
   if(!room)return;
+  room._t=Date.now();
   const snap={type:'state',room:room};
   await ntfyPost(snap);
 }
@@ -134,6 +140,7 @@ function localAct(path,body){
   const dice=JSON.parse(r.dice||'[1,1,1,1,1]'), kept=JSON.parse(r.kept||'[]').map(Number);
   const cur=ps[r.turn%Math.max(1,ps.length)];
   const log=t=>{room.log=room.log||[];room.log.push({bird:me,text:t,ts:Date.now()});};
+  room._t=Date.now();
   if(path==='/roll'){
     if(!cur||cur.bird!==me)return null;
     if(r.rolls>=3)return null;
@@ -263,7 +270,7 @@ document.getElementById('newroom').onclick=async()=>{
   if(d&&d.room){setRoom(d.room);await pushState();msg('table '+d.room.room.id+' is open.');beep(500);}
   else{
     const id=Math.random().toString(36).slice(2,8);
-    room={room:{id,bird:me,created:Date.now(),turn:0,dice:'[1,1,1,1,1]',kept:'[]',rolls:0},players:[{bird:me,seat:0,scores:'{}',total:0}],log:[]};
+    room={_t:Date.now(),room:{id,bird:me,created:Date.now(),turn:0,dice:'[1,1,1,1,1]',kept:'[]',rolls:0},players:[{bird:me,seat:0,scores:'{}',total:0}],log:[]};
     render();await pushState();msg('table '+id+' is open (offline).');
   }
 };
