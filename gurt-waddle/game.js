@@ -695,19 +695,6 @@
       x.fillStyle = '#241a3a'; x.fillRect(boss.x + 8, boss.y + 10, 4, 4); x.fillRect(boss.x + 15, boss.y + 10, 4, 4);
       x.fillStyle = '#ff8f8f'; x.fillRect(boss.x + 4, boss.y + 26, 18 * (boss.hp / (boss.maxHp || 2)), 3);
     }
-    // ghost bird: the fastest run through this level, replayed beside you
-    if (ghostOn && ghost && ghost.samples && ghost.samples.length) {
-      const gi = Math.min(ghost.samples.length - 1, Math.floor(elapsed * 10));
-      const gs = ghost.samples[gi];
-      if (gs) {
-        x.globalAlpha = 0.42;
-        x.fillStyle = '#c9a6ff'; x.beginPath(); x.arc(gs[0] + 12, gs[1] + 12, 12, 0, 7); x.fill();
-        x.fillStyle = '#efe4ff'; x.beginPath(); x.arc(gs[0] + 12 + (gs[2] || 1) * 4, gs[1] + 10, 4, 0, 7); x.fill();
-        x.fillStyle = '#2a1a44'; x.beginPath(); x.arc(gs[0] + 13 + (gs[2] || 1) * 4, gs[1] + 10, 2, 0, 7); x.fill();
-        x.fillStyle = '#ffb347'; x.beginPath(); x.moveTo(gs[0] + 12 + (gs[2] || 1) * 7, gs[1] + 14); x.lineTo(gs[0] + 12 + (gs[2] || 1) * 15, gs[1] + 16); x.lineTo(gs[0] + 12 + (gs[2] || 1) * 7, gs[1] + 18); x.fill();
-        x.globalAlpha = 1;
-      }
-    }
     // player: round blue bird
     x.fillStyle = '#4aa8ff'; x.beginPath(); x.arc(p.x + 12, p.y + 12, 12, 0, 7); x.fill();
     x.fillStyle = '#7cc6ff'; x.beginPath(); x.arc(p.x + 8, p.y + 8, 6, 0, 7); x.fill();
@@ -715,6 +702,21 @@
     x.fillStyle = '#111'; x.beginPath(); x.arc(p.x + 13 + p.face * 4, p.y + 10, 2, 0, 7); x.fill();
     x.fillStyle = '#ffb347'; x.beginPath(); x.moveTo(p.x + 12 + p.face * 7, p.y + 14); x.lineTo(p.x + 12 + p.face * 15, p.y + 16); x.lineTo(p.x + 12 + p.face * 7, p.y + 18); x.fill();
     x.fillStyle = '#2f7fd1'; x.beginPath(); x.ellipse(p.x + 12, p.y + 21, 8, 5, 0, 0, 7); x.fill();
+    // ghost bird: the fastest run through this level, replayed beside you
+    if (ghostOn && ghost && ghost.samples && ghost.samples.length) {
+      const gi = Math.min(ghost.samples.length - 1, Math.floor(elapsed * 10));
+      const gs = ghost.samples[gi];
+      if (gs) {
+        // the ghost floats a little above the ground so it never hides behind the player
+        const gx = gs[0], gy = gs[1] - 22, gf = gs[2] || 1;
+        x.globalAlpha = 0.55;
+        x.fillStyle = '#c9a6ff'; x.beginPath(); x.arc(gx + 12, gy + 12, 12, 0, 7); x.fill();
+        x.fillStyle = '#efe4ff'; x.beginPath(); x.arc(gx + 12 + gf * 4, gy + 10, 4, 0, 7); x.fill();
+        x.fillStyle = '#2a1a44'; x.beginPath(); x.arc(gx + 13 + gf * 4, gy + 10, 2, 0, 7); x.fill();
+        x.fillStyle = '#ffb347'; x.beginPath(); x.moveTo(gx + 12 + gf * 7, gy + 14); x.lineTo(gx + 12 + gf * 15, gy + 16); x.lineTo(gx + 12 + gf * 7, gy + 18); x.fill();
+        x.globalAlpha = 1;
+      }
+    }
     if (state === 'over') drawOverlay('the waddle ends', 'score ' + score + ' \u00b7 press play to try again');
     if (state === 'win') drawOverlay(level >= 99 ? 'you beat the root moth!' : (level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!')), 'score ' + score + ' \u00b7 the flock will hear about this');
     if (overlay) drawOverlay(overlay.title, overlay.sub);
