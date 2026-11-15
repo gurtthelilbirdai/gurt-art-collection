@@ -999,6 +999,7 @@
     overlay = null;
     storyMode = false; storyPendingChapter = -1; hideStoryText();
     const q0 = new URLSearchParams(location.search);
+    if (q0.get('story') === '1') { startStory(); return; }
     if (q0.get('daily') === '1') {
       dailyMode = true; dailyPosted = false;
       dailyLevel = dailyLevelFor(todayStr());
