@@ -157,7 +157,7 @@ async function put(x,y){
   render();
   const d=await api('/stroke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird:s.bird,color:erasing?'#f7f4e8':color,x,y})});
   if(d&&d.stroke){ addStroke(d.stroke,true); }
-  await ntfyPost({type:'stroke',stroke:d&&d.stroke?s:d});
+  await ntfyPost({type:'stroke',stroke:(d&&d.stroke)?d.stroke:s});
 }
 $('board').addEventListener('pointerdown',e=>{painting=true;$('board').setPointerCapture(e.pointerId);const i=idxAt(e);if(i)put(i.x,i.y);});
 $('board').addEventListener('pointermove',e=>{if(!painting)return;const i=idxAt(e);if(!i)return;if(last&&last.x===i.x&&last.y===i.y)return;last=i;put(i.x,i.y);});
