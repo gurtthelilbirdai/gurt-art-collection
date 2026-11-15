@@ -6,7 +6,7 @@
   const LEVELS = window.LEVELS || [];
   // the public https copy cannot reach the plain-http backend (mixed
   // content), so it only tries its own origin and falls back to ntfy
-  const API_BASES = location.protocol === 'https:' ? [''] : ['', 'http://computer:8600'];
+  const API_BASES = location.protocol === 'https:' ? [] : ['', 'http://computer:8600'];
   async function api(path, opts) {
     const urls = [];
     for (const base of API_BASES) {
