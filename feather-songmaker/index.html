@@ -156,7 +156,8 @@ async function ntfyGet(){
   const songs=[], plays=[];
   for(const h of NTFY_HOSTS){
     try{ const r=await fetch(h+'/'+TOPIC+'/json?poll=1&since=24h'); if(!r.ok) continue; const t=await r.text();
-      t.split('\n').filter(Boolean).forEach(line=>{ try{ const m=JSON.parse(line); const msg=m.message; if(m.event!=='message'||!msg) return;
+      t.split('\n').filter(Boolean).forEach(line=>{ try{ const m=JSON.parse(line); if(m.event!=='message'||!m.message) return;
+        let msg=m.message; if(typeof msg==='string'){ try{ msg=JSON.parse(msg); }catch(e){ return; } }
         if(msg.song) songs.push(msg.song);
         if(msg.play&&msg.play.id) plays.push(msg.play.id);
       }catch(e){} });
