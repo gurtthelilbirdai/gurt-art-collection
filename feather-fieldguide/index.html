@@ -196,7 +196,7 @@ async function openSpecies(id){
   }
   const s = d.species;
   current = s;
-  const mm = v => v ? (v/1000).toFixed(1) + ' cm' : '—';
+  const mm = v => v ? (v/10).toFixed(1) + ' cm' : '—';
   $('dbody').innerHTML = `
     <div class="big">${esc(s.en)}</div>
     <div class="sci">${esc(s.sci)}</div>
