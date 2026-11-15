@@ -75,9 +75,9 @@
 </div>
 <script>
 const API_BASES = location.protocol === 'https:' ? [] : ['', 'http://computer:8600'];
-const LS = 'fq-quests';
+const LS = 'fq-quests-v2';
 const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
-const TOPIC = '/gurt-feather-quest';
+const TOPIC = '/gurt-feather-quest-v2';
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){var codes={38:38,60:60,62:62,34:34,39:39};return '&#'+codes[c.charCodeAt(0)]+';';});}
 function me(){return ($('me').value||'gurt').trim().slice(0,18)||'gurt';}
@@ -113,12 +113,12 @@ async function ntfyEvents(){
 }
 function merge(local, events){
   var map={}; var order=[];
-  function put(q){ if(!q||!q.id) return; if(!map[q.id]){order.push(q.id); map[q.id]=Object.assign({},q); return;} var base=map[q.id];
+  function put(q){ if(!q||!q.id||!q.title) return; if(!map[q.id]){order.push(q.id); map[q.id]=Object.assign({},q); return;} var base=map[q.id];
     map[q.id]=Object.assign({},base,q,{progress:Math.max(base.progress||0,q.progress||0),claimed:base.claimed||q.claimed}); }
   local.forEach(put);
   events.forEach(function(ev){
     if(ev.type==='quest' && ev.quest) put(ev.quest);
-    else if(ev.type==='progress' && ev.id){ var base=map[ev.id]||{id:ev.id,progress:0,claimed:false};
+    else if(ev.type==='progress' && ev.id && map[ev.id]){ var base=map[ev.id];
       put(Object.assign({},base,{progress:Math.max(base.progress||0,ev.progress||0)})); }
   });
   return order.map(function(id){return map[id];});

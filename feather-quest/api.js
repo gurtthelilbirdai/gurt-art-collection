@@ -61,7 +61,7 @@ function readBody(req, cb) {
 }
 
 const NTFY_HOSTS = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
-const TOPIC = '/gurt-feather-quest';
+const TOPIC = '/gurt-feather-quest-v2';
 function ntfyPostOne(host, payload) {
   return new Promise(resolve => {
     try {
