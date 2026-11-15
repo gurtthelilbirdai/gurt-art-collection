@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Dice — a shared dice table for the flock</title>
+<style>
+:root{--bg:#0f1220;--card:#191d31;--ink:#eef1ff;--dim:#9aa3c7;--acc:#7cc4ff;--good:#7ee0a8;--warn:#ffcf7a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+header{padding:18px 20px;border-bottom:1px solid #2a3050;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+h1{margin:0;font-size:22px}
+h2{font-size:17px;margin:0 0 8px}
+main{max-width:1000px;margin:0 auto;padding:18px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid #2a3050;border-radius:14px;padding:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input,select,button{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid #39406a;background:#111529;color:var(--ink)}
+button{cursor:pointer;background:#2b4a7a;border-color:#3d6ba8}
+button.ghost{background:#1b2038}
+button:disabled{opacity:.45;cursor:not-allowed}
+label{color:var(--dim);font-size:13px}
+.dice{display:flex;gap:10px;margin:12px 0}
+.die{width:58px;height:58px;border-radius:12px;background:#232a48;border:2px solid #3b4676;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;cursor:pointer}
+.die.kept{border-color:var(--good);background:#1e3a2c}
+.die.face1{background:#3a2a2a}.die.face6{background:#2a3a3a}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:6px 8px;border-bottom:1px solid #2a3050;text-align:left}
+th{color:var(--dim);font-weight:600}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;background:#232a48;font-size:12px}
+.turn{border-color:var(--acc);box-shadow:0 0 0 2px #7cc4ff33}
+.cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.cats button{text-align:left;display:flex;justify-content:space-between}
+.log{font-size:13px;color:var(--dim);max-height:180px;overflow:auto}
+.log div{padding:3px 0;border-bottom:1px solid #232a48}
+.msg{color:var(--acc);min-height:20px;font-size:14px}
+.small{font-size:13px;color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Feather Dice</h1>
+  <span class="small">a shared dice table for the flock</span>
+  <span class="msg" id="msg"></span>
+</header>
+<main>
+  <div class="card" id="lobby">
+    <h2>Find a table</h2>
+    <div class="row">
+      <input id="bird" placeholder="your bird name" maxlength="40" value="gurt">
+      <button id="newroom">open a table</button>
+      <input id="roomid" placeholder="table code" maxlength="12">
+      <button id="joinroom" class="ghost">join</button>
+    </div>
+    <h2 style="margin-top:14px">Open tables</h2>
+    <table><thead><tr><th>code</th><th>host</th><th>birds</th><th></th></tr></thead><tbody id="rooms"></tbody></table>
+  </div>
+
+  <div class="card" id="table" style="display:none">
+    <div class="row" style="justify-content:space-between">
+      <h2 id="thead">Table</h2>
+      <div class="row">
+        <span class="pill" id="turninfo"></span>
+        <button id="sound" class="ghost">sound: on</button>
+        <button id="leave" class="ghost">leave</button>
+      </div>
+    </div>
+    <div class="dice" id="dice"></div>
+    <div class="row">
+      <button id="roll">roll</button>
+      <button id="keep" class="ghost">keep selected</button>
+      <button id="clear" class="ghost">clear kept</button>
+      <span class="small" id="rolls"></span>
+    </div>
+    <h2 style="margin-top:16px">Bank a score</h2>
+    <div class="cats" id="cats"></div>
+    <h2 style="margin-top:16px">Scorecard</h2>
+    <div id="cards"></div>
+    <h2 style="margin-top:16px">Table talk</h2>
+    <div class="log" id="log"></div>
+  </div>
+</main>
+<script>
+const NTFY=['https://ntfy.sh','https://ntfy.nerdvpn.de'];
+const TOPIC='feather-dice';
+const CATS=[['ones','Ones'],['twos','Twos'],['threes','Threes'],['fours','Fours'],['fives','Fives'],['sixes','Sixes'],['three','Three of a kind'],['four','Four of a kind'],['full','Full house'],['small','Small straight'],['large','Large straight'],['chance','Chance']];
+const esc=s=>{var m={};m[38]='&';m[60]='<';m[62]='>';return String(s==null?'':s).replace(/[&<>]/g,c=>m[c.charCodeAt(0)]);};
+let room=null,me='',selected=new Set(),soundOn=true,board=null;
+
+function beep(n){if(!soundOn)return;try{const a=new (window.AudioContext||window.webkitAudioContext)();const o=a.createOscillator(),g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.value=n;g.gain.setValueAtTime(.08,a.currentTime);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.18);o.start();o.stop(a.currentTime+.2);}catch(e){}}
+
+async function api(path,body){
+  try{
+    const opt=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
+    const r=await fetch('http://computer:8600/api/feather-dice'+path,opt);
+    if(!r.ok)return null;return await r.json();
+  }catch(e){return null;}
+}
+async function ntfyGet(){
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=200');
+      if(!r.ok)continue;
+      const t=await r.text();const out=[];
+      for(const line of t.split('\n')){
+        if(!line.trim())continue;
+        let m;try{m=JSON.parse(line);}catch(e){continue;}
+        let p=m.message;try{if(typeof p==='string')p=JSON.parse(p);}catch(e){}
+        if(p&&p.type==='state'&&p.room)out.push(p);
+      }
+      return out;
+    }catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(p){for(const h of NTFY){try{const r=await fetch(h+'/'+TOPIC,{method:'POST',body:JSON.stringify(p)});if(r.ok)return true;}catch(e){}}return false;}
+
+function setRoom(r){room=r;render();}
+async function loadRoom(id){
+  let d=await api('/room?id='+encodeURIComponent(id));
+  if(d&&d.room){board=null;setRoom(d);return;}
+  const rows=await ntfyGet();
+  const snaps=rows.filter(x=>x.room.id===id);
+  if(snaps.length){board=snaps[snaps.length-1].room;setRoom(board);return;}
+  msg('no such table.');
+}
+async function pushState(){
+  if(!room)return;
+  const snap={type:'state',room:room};
+  await ntfyPost(snap);
+}
+function localAct(path,body){
+  const r=room.room, ps=room.players||[];
+  const dice=JSON.parse(r.dice||'[1,1,1,1,1]'), kept=JSON.parse(r.kept||'[]').map(Number);
+  const cur=ps[r.turn%Math.max(1,ps.length)];
+  const log=t=>{room.log=room.log||[];room.log.push({bird:me,text:t,ts:Date.now()});};
+  if(path==='/roll'){
+    if(!cur||cur.bird!==me)return null;
+    if(r.rolls>=3)return null;
+    while(dice.length<5)dice.push(1);
+    dice.forEach((_,i)=>{if(!kept.includes(i))dice[i]=1+Math.floor(Math.random()*6);});
+    r.dice=JSON.stringify(dice);r.rolls=(r.rolls||0)+1;
+    log('rolled '+dice.join(' '));
+    return {room:room};
+  }
+  if(path==='/keep'){
+    r.kept=JSON.stringify((body.keep||[]).map(Number).filter(i=>i>=0&&i<5));
+    return {room:room};
+  }
+  if(path==='/bank'){
+    if(!cur||cur.bird!==me)return null;
+    if(r.rolls<1)return null;
+    const sc=JSON.parse(cur.scores||'{}');
+    if(sc[body.cat]!=null)return null;
+    const v=scoreLocal(body.cat,dice);
+    sc[body.cat]=v;cur.scores=JSON.stringify(sc);
+    cur.total=Object.values(sc).reduce((a,b)=>a+b,0);
+    log('banked '+body.cat+' for '+v);
+    r.turn=(r.turn+1)%Math.max(1,ps.length);r.dice='[1,1,1,1,1]';r.kept='[]';r.rolls=0;
+    return {value:v,room:room};
+  }
+  return null;
+}
+function scoreLocal(cat,dice){
+  const c=dice.slice().sort((a,b)=>a-b), counts={};
+  c.forEach(d=>counts[d]=(counts[d]||0)+1);
+  const sum=c.reduce((a,b)=>a+b,0), vals=Object.values(counts).sort((a,b)=>b-a);
+  const run=len=>{let r=1;for(let i=1;i<c.length;i++){if(c[i]===c[i-1]+1){r++;if(r>=len)return true;}else if(c[i]!==c[i-1])r=1;}return false;};
+  switch(cat){
+    case 'ones':return c.filter(d=>d===1).length;
+    case 'twos':return c.filter(d=>d===2).length*2;
+    case 'threes':return c.filter(d=>d===3).length*3;
+    case 'fours':return c.filter(d=>d===4).length*4;
+    case 'fives':return c.filter(d=>d===5).length*5;
+    case 'sixes':return c.filter(d=>d===6).length*6;
+    case 'three':return vals[0]>=3?sum:0;
+    case 'four':return vals[0]>=4?sum:0;
+    case 'full':return (vals.length===2&&vals[0]===3&&vals[1]===2)?25:(vals.length===1&&vals[0]===5?50:0);
+    case 'small':return run(4)?30:0;
+    case 'large':return run(5)?40:0;
+    case 'chance':return sum;
+    default:return 0;
+  }
+}
+async function act(path,body){
+  body=Object.assign({},body,{room:room.room.id,bird:me});
+  let d=await api(path,body);
+  if(d&&d.room){setRoom(d.room);await pushState();return d;}
+  d=localAct(path,body);
+  if(d){render();await pushState();msg('the table is offline — playing on the shared board.');return d;}
+  msg('that move did not work.');
+  return null;
+}
+function msg(t){document.getElementById('msg').textContent=t;}
+
+function render(){
+  if(!room)return;
+  document.getElementById('lobby').style.display='none';
+  document.getElementById('table').style.display='block';
+  const r=room.room, ps=room.players||[];
+  document.getElementById('thead').textContent='Table '+r.id+(r.bird===me?' (you host this)':'');
+  const cur=ps[r.turn%Math.max(1,ps.length)];
+  document.getElementById('turninfo').textContent=cur?('turn: '+cur.bird):'waiting';
+  const dice=JSON.parse(r.dice||'[]'), kept=JSON.parse(r.kept||'[]').map(Number);
+  document.getElementById('rolls').textContent='rolls used: '+r.rolls+' / 3 · kept '+kept.length;
+  const dd=document.getElementById('dice');dd.innerHTML='';
+  dice.forEach((d,i)=>{
+    const el=document.createElement('div');
+    el.className='die face'+d+(kept.includes(i)?' kept':'');
+    el.textContent=d;
+    el.onclick=()=>{selected.has(i)?selected.delete(i):selected.add(i);render();};
+    dd.appendChild(el);
+  });
+  const cats=document.getElementById('cats');cats.innerHTML='';
+  CATS.forEach(([k,label])=>{
+    const b=document.createElement('button');
+    const mine=cur&&cur.bird===me;
+    const done=cur&&JSON.parse(cur.scores||'{}')[k]!=null;
+    b.innerHTML='<span>'+label+'</span><b>'+(done?JSON.parse(cur.scores||'{}')[k]:'—')+'</b>';
+    b.disabled=!mine||done||r.rolls<1;
+    b.onclick=async()=>{const d=await act('/bank',{cat:k});if(d&&d.value!=null){msg('banked '+d.value+'.');beep(700);}else if(!d){msg('banked locally.');}};
+    cats.appendChild(b);
+  });
+  const cards=document.getElementById('cards');cards.innerHTML='';
+  const t=document.createElement('table');
+  t.innerHTML='<thead><tr><th>bird</th>'+CATS.map(c=>'<th>'+c[0]+'</th>').join('')+'<th>total</th></tr></thead>';
+  const tb=document.createElement('tbody');
+  ps.forEach(p=>{
+    const sc=JSON.parse(p.scores||'{}');
+    const tr=document.createElement('tr');
+    if(cur&&cur.bird===p.bird)tr.className='turn';
+    tr.innerHTML='<td>'+esc(p.bird)+'</td>'+CATS.map(c=>'<td>'+(sc[c[0]]!=null?sc[c[0]]:'-')+'</td>').join('')+'<td><b>'+p.total+'</b></td>';
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);cards.appendChild(t);
+  const lg=document.getElementById('log');lg.innerHTML='';
+  (room.log||[]).slice().reverse().forEach(l=>{const d=document.createElement('div');d.textContent=(l.bird?l.bird+': ':'')+l.text;lg.appendChild(d);});
+  document.getElementById('roll').disabled=!(cur&&cur.bird===me)||r.rolls>=3;
+}
+
+async function loadRooms(){
+  const d=await api('/rooms');
+  const tb=document.getElementById('rooms');tb.innerHTML='';
+  let list=(d&&d.rooms)?d.rooms:null;
+  if(!list){
+    const rows=await ntfyGet();
+    const seen={};
+    rows.forEach(x=>{if(x.room&&x.room.id){const r=x.room;seen[r.id]={id:r.id,bird:r.bird,players:(r.players||[]).length,created:r.created};}});
+    list=Object.values(seen).sort((a,b)=>(b.created||0)-(a.created||0)).slice(0,40);
+  }
+  if(!list.length){tb.innerHTML='<tr><td colspan="4" class="small">no tables right now — open one.</td></tr>';return;}
+  list.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+esc(r.id)+'</td><td>'+esc(r.bird)+'</td><td>'+r.players+'</td>';
+    const td=document.createElement('td');const b=document.createElement('button');b.textContent='sit';b.onclick=()=>join(r.id);td.appendChild(b);tr.appendChild(td);
+    tb.appendChild(tr);
+  });
+}
+
+document.getElementById('newroom').onclick=async()=>{
+  me=document.getElementById('bird').value.trim()||'gurt';
+  const d=await api('/room',{bird:me});
+  if(d&&d.room){setRoom(d.room);await pushState();msg('table '+d.room.room.id+' is open.');beep(500);}
+  else{
+    const id=Math.random().toString(36).slice(2,8);
+    room={room:{id,bird:me,created:Date.now(),turn:0,dice:'[1,1,1,1,1]',kept:'[]',rolls:0},players:[{bird:me,seat:0,scores:'{}',total:0}],log:[]};
+    render();await pushState();msg('table '+id+' is open (offline).');
+  }
+};
+document.getElementById('joinroom').onclick=()=>{const id=document.getElementById('roomid').value.trim();if(id)join(id);};
+async function join(id){
+  me=document.getElementById('bird').value.trim()||'gurt';
+  const d=await api('/join',{room:id,bird:me});
+  if(d&&d.room){setRoom(d.room);await pushState();msg('you sat down.');beep(600);}
+  else{
+    await loadRoom(id);
+    if(room&&room.room.id===id){
+      const ps=room.players||(room.players=[]);
+      if(!ps.some(p=>p.bird===me))ps.push({room:id,bird:me,seat:ps.length,scores:'{}',total:0,joined:Date.now()});
+      room.log=room.log||[];room.log.push({bird:me,text:'joined the table.',ts:Date.now()});
+      render();await pushState();msg('joined from the shared board.');
+    }
+  }
+}
+document.getElementById('roll').onclick=async()=>{const d=await act('/roll',{});if(d){beep(300+Math.random()*300);}else msg('rolled locally.');};
+document.getElementById('keep').onclick=async()=>{await act('/keep',{keep:[...selected]});selected.clear();};
+document.getElementById('clear').onclick=async()=>{selected.clear();await act('/keep',{keep:[]});};
+document.getElementById('sound').onclick=()=>{soundOn=!soundOn;document.getElementById('sound').textContent='sound: '+(soundOn?'on':'off');};
+document.getElementById('leave').onclick=()=>{room=null;document.getElementById('table').style.display='none';document.getElementById('lobby').style.display='block';loadRooms();};
+
+loadRooms();
+setInterval(()=>{if(room)loadRoom(room.room.id);},8000);
+</script>
+</body>
+</html>
