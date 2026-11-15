@@ -25,6 +25,7 @@
   let safeFor = 0;
   let dailyMode = false, dailyLevel = 1, dailyLimit = 90, dailyPosted = false;
   let customMode = false, customRows = null, customTitle = '', levelRows = null;
+  let storyMode = false, storyChapter = 0, storyLevel = 1;
 
   function beep(freq, dur, type) {
     if (muted) return;
@@ -401,6 +402,83 @@
     const posEl = $('pos'); if (posEl) posEl.textContent = 'x' + Math.floor(p.x / T) + ' y' + Math.floor(p.y / T) + ' B:' + bosses.map(b=>Math.floor(b.x/T)+','+Math.floor(b.y/T)+','+b.hp+(b.dead?'D':'')).join('|') + ' E:' + enemies.filter(e=>!e.dead).map(e=>Math.floor(e.x/T)+','+Math.floor(e.y/T)+','+e.kind).join('|');
   }
 
+
+  // ---- story mode -------------------------------------------------------
+  const STORY = window.STORY || [];
+  function storyChapterFor(n) {
+    for (let i = 0; i < STORY.length; i++) {
+      const c = STORY[i];
+      if (n >= c.levels[0].n && n <= c.levels[c.levels.length - 1].n) return i;
+    }
+    return 0;
+  }
+  function storyEntry(n) {
+    const ci = storyChapterFor(n);
+    const c = STORY[ci];
+    if (!c) return null;
+    return c.levels.find(l => l.n === n) || null;
+  }
+  function showStoryText(n) {
+    const box = $('story'), line = $('storyline'), goal = $('storygoal');
+    if (!box) return;
+    const e = storyEntry(n);
+    if (!e) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    line.textContent = e.line;
+    goal.textContent = 'goal: ' + e.goal;
+  }
+  function hideStoryText() { const b = $('story'); if (b) b.style.display = 'none'; }
+  function startStory() {
+    storyMode = true; customMode = false; customRows = null; levelRows = null;
+    dailyMode = false;
+    storyChapter = 0; storyLevel = 1;
+    lives = 5; coins = 0; keys = 0; score = 0; elapsed = 0;
+    $('lives').textContent = lives; $('coins').textContent = 0; $('keys').textContent = 0; $('score').textContent = 0; $('time').textContent = 0;
+    const c = STORY[0];
+    loadLevel(0); // load a grid so the overlay has something to draw over
+    overlay = { title: c.title, sub: c.intro + '  ·  press play to begin' };
+    state = 'story';
+    $('msg').textContent = 'story mode — chapter 1 of ' + STORY.length;
+    hideStoryText();
+  }
+  function storyBeginChapter(ci) {
+    const c = STORY[ci];
+    if (!c) return;
+    storyChapter = ci;
+    storyLevel = c.levels[0].n;
+    loadLevel(storyLevel - 1);
+    overlay = { title: c.title, sub: c.intro + '  ·  press play to begin' };
+    state = 'story';
+    $('msg').textContent = 'story mode — chapter ' + (ci + 1) + ' of ' + STORY.length;
+    hideStoryText();
+  }
+  function storyNextLevel() {
+    const c = STORY[storyChapter];
+    storyLevel++;
+    const last = c.levels[c.levels.length - 1].n;
+    if (storyLevel > last) {
+      if (storyChapter + 1 < STORY.length) {
+        const nc = STORY[storyChapter + 1];
+        overlay = { title: 'chapter complete', sub: c.outro + '  ·  press play for ' + nc.title };
+        state = 'story';
+        storyPendingChapter = storyChapter + 1;
+        hideStoryText();
+        return;
+      }
+      storyMode = false;
+      state = 'win'; score += lives * 100 + 500; saveRun();
+      $('score').textContent = score;
+      overlay = { title: 'the waddle ends, and begins', sub: c.outro + '  ·  score ' + score };
+      hideStoryText();
+      return;
+    }
+    overlay = null;
+    loadLevel(storyLevel - 1);
+    showStoryText(storyLevel);
+    beep(1200, .15, 'triangle');
+  }
+  let storyPendingChapter = -1;
+
   function winCustom() {
     state = 'win'; score += lives * 100 + 500; saveRun();
     $('score').textContent = score;
@@ -409,6 +487,7 @@
 
   function win() {
     if (dailyMode) { score += lives * 100 + 500; dailyEnd(); return; }
+    if (storyMode) { score += lives * 100 + 500; $('score').textContent = score; storyNextLevel(); return; }
     state = 'win'; score += lives * 100 + 500; saveRun();
     // the next level is now unlocked for this bird
     if (level + 2 > unlockedCount()) unlockTo(level + 2);
@@ -899,7 +978,17 @@
     });
   }
 
-  $('play').onclick = () => { reset(); };
+  $('play').onclick = () => {
+    if (storyMode && state === 'story') {
+      if (storyPendingChapter >= 0) { const ci = storyPendingChapter; storyPendingChapter = -1; storyBeginChapter(ci); }
+      else { overlay = null; state = 'play'; loadLevel(storyLevel - 1); showStoryText(storyLevel); }
+      return;
+    }
+    if (storyMode) { storyMode = false; hideStoryText(); reset(); return; }
+    reset();
+  };
+  if ($('storybtn')) $('storybtn').onclick = () => startStory();
+  window.__gurtStory = { start: startStory, win: () => { if (storyMode) win(); }, jump: n => { if (storyMode) { storyChapter = storyChapterFor(n); storyLevel = n; loadLevel(n-1); showStoryText(n); } } };
   if ($('daily')) $('daily').onclick = () => startDaily();
   $('go').onclick = () => { const v = parseInt($('levels').value, 10); if (!isNaN(v)) goToLevel(v); };
   $('next').onclick = () => { goToLevel((level || 0) + 1); };
@@ -908,6 +997,7 @@
 
   function reset() {
     overlay = null;
+    storyMode = false; storyPendingChapter = -1; hideStoryText();
     const q0 = new URLSearchParams(location.search);
     if (q0.get('daily') === '1') {
       dailyMode = true; dailyPosted = false;

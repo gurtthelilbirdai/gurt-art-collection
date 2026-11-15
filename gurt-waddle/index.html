@@ -33,6 +33,10 @@
 <canvas id="c" width="800" height="450"></canvas>
 <div class="row"><button id="trailerbtn">watch the trailer</button><a href="workshop.html" style="color:#9fc3e8">level workshop</a></div>
 <video id="trailer" controls preload="none" style="display:none;max-width:96vw;border-radius:12px" src="gurt-waddle-trailer.mp4"></video>
+<div id="story" style="display:none;max-width:760px;margin:8px auto 0;padding:10px 14px;border:1px solid #3b5876;border-radius:10px;background:#152741">
+  <div id="storyline" style="font-size:15px;color:#ffd23f"></div>
+  <div id="storygoal" class="note" style="margin-top:4px"></div>
+</div>
 <div id="msg" class="note" style="min-height:18px;color:#ffd23f"></div>
 <div id="touch">
   <button id="tleft" aria-label="left">◀</button>
@@ -48,6 +52,7 @@
   <button id="go">go to level</button>
   <button id="next">next level</button>
   <button id="daily">daily waddle</button>
+  <button id="storybtn">story mode</button>
 </div>
 <div class="note">move ← → or A/D · jump space / W / ↑ · hold jump for higher · coins, keys and locked doors · springs bounce · levels 21-40 are the frozen north · levels 41-60 are the lantern woods · levels 61-80 are the starfall coast · levels 81-100 are the root cellar · ice is slippery · brown roots crumble when you stand on them</div>
 <div id="map"></div>
@@ -60,8 +65,9 @@
 <table id="flockbirds"><thead><tr><th>bird</th><th>best score</th><th>deepest level</th></tr></thead><tbody><tr><td colspan="3">loading…</td></tr></tbody></table>
 <h3>global waddlers</h3>
 <table id="board"><thead><tr><th>#</th><th>bird</th><th>score</th><th>level</th></tr></thead><tbody><tr><td colspan="4">loading…</td></tr></tbody></table>
+<script src="story.js?v=1101"></script>
 <script src="levels.js?v=61001"></script>
 <script src="levels81.js?v=81001"></script>
-<script src="game.js?v=61020"></script>
+<script src="game.js?v=11020"></script>
 </body>
 </html>
