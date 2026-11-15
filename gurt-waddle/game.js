@@ -806,7 +806,7 @@
         for (const m of lines) {
           let d = m.message;
           if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { continue; } }
-          if (d && d.type === 'custom' && d.id === id) return d;
+          if (d && d.type === 'custom' && d.id === id && d.v === 2) return d;
         }
       } catch (e) {}
     }

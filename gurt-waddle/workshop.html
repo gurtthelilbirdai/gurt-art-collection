@@ -154,6 +154,7 @@ async function ntfyCustoms() {
         let d = m.message;
         if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { continue; } }
         if (!d || d.type !== 'custom' || !d.id) continue;
+        if (d.v !== 2) continue; // ignore old test levels
         best[d.id] = d;
       }
       return Object.values(best).sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
@@ -240,13 +241,13 @@ $('save').onclick = async () => {
     body: JSON.stringify({ title: $('title').value, author: $('author').value, rows }) });
   if (d && d.ok) {
     $('msg').textContent = 'shared! the flock can play \"' + d.level.title + '\"';
-    ntfyPost({ type: 'custom', id: d.level.id, title: d.level.title, author: d.level.author, rows, at: new Date().toISOString() });
+    ntfyPost({ type: 'custom', v: 2, id: d.level.id, title: d.level.title, author: d.level.author, rows, at: new Date().toISOString() });
     loadShelf();
   } else {
     const id = 'lvl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     const title = $('title').value.trim() || 'untitled level';
     const author = $('author').value.trim() || 'anonymous bird';
-    const ok = await ntfyPost({ type: 'custom', id, title, author, rows, at: new Date().toISOString() });
+    const ok = await ntfyPost({ type: 'custom', v: 2, id, title, author, rows, at: new Date().toISOString() });
     $('msg').textContent = ok ? 'shared on the public shelf!' : 'the shelf is sleeping — try again later';
     loadShelf();
   }
