@@ -242,8 +242,25 @@ async function loadShelf() {
   if (pub.length) {
     const seen = {};
     for (const L of rows) seen[L.id] = true;
-    for (const L of pub) if (!seen[L.id]) rows.push({ id: L.id, title: L.title, author: L.author, plays: L.plays || 0, likes: 0 });
+    for (const L of pub) if (!seen[L.id]) rows.push({ id: L.id, title: L.title, author: L.author, plays: L.plays || 0, likes: 0, at: L.at });
   }
+  // one shelf card per title+author: the same level can arrive from the
+  // database and from the public board under different ids, and birds
+  // should not see the same level three times.
+  const merged = {};
+  for (const L of rows) {
+    const key = String(L.title || '').trim().toLowerCase() + '|' + String(L.author || '').trim().toLowerCase();
+    const prev = merged[key];
+    if (!prev) { merged[key] = L; continue; }
+    const prevAt = String(prev.at || prev.created || '');
+    const curAt = String(L.at || L.created || '');
+    const keep = curAt > prevAt ? L : prev;
+    const other = curAt > prevAt ? prev : L;
+    keep.plays = Math.max(keep.plays || 0, other.plays || 0);
+    keep.likes = Math.max(keep.likes || 0, other.likes || 0);
+    merged[key] = keep;
+  }
+  rows = Object.values(merged).sort((a, b) => String(b.at || b.created || '').localeCompare(String(a.at || a.created || '')));
   if (!rows.length) { tb.innerHTML = '<tr><td colspan="5">no levels yet — be the first bird</td></tr>'; return; }
   tb.innerHTML = '';
   for (const L of rows) {
