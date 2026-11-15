@@ -120,10 +120,10 @@ async function ntfyPost(p){for(const h of NTFY){try{await fetch(h+'/'+TOPIC,{met
 
 function pick(n){const a=[...BANK];for(let k=a.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[a[k],a[j]]=[a[j],a[k]];}return a.slice(0,n);}
 
-function buildQ(bank){
-  const ans=bank[0];
-  const wrongs=[];
-  for(const b of bank){if(wrongs.length>=3)break;if(b.en!==ans.en)wrongs.push(b);}
+function buildQ(ans){
+  const pool=BANK.filter(b=>b.en!==ans.en);
+  for(let k=pool.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[pool[k],pool[j]]=[pool[j],pool[k]];}
+  const wrongs=pool.slice(0,3);
   const opts=[ans,...wrongs].sort(()=>Math.random()-0.5);
   const facts=[];
   facts.push('family <b>'+esc(ans.family)+'</b>');
