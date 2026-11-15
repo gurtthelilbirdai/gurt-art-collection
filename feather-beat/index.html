@@ -225,6 +225,15 @@
   function sortScores(list){
     return list.slice().sort(function(a,b){ return (b.score||0)-(a.score||0) || (b.accuracy||0)-(a.accuracy||0); }).slice(0,20);
   }
+  function bestPerBird(list){
+    var best = {};
+    (list||[]).forEach(function(s){
+      if(!s || !s.bird) return;
+      var k = String(s.bird);
+      if(!best[k] || (s.score||0) > (best[k].score||0)) best[k] = s;
+    });
+    return sortScores(Object.keys(best).map(function(k){ return best[k]; }));
+  }
   function mergeScores(a, b){
     var seen = {}, out = [];
     (a||[]).concat(b||[]).forEach(function(s){
@@ -235,7 +244,7 @@
       out.push({bird:String(s.bird).slice(0,24), score:Number(s.score)||0,
         accuracy:Number(s.accuracy)||0, max_combo:Number(s.max_combo)||0, created:s.created||''});
     });
-    return sortScores(out);
+    return bestPerBird(out);
   }
 
   function renderBoard(scores){
@@ -265,12 +274,16 @@
     api('/best/' + encodeURIComponent(bird)).then(function(d){
       if(d && d.best){ $('best').textContent = 'best: ' + d.best; }
     });
-    setTimeout(function(){
+    setTimeout(refreshBest, 2500);
+  }
+  function refreshBest(){
+    var bird = ($('bird').value || 'gurt').trim() || 'gurt';
+    api('/best/' + encodeURIComponent(bird)).then(function(d){
+      if(d && d.best){ $('best').textContent = 'best: ' + d.best; return; }
       var all = mergeScores(sharedScores, localScores()).filter(function(s){ return s.bird===bird; });
       var best = all.reduce(function(m,s){ return Math.max(m, s.score||0); }, 0);
-      var el = $('best');
-      if(!el.textContent || el.textContent === 'best: 0') el.textContent = 'best: ' + best;
-    }, 2500);
+      $('best').textContent = 'best: ' + best;
+    });
   }
 
   function start(){
@@ -349,6 +362,8 @@
   $('bird').addEventListener('change', loadBoard);
 
   loadChart().then(()=>{ loadBoard(); }).catch(()=>{ loadBoard(); });
+  $('bird').addEventListener('change', refreshBest);
+  $('bird').addEventListener('blur', refreshBest);
 })();
 </script>
 </body>
