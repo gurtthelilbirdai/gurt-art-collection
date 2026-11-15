@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Songmaker — a beat sequencer for small birds</title>
+<style>
+:root{--bg:#0f1220;--card:#1b2036;--line:#333c60;--ink:#eef2ff;--dim:#9aa6cc;--blue:#5fb0ff;--pink:#ff7ab6;--green:#7ee0a8;--yellow:#ffd166}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding:20px}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-size:26px;margin:0 0 4px}
+p.sub{color:var(--dim);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+label{color:var(--dim);font-size:13px}
+input,select,button{font:inherit;background:#121729;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+button{cursor:pointer}
+button.primary{background:var(--blue);color:#08101f;border-color:var(--blue);font-weight:600}
+button:hover{border-color:var(--blue)}
+table{border-collapse:collapse;width:100%}
+td,th{padding:4px 3px;text-align:center}
+th.lane{text-align:left;width:90px;color:var(--dim);font-weight:600;font-size:13px}
+.step{width:100%;aspect-ratio:1;border-radius:7px;border:1px solid var(--line);background:#141a2e;cursor:pointer;padding:0}
+.step.on{background:var(--blue);border-color:#9fd0ff}
+.step.cur{outline:2px solid var(--yellow);outline-offset:1px}
+.step.on.lead.on{background:var(--pink)}
+.step.on.bass.on{background:var(--green)}
+.step.on.snare.on{background:#ff9f6b}
+.step.on.hat.on{background:#b39cff}
+.rowbtns{display:flex;gap:8px;align-items:center}
+.tiny{font-size:12px;color:var(--dim)}
+.songs{display:grid;gap:10px}
+.song{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.song b{color:var(--blue)}
+.mini{display:grid;grid-template-columns:repeat(16,10px);gap:2px}
+.mini i{width:10px;height:10px;border-radius:2px;background:#141a2e;display:block}
+.mini i.on{background:var(--blue)}
+.msg{color:var(--green);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Feather Songmaker</h1>
+<p class="sub">Build a sixteen-step beat, hear it instantly, then put it on the shared shelf for the flock to play.</p>
+
+<div class="card">
+  <div class="row">
+    <input id="bird" value="gurt" size="10" aria-label="your bird name">
+    <input id="title" value="my little song" size="18" aria-label="song title">
+    <label>bpm</label><input id="bpm" type="number" value="110" min="50" max="220" style="width:80px">
+    <button class="primary" id="play">play</button>
+    <button id="stop">stop</button>
+    <span class="tiny" id="stepLabel">step 1</span>
+  </div>
+  <table id="grid"></table>
+  <div class="row" style="margin-top:12px">
+    <button id="clear">clear</button>
+    <button id="random">surprise me</button>
+    <button class="primary" id="publish">publish to shelf</button>
+    <span class="msg" id="msg"></span>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="font-size:18px;margin:0 0 10px">The song shelf</h2>
+  <div class="songs" id="songs"><span class="tiny">loading…</span></div>
+</div>
+</div>
+
+<script>
+const LANES=[['kick','kick'],['snare','snare'],['hat','hat'],['bass','bass'],['lead','lead']];
+const NOTES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+let pattern={kick:new Array(16).fill(0),snare:new Array(16).fill(0),hat:new Array(16).fill(0),bass:new Array(16).fill(0),lead:new Array(16).fill(0)};
+let step=0, playing=false, timer=null, cur=-1;
+
+const grid=document.getElementById('grid');
+LANES.forEach(([key,label])=>{
+  const tr=document.createElement('tr');
+  const th=document.createElement('th'); th.className='lane'; th.textContent=label; tr.appendChild(th);
+  for(let i=0;i<16;i++){
+    const td=document.createElement('td');
+    const b=document.createElement('button');
+    b.className='step '+key; b.dataset.lane=key; b.dataset.i=i;
+    b.onclick=()=>{ const v=pattern[key][i]; if(v===0){ pattern[key][i]= key==='lead'||key==='bass' ? NOTES[Math.floor(Math.random()*12)]+'2' : 1; } else pattern[key][i]=0; draw(); };
+    td.appendChild(b); tr.appendChild(td);
+  }
+  grid.appendChild(tr);
+});
+function draw(){
+  grid.querySelectorAll('.step').forEach(b=>{
+    const v=pattern[b.dataset.lane][+b.dataset.i];
+    b.classList.toggle('on', v!==0);
+    b.classList.toggle('cur', playing && +b.dataset.i===cur);
+  });
+}
+function clearCur(){ cur=-1; draw(); }
+
+let actx=null;
+function audio(){ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)(); if(actx.state==='suspended') actx.resume(); return actx; }
+function blip(freq,dur,type,vol,when){
+  const c=audio(); const o=c.createOscillator(); const g=c.createGain();
+  o.type=type; o.frequency.value=freq; g.gain.value=vol;
+  o.connect(g); g.connect(c.destination); o.start(when); o.stop(when+dur);
+}
+function kickAt(t){ const c=audio(); const o=c.createOscillator(); const g=c.createGain(); o.type='sine'; o.frequency.setValueAtTime(140,t); o.frequency.exponentialRampToValueAtTime(45,t+0.12); g.gain.setValueAtTime(0.9,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.22); o.connect(g); g.connect(c.destination); o.start(t); o.stop(t+0.24); }
+function noise(t,dur,vol){ const c=audio(); const n=Math.floor(c.sampleRate*dur); const buf=c.createBuffer(1,n,c.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n); const src=c.createBufferSource(); src.buffer=buf; const f=c.createBiquadFilter(); f.type='highpass'; f.frequency.value=1200; const g=c.createGain(); g.gain.value=vol; src.connect(f); f.connect(g); g.connect(c.destination); src.start(t); }
+function noteFreq(n){ const m=/^([A-G]#?)(\d)$/.exec(n); if(!m) return 220; const semi=NOTES.indexOf(m[1]); const oct=+m[2]; return 440*Math.pow(2,(semi-9+ (oct-4)*12)/12); }
+function fire(i,when){
+  if(pattern.kick[i]) kickAt(when);
+  if(pattern.snare[i]) noise(when,0.14,0.35);
+  if(pattern.hat[i]) noise(when,0.05,0.12);
+  if(pattern.bass[i]) blip(noteFreq(pattern.bass[i]),0.22,'triangle',0.35,when);
+  if(pattern.lead[i]) blip(noteFreq(pattern.lead[i]),0.16,'square',0.14,when);
+}
+function start(){
+  audio(); playing=true; step=0; const bpm=Math.max(50,Math.min(220,+document.getElementById('bpm').value||110));
+  const spb=60/bpm/4;
+  timer=setInterval(()=>{
+    const c=audio(); fire(step,c.currentTime+0.02);
+    cur=step; draw(); document.getElementById('stepLabel').textContent='step '+(step+1);
+    step=(step+1)%16;
+  },spb*1000);
+  document.getElementById('play').textContent='playing';
+}
+function stop(){ playing=false; if(timer) clearInterval(timer); timer=null; cur=-1; draw(); document.getElementById('play').textContent='play'; document.getElementById('stepLabel').textContent='step 1'; }
+document.getElementById('play').onclick=()=>playing?stop():start();
+document.getElementById('stop').onclick=stop;
+document.getElementById('clear').onclick=()=>{ LANES.forEach(([k])=>pattern[k]=new Array(16).fill(0)); draw(); };
+document.getElementById('random').onclick=()=>{
+  pattern.kick=Array.from({length:16},(_,i)=>i%4===0?1:0);
+  pattern.snare=Array.from({length:16},(_,i)=>i%8===4?1:0);
+  pattern.hat=Array.from({length:16},(_,i)=>i%2===1?1:0);
+  pattern.bass=Array.from({length:16},(_,i)=>i%4===0?NOTES[[0,7,9,5][i%4]]+'2':0);
+  pattern.lead=Array.from({length:16},(_,i)=>(i%2===0&&Math.random()<0.6)?NOTES[Math.floor(Math.random()*12)]+'3':0);
+  draw();
+};
+
+const API_BASES = location.protocol==='https:' ? [] : ['http://localhost:8600',''];
+async function api(path, opts){
+  for(const base of API_BASES){
+    try{ const r=await fetch(base+'/api/feathersongmaker'+path, opts); if(r.ok) return await r.json(); }catch(e){}
+  }
+  return null;
+}
+document.getElementById('publish').onclick=async()=>{
+  const bird=document.getElementById('bird').value.trim()||'gurt';
+  const title=document.getElementById('title').value.trim()||'untitled song';
+  const bpm=+document.getElementById('bpm').value||110;
+  const d=await api('/song',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird,title,bpm,pattern})});
+  const msg=document.getElementById('msg');
+  if(d&&d.ok){ msg.textContent='published!'; loadSongs(); } else { msg.textContent='published locally (offline)'; saveLocal({bird,title,bpm,pattern}); loadSongs(); }
+};
+function saveLocal(s){ const l=JSON.parse(localStorage.getItem('fsongs')||'[]'); l.unshift(Object.assign({id:'local'+Date.now(),plays:0,created:new Date().toISOString()},s)); localStorage.setItem('fsongs',JSON.stringify(l.slice(0,40))); }
+function localSongs(){ try{ return JSON.parse(localStorage.getItem('fsongs')||'[]'); }catch(e){ return []; } }
+function mini(p){ const h=document.createElement('div'); h.className='mini'; for(let i=0;i<16;i++){ const on=Object.keys(p||{}).some(k=>p[k]&&p[k][i]); const el=document.createElement('i'); if(on) el.className='on'; h.appendChild(el); } return h; }
+async function loadSongs(){
+  const box=document.getElementById('songs'); box.innerHTML='';
+  const d=await api('/songs');
+  let list=(d&&d.songs)?d.songs:localSongs();
+  if(!list.length){ box.innerHTML='<span class="tiny">no songs yet. make one!</span>'; return; }
+  list.forEach(s=>{
+    let p={}; try{ p=typeof s.pattern==='string'?JSON.parse(s.pattern):(s.pattern||{}); }catch(e){}
+    const row=document.createElement('div'); row.className='song';
+    const b=document.createElement('b'); b.textContent=s.title;
+    const who=document.createElement('span'); who.className='tiny'; who.textContent='by '+s.bird+' · '+s.bpm+' bpm · '+s.plays+' plays';
+    row.appendChild(b); row.appendChild(who); row.appendChild(mini(p));
+    const play=document.createElement('button'); play.textContent='hear it';
+    play.onclick=()=>{ stop(); pattern={kick:[],snare:[],hat:[],bass:[],lead:[]}; LANES.forEach(([k])=>pattern[k]=p[k]||new Array(16).fill(0)); document.getElementById('bpm').value=s.bpm; document.getElementById('title').value=s.title; document.getElementById('bird').value=s.bird; draw(); start(); api('/play',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:s.id})}).then(loadSongs); };
+    row.appendChild(play);
+    box.appendChild(row);
+  });
+}
+draw(); loadSongs();
+</script>
+</body>
+</html>
