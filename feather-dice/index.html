@@ -90,13 +90,17 @@ let room=null,me='',selected=new Set(),soundOn=true,board=null;
 function beep(n){if(!soundOn)return;try{const a=new (window.AudioContext||window.webkitAudioContext)();const o=a.createOscillator(),g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.value=n;g.gain.setValueAtTime(.08,a.currentTime);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+.18);o.start();o.stop(a.currentTime+.2);}catch(e){}}
 
 async function api(path,body){
+  // {offline:true} means the server could not be reached; {ok:false,error}
+  // means the server answered and said no. Those are not the same thing.
   try{
     const opt=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
     const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),4000);
     const r=await fetch('http://computer:8600/api/feather-dice'+path,Object.assign({},opt,{signal:ctl.signal}));
     clearTimeout(to);
-    if(!r.ok)return null;return await r.json();
-  }catch(e){return null;}
+    let data=null;try{data=await r.json();}catch(e){}
+    if(!r.ok)return {ok:false,status:r.status,error:(data&&data.error)||('the table said no ('+r.status+').')};
+    return data||{};
+  }catch(e){return {offline:true};}
 }
 async function ntfyGet(){
   for(const h of NTFY){
@@ -120,33 +124,85 @@ async function ntfyGet(){
 async function ntfyPost(p){for(const h of NTFY){try{const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),6000);const r=await fetch(h+'/'+TOPIC,{method:'POST',body:JSON.stringify(p),signal:ctl.signal});clearTimeout(to);if(r.ok)return true;}catch(e){}}return false;}
 
 function mergeSnaps(snaps){
-  const latest=JSON.parse(JSON.stringify(snaps[snaps.length-1]));
+  // each bird posts a full copy of the table, so pick the copy with the
+  // highest sequence number as the base and fold in the rest.
+  let maxSeq=-1, base=null;
+  snaps.forEach(sn=>{
+    const st=sn.room||sn;
+    const inner=st.room||{};
+    const q=inner.seq!=null?inner.seq:(st.seq||0);
+    if(q>maxSeq||(q===maxSeq&&(st._t||0)>=(base&&(base.room||base)._t||0))){maxSeq=q;base=sn;}
+  });
+  const latest=JSON.parse(JSON.stringify(base||snaps[snaps.length-1]));
+  const st=latest.room&&latest.room.room?latest.room:latest;   // state object
+  const lr=st.room||{};                                        // room fields
+  st.room=lr;
+  lr.seq=maxSeq>0?maxSeq:(lr.seq||0);
   const players={};
-  snaps.forEach(sn=>{(sn.players||[]).forEach(p=>{
-    if(!players[p.bird]){players[p.bird]=Object.assign({},p,{scores:p.scores||'{}'});return;}
-    const old=players[p.bird];
-    const so=JSON.parse(old.scores||'{}'), snn=JSON.parse(p.scores||'{}');
-    Object.keys(snn).forEach(k=>{if(so[k]==null)so[k]=snn[k];});
-    old.scores=JSON.stringify(so);
-    old.total=Object.values(so).reduce((a,b)=>a+b,0);
-    if(p.joined&&(!old.joined||p.joined<old.joined))old.joined=p.joined;
-  });});
-  latest.players=Object.keys(players).map((k,i)=>{const p=players[k];p.seat=i;return p;});
+  snaps.forEach(sn=>{
+    const s2=sn.room&&sn.room.room?sn.room:sn;
+    (s2.players||[]).forEach(p=>{
+      if(!players[p.bird]){players[p.bird]=Object.assign({},p,{scores:p.scores||'{}'});return;}
+      const old=players[p.bird];
+      const so=JSON.parse(old.scores||'{}'), snn=JSON.parse(p.scores||'{}');
+      Object.keys(snn).forEach(k=>{if(so[k]==null)so[k]=snn[k];});
+      old.scores=JSON.stringify(so);
+      old.total=Object.values(so).reduce((a,b)=>a+b,0);
+      if(p.joined&&(!old.joined||p.joined<old.joined))old.joined=p.joined;
+    });
+  });
+  st.players=Object.keys(players).map(k=>players[k]).sort((a,b)=>(a.seat||0)-(b.seat||0)||(a.joined||0)-(b.joined||0));
+  st.players.forEach((p,i)=>{p.seat=i;});
+  const pl=st.players;
+  if(pl.length){
+    let who=null;
+    if(lr.lastBanker){const i=pl.findIndex(x=>x.bird===lr.lastBanker);if(i>=0)who=pl[(i+1)%pl.length].bird;}
+    if(!who)who=lr.turnBird||null;
+    if(!who&&pl.length===1)who=pl[0].bird;
+    if(who&&pl.some(x=>x.bird===who)){lr.turnBird=who;lr.turn=pl.findIndex(x=>x.bird===who);}
+    else{lr.turn=(lr.turn||0)%pl.length;lr.turnBird=pl[lr.turn].bird;}
+  }
   const logs={};
-  snaps.forEach(sn=>{(sn.log||[]).forEach(l=>{logs[(l.ts||0)+'|'+l.bird+'|'+l.text]=l;});});
-  latest.log=Object.keys(logs).sort().map(k=>logs[k]);
-  return latest;
+  snaps.forEach(sn=>{
+    const s2=sn.room&&sn.room.room?sn.room:sn;
+    (s2.log||[]).forEach(l=>{logs[(l.ts||0)+'|'+l.bird+'|'+l.text]=l;});
+  });
+  st.log=Object.keys(logs).sort().map(k=>logs[k]);
+  // The turn belongs to whoever comes after the last bird that banked a
+  // score. Every snapshot carries the table talk, so this survives a stale
+  // or out-of-order snapshot.
+  const bankers=st.log.filter(l=>typeof l.text==='string'&&/^banked /.test(l.text));
+  if(bankers.length&&pl.length){
+    const last=bankers[bankers.length-1];
+    const i=pl.findIndex(x=>x.bird===last.bird);
+    if(i>=0){
+      const next=pl[(i+1)%pl.length].bird;
+      lr.turnBird=next;lr.turn=pl.findIndex(x=>x.bird===next);
+    }
+  }
+  return st;
 }
-function setRoom(r){room=r;render();}
+function setRoom(r,fromApi){
+  const oldSeq=room&&room.room?room.room.seq:0;
+  room=r;
+  // the backend keeps a turn index, not a bird name; work out whose turn it is.
+  const rr=room.room||{}, ps=room.players||[];
+  if(rr.seq==null)rr.seq=oldSeq||0;
+  if(rr.turn_bird)rr.turnBird=rr.turn_bird;
+  if(!rr.turnBird&&ps.length)rr.turnBird=ps[(rr.turn||0)%ps.length].bird;
+  if(fromApi)rr._t=Date.now();
+  render();
+}
 async function loadRoom(id){
   let d=await api('/room?id='+encodeURIComponent(id));
-  if(d&&d.room){board=null;setRoom(d);return;}
+  if(d&&!d.offline&&d.room){board=null;setRoom(d,true);return;}
   const rows=await ntfyGet();
   const snaps=rows.filter(x=>x.room&&x.room.room&&x.room.room.id===id).map(x=>x.room);
   if(snaps.length){
     snaps.sort((a,b)=>((a.room.seq||0)-(b.room.seq||0))||((a._t||0)-(b._t||0)));
     const snap=mergeSnaps(snaps);
-    if(!room||room.room.id!==id||(snap._t||0)>=(room._t||0)){board=snap;setRoom(snap);}
+    const mySeq=room&&room.room?room.room.seq||0:0;
+    if(!room||room.room.id!==id||(snap.room.seq||0)>=mySeq){board=snap;setRoom(snap);}
     return;
   }
   if(room&&room.room.id===id){render();msg('the shared board is quiet \u2014 keeping your table.');return;}
@@ -155,17 +211,17 @@ async function loadRoom(id){
 async function pushState(){
   if(!room)return;
   room._t=Date.now();
-  room.room.seq=room.room.seq||0;
+  // do NOT bump seq here: the backend owns the sequence number, and a fake
+  // bump made a stale snapshot look newer than the real one.
   const snap={type:'state',room:room};
   await ntfyPost(snap);
 }
 function localAct(path,body){
   const r=room.room, ps=room.players||[];
   const dice=JSON.parse(r.dice||'[1,1,1,1,1]'), kept=JSON.parse(r.kept||'[]').map(Number);
-  const cur=ps[r.turn%Math.max(1,ps.length)];
+  const cur=(r.turnBird&&ps.find(p=>p.bird===r.turnBird))||ps[r.turn%Math.max(1,ps.length)];
   const log=t=>{room.log=room.log||[];room.log.push({bird:me,text:t,ts:Date.now()});};
   room._t=Date.now();
-  r.seq=(r.seq||0)+1;
   if(path==='/roll'){
     if(!cur||cur.bird!==me)return null;
     if(r.rolls>=3)return null;
@@ -189,7 +245,10 @@ function localAct(path,body){
     cur.total=Object.values(sc).reduce((a,b)=>a+b,0);
     log('banked '+body.cat+' for '+v);
     const mi=ps.findIndex(p=>p.bird===me);
-    r.turn=(mi+1)%Math.max(1,ps.length);r.dice='[1,1,1,1,1]';r.kept='[]';r.rolls=0;
+    r.lastBanker=me;
+    r.turn=(mi+1)%Math.max(1,ps.length);
+    r.turnBird=ps.length>1?ps[r.turn].bird:null;
+    r.dice='[1,1,1,1,1]';r.kept='[]';r.rolls=0;
     return {value:v,room:room};
   }
   return null;
@@ -223,16 +282,29 @@ async function syncRoom(){
   if(!snaps.length)return;
   snaps.sort((a,b)=>((a.room.seq||0)-(b.room.seq||0))||((a._t||0)-(b._t||0)));
   const snap=mergeSnaps(snaps);
-  if((snap._t||0)>=(room._t||0)){board=snap;setRoom(snap);}
+  // fold in the shared board even when it is older: a bird that joined later
+  // must show up in the players list, or the turn never moves on.
+  const mySeq=room.room.seq||0;
+  const myPlayers=(room.players||[]).map(p=>p.bird);
+  const newBirds=(snap.players||[]).filter(p=>!myPlayers.includes(p.bird));
+  if((snap.room.seq||0)>=mySeq||newBirds.length){
+    const keep=room.room;
+    setRoom(snap);
+    if(newBirds.length)room.room.turn=keep.turn||0;
+  }
 }
 async function act(path,body){
   if(room)await syncRoom();
   body=Object.assign({},body,{room:room.room.id,bird:me});
-  let d=await api(path,body);
-  if(d&&d.room){setRoom(d.room);await pushState();return d;}
-  d=localAct(path,body);
-  if(d){render();await pushState();msg('the table is offline — playing on the shared board.');return d;}
-  msg('that move did not work.');
+  const d=await api(path,body);
+  if(d&&d.offline){
+    const loc=localAct(path,body);
+    if(loc){render();await pushState();msg('the table is offline — playing on the shared board.');return loc;}
+    msg('that move did not work.');
+    return null;
+  }
+  if(d&&d.room){setRoom(d.room,true);await pushState();return d;}
+  msg((d&&d.error)||'that move did not work.');
   return null;
 }
 function msg(t){document.getElementById('msg').textContent=t;}
@@ -243,7 +315,7 @@ function render(){
   document.getElementById('table').style.display='block';
   const r=room.room, ps=room.players||[];
   document.getElementById('thead').textContent='Table '+r.id+(r.bird===me?' (you host this)':'');
-  const cur=ps[r.turn%Math.max(1,ps.length)];
+  const cur=(r.turnBird&&ps.find(p=>p.bird===r.turnBird))||ps[r.turn%Math.max(1,ps.length)];
   document.getElementById('turninfo').textContent=cur?('turn: '+cur.bird):'waiting';
   const dice=JSON.parse(r.dice||'[]'), kept=JSON.parse(r.kept||'[]').map(Number);
   document.getElementById('rolls').textContent='rolls used: '+r.rolls+' / 3 · kept '+kept.length;
@@ -285,7 +357,7 @@ function render(){
 async function loadRooms(){
   const d=await api('/rooms');
   const tb=document.getElementById('rooms');tb.innerHTML='';
-  let list=(d&&d.rooms)?d.rooms:null;
+  let list=(d&&!d.offline&&d.rooms)?d.rooms:null;
   if(!list){
     const rows=await ntfyGet();
     const seen={};
@@ -304,7 +376,7 @@ async function loadRooms(){
 document.getElementById('newroom').onclick=async()=>{
   me=document.getElementById('bird').value.trim()||'gurt';
   const d=await api('/room',{bird:me});
-  if(d&&d.room){setRoom(d.room);await pushState();msg('table '+d.room.room.id+' is open.');beep(500);}
+  if(d&&!d.offline&&d.room){setRoom(d.room,true);await pushState();msg('table '+d.room.room.id+' is open.');beep(500);}
   else{
     const id=Math.random().toString(36).slice(2,8);
     room={_t:Date.now(),room:{id,bird:me,created:Date.now(),turn:0,seq:0,dice:'[1,1,1,1,1]',kept:'[]',rolls:0},players:[{bird:me,seat:0,scores:'{}',total:0}],log:[]};
@@ -315,12 +387,13 @@ document.getElementById('joinroom').onclick=()=>{const id=document.getElementByI
 async function join(id){
   me=document.getElementById('bird').value.trim()||'gurt';
   const d=await api('/join',{room:id,bird:me});
-  if(d&&d.room){setRoom(d.room);await pushState();msg('you sat down.');beep(600);}
+  if(d&&!d.offline&&d.room){setRoom(d.room,true);await pushState();msg('you sat down.');beep(600);}
   else{
     await loadRoom(id);
     if(room&&room.room.id===id){
       const ps=room.players||(room.players=[]);
       if(!ps.some(p=>p.bird===me))ps.push({room:id,bird:me,seat:ps.length,scores:'{}',total:0,joined:Date.now()});
+      if(!room.room.turnBird&&ps.length)room.room.turnBird=ps[room.room.turn%ps.length].bird;
       room.log=room.log||[];room.log.push({bird:me,text:'joined the table.',ts:Date.now()});
       render();await pushState();msg('joined from the shared board.');
     }
