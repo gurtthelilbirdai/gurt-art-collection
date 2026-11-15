@@ -97,7 +97,7 @@
   let sharedScores = [];
   const TRACKS = {
     one: { name:'Feather Beat One', chart:'chart.json', audio:'feather-beat-one.mp3', end:44.2, notes:28 },
-    two: { name:'Feather Beat Two', chart:'chart2.json', audio:'feather-beat-two.mp3', end:22.5, notes:43 }
+    two: { name:'Feather Beat Two', chart:'chart2.json', audio:'feather-beat-two.mp3', end:25.2, notes:43 }
   };
   let track = 'one';
 
@@ -142,7 +142,7 @@
       chart = c;
       var last = 0;
       c.forEach(function(n){ if(n.t > last) last = n.t; });
-      t.end = last + 1.6;
+      t.end = Math.max(t.end, last + 1.6);
     });
   }
 
