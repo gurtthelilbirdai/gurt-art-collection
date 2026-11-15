@@ -119,14 +119,33 @@ async function ntfyGet(){
 }
 async function ntfyPost(p){for(const h of NTFY){try{const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),6000);const r=await fetch(h+'/'+TOPIC,{method:'POST',body:JSON.stringify(p),signal:ctl.signal});clearTimeout(to);if(r.ok)return true;}catch(e){}}return false;}
 
+function mergeSnaps(snaps){
+  const latest=JSON.parse(JSON.stringify(snaps[snaps.length-1]));
+  const players={};
+  snaps.forEach(sn=>{(sn.players||[]).forEach(p=>{
+    if(!players[p.bird]){players[p.bird]=Object.assign({},p,{scores:p.scores||'{}'});return;}
+    const old=players[p.bird];
+    const so=JSON.parse(old.scores||'{}'), snn=JSON.parse(p.scores||'{}');
+    Object.keys(snn).forEach(k=>{if(so[k]==null)so[k]=snn[k];});
+    old.scores=JSON.stringify(so);
+    old.total=Object.values(so).reduce((a,b)=>a+b,0);
+    if(p.joined&&(!old.joined||p.joined<old.joined))old.joined=p.joined;
+  });});
+  latest.players=Object.keys(players).map((k,i)=>{const p=players[k];p.seat=i;return p;});
+  const logs={};
+  snaps.forEach(sn=>{(sn.log||[]).forEach(l=>{logs[(l.ts||0)+'|'+l.bird+'|'+l.text]=l;});});
+  latest.log=Object.keys(logs).sort().map(k=>logs[k]);
+  return latest;
+}
 function setRoom(r){room=r;render();}
 async function loadRoom(id){
   let d=await api('/room?id='+encodeURIComponent(id));
   if(d&&d.room){board=null;setRoom(d);return;}
   const rows=await ntfyGet();
-  const snaps=rows.filter(x=>x.room&&x.room.room&&x.room.room.id===id);
+  const snaps=rows.filter(x=>x.room&&x.room.room&&x.room.room.id===id).map(x=>x.room);
   if(snaps.length){
-    const snap=snaps[snaps.length-1].room;
+    snaps.sort((a,b)=>((a.room.seq||0)-(b.room.seq||0))||((a._t||0)-(b._t||0)));
+    const snap=mergeSnaps(snaps);
     if(!room||room.room.id!==id||(snap._t||0)>=(room._t||0)){board=snap;setRoom(snap);}
     return;
   }
@@ -136,6 +155,7 @@ async function loadRoom(id){
 async function pushState(){
   if(!room)return;
   room._t=Date.now();
+  room.room.seq=room.room.seq||0;
   const snap={type:'state',room:room};
   await ntfyPost(snap);
 }
@@ -145,6 +165,7 @@ function localAct(path,body){
   const cur=ps[r.turn%Math.max(1,ps.length)];
   const log=t=>{room.log=room.log||[];room.log.push({bird:me,text:t,ts:Date.now()});};
   room._t=Date.now();
+  r.seq=(r.seq||0)+1;
   if(path==='/roll'){
     if(!cur||cur.bird!==me)return null;
     if(r.rolls>=3)return null;
@@ -167,7 +188,8 @@ function localAct(path,body){
     sc[body.cat]=v;cur.scores=JSON.stringify(sc);
     cur.total=Object.values(sc).reduce((a,b)=>a+b,0);
     log('banked '+body.cat+' for '+v);
-    r.turn=(r.turn+1)%Math.max(1,ps.length);r.dice='[1,1,1,1,1]';r.kept='[]';r.rolls=0;
+    const mi=ps.findIndex(p=>p.bird===me);
+    r.turn=(mi+1)%Math.max(1,ps.length);r.dice='[1,1,1,1,1]';r.kept='[]';r.rolls=0;
     return {value:v,room:room};
   }
   return null;
@@ -193,7 +215,18 @@ function scoreLocal(cat,dice){
     default:return 0;
   }
 }
+async function syncRoom(){
+  if(!room)return;
+  const id=room.room.id;
+  const rows=await ntfyGet();
+  const snaps=rows.filter(x=>x.room&&x.room.room&&x.room.room.id===id).map(x=>x.room);
+  if(!snaps.length)return;
+  snaps.sort((a,b)=>((a.room.seq||0)-(b.room.seq||0))||((a._t||0)-(b._t||0)));
+  const snap=mergeSnaps(snaps);
+  if((snap._t||0)>=(room._t||0)){board=snap;setRoom(snap);}
+}
 async function act(path,body){
+  if(room)await syncRoom();
   body=Object.assign({},body,{room:room.room.id,bird:me});
   let d=await api(path,body);
   if(d&&d.room){setRoom(d.room);await pushState();return d;}
@@ -274,7 +307,7 @@ document.getElementById('newroom').onclick=async()=>{
   if(d&&d.room){setRoom(d.room);await pushState();msg('table '+d.room.room.id+' is open.');beep(500);}
   else{
     const id=Math.random().toString(36).slice(2,8);
-    room={_t:Date.now(),room:{id,bird:me,created:Date.now(),turn:0,dice:'[1,1,1,1,1]',kept:'[]',rolls:0},players:[{bird:me,seat:0,scores:'{}',total:0}],log:[]};
+    room={_t:Date.now(),room:{id,bird:me,created:Date.now(),turn:0,seq:0,dice:'[1,1,1,1,1]',kept:'[]',rolls:0},players:[{bird:me,seat:0,scores:'{}',total:0}],log:[]};
     render();await pushState();msg('table '+id+' is open (offline).');
   }
 };
@@ -300,7 +333,7 @@ document.getElementById('sound').onclick=()=>{soundOn=!soundOn;document.getEleme
 document.getElementById('leave').onclick=()=>{room=null;document.getElementById('table').style.display='none';document.getElementById('lobby').style.display='block';loadRooms();};
 
 loadRooms();
-setInterval(()=>{if(room)loadRoom(room.room.id);},8000);
+setInterval(()=>{if(room)loadRoom(room.room.id);},2500);
 </script>
 </body>
 </html>
