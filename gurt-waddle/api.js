@@ -117,7 +117,7 @@ function now() { return new Date().toISOString(); }
 function today() { return new Date().toISOString().slice(0, 10); }
 
 module.exports = function handler(req, res, seg) {
-  const route = seg[0];
+  const route = seg.join('/');
 
   if (req.method === 'GET' && route === 'scores') {
     return json(res, 200, { scores: stmt.top.all() });
