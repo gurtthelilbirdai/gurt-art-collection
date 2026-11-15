@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
 <title>The Waddle Workshop — build levels for small birds</title>
 <style>
   body{margin:0;background:#101827;color:#e8f1ff;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;padding-bottom:40px}
@@ -109,6 +110,9 @@ $('sample').onclick = sample;
 const NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-waddle';
 const NTFY_ALT = 'https://ntfy.sh/gurt-feather-waddle';
 async function api(path, opts) {
+  // on the public https copy the backend is unreachable (mixed content),
+  // so the ntfy board is the only shelf there
+  if (location.protocol === 'https:') return null;
   const urls = ['', 'http://computer:8600'];
   for (const base of urls) {
     for (const u of [base + '/api/gurtwaddle' + path, base + '/gurtwaddle' + path]) {

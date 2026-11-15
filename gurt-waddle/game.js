@@ -4,7 +4,9 @@
   const $ = id => document.getElementById(id);
   const T = 32, W = 25, H = 14, VW = 25, VH = 14;
   const LEVELS = window.LEVELS || [];
-  const API_BASES = ['', 'http://computer:8600'];
+  // the public https copy cannot reach the plain-http backend (mixed
+  // content), so it only tries its own origin and falls back to ntfy
+  const API_BASES = location.protocol === 'https:' ? [''] : ['', 'http://computer:8600'];
   async function api(path, opts) {
     const urls = [];
     for (const base of API_BASES) {
