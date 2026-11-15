@@ -94,7 +94,7 @@ button:hover{border-color:var(--gold)}
 <script>
 const LANES=['kick','snare','hat','bass','lead'];
 const NOTES=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-let song=null, playing=false, timer=null, cur=-1, step=0, applauseIds={};
+let song=null, playing=false, timer=null, cur=-1, step=0, applauseIds={}, lastPerfId=null;
 
 const API_BASES = location.protocol==='https:' ? [] : ['http://localhost:8600',''];
 const NTFY_HOSTS = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
@@ -193,7 +193,7 @@ async function loadShelf(){
   try{ const r=await fetch('http://localhost:8600/api/feathersongmaker/songs'); if(r.ok){ const d=await r.json(); list=d.songs||[]; } }catch(e){}
   if(!list.length){ try{ const r=await fetch('/api/feathersongmaker/songs'); if(r.ok){ const d=await r.json(); list=d.songs||[]; } }catch(e){} }
   const shared=await ntfyGet(SONG_TOPIC);
-  shared.songs.forEach(s=>{ if(!list.some(x=>x.id===s.id)) list.push(s); });
+  shared.songs.forEach(s=>{ if(!s||!s.title) return; if(!list.some(x=>x.id===s.id||(x.title===s.title&&x.bird===s.bird&&x.bpm===s.bpm))) list.push(s); });
   try{ const l=JSON.parse(localStorage.getItem('fsongs')||'[]'); l.forEach(s=>{ if(!list.some(x=>x.id===s.id)) list.push(s); }); }catch(e){}
   renderShelf(list.slice(0,30));
 }
@@ -204,8 +204,9 @@ async function loadSets(){
   let list=(d&&d.performances)?d.performances:[];
   const shared=await ntfyGet(STAGE_TOPIC);
   shared.perfs.forEach(p=>{ if(!list.some(x=>x.id===p.id)) list.push(p); });
-  const counts={}; shared.claps.forEach(c=>{ counts[c.performance]=(counts[c.performance]||0)+1; });
-  list.forEach(p=>{ if(counts[p.id]) p.applause=(Number(p.applause)||0)+counts[p.id]; });
+  const counts={}; const seen={};
+  shared.claps.forEach(c=>{ if(!c||!c.performance) return; const k=c.performance+'|'+(c.bird||'?'); if(seen[k]) return; seen[k]=1; counts[c.performance]=(counts[c.performance]||0)+1; });
+  list.forEach(p=>{ p.applause=Math.max(Number(p.applause)||0, counts[p.id]||0); });
   const box=document.getElementById('sets'); box.innerHTML='';
   if(!list.length){ box.innerHTML='<span class="tiny">nobody has played yet. be the first bird on stage!</span>'; return; }
   list.forEach(p=>{
@@ -231,9 +232,10 @@ document.getElementById('take').onclick=async()=>{
   const bpm=+document.getElementById('bpm').value||song.bpm;
   const d=await api('/performance',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird,title,bpm,pattern:song.pattern})});
   const msg=document.getElementById('msg');
-  if(d&&d.ok){ msg.textContent='you are on the set list!'; }
+  if(d&&d.ok){ lastPerfId=d.performance.id; msg.textContent='you are on the set list!'; }
   else{
     const rec={id:'ntfyp'+Date.now(),bird,title,bpm,pattern:song.pattern,applause:0,created:new Date().toISOString()};
+    lastPerfId=rec.id;
     const ok=await ntfyPost(STAGE_TOPIC,{performance:rec});
     msg.textContent=ok?'on the shared set list!':'saved locally (offline)';
     if(!ok){ try{ const l=JSON.parse(localStorage.getItem('fperfs')||'[]'); l.unshift(rec); localStorage.setItem('fperfs',JSON.stringify(l.slice(0,40))); }catch(e){} }
@@ -243,9 +245,11 @@ document.getElementById('take').onclick=async()=>{
 document.getElementById('clap').onclick=async()=>{
   if(!song){ document.getElementById('msg').textContent='nothing to clap for yet!'; return; }
   const bird=document.getElementById('bird').value.trim()||'gurt';
-  const d=await api('/clap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({performance:song.id,bird})});
+  const target=lastPerfId||song.id;
+  const d=await api('/clap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({performance:target,bird})});
   if(d&&d.ok) document.getElementById('msg').textContent='👏 '+d.applause+' birds clapped!';
-  ntfyPost(STAGE_TOPIC,{clap:{performance:song.id,bird}});
+  else document.getElementById('msg').textContent='👏 clapped!';
+  ntfyPost(STAGE_TOPIC,{clap:{performance:target,bird}});
   popCrowd();
   loadSets();
 };
