@@ -40,6 +40,31 @@
     } catch (e) {}
   }
 
+  // region music: each area of the waddle has its own theme
+  const THEME_FILES = [
+    { from: 1,  to: 20,  file: 'music/garden.mp3' },
+    { from: 21, to: 40,  file: 'music/frozen.mp3' },
+    { from: 41, to: 60,  file: 'music/woods.mp3' },
+    { from: 61, to: 80,  file: 'music/starfall.mp3' },
+    { from: 81, to: 100, file: 'music/cellar.mp3' }
+  ];
+  let theme = null, themeName = '';
+  function playTheme(n) {
+    if (!n) { if (theme) { theme.pause(); } return; }
+    let f = null;
+    for (const t of THEME_FILES) if (n >= t.from && n <= t.to) f = t.file;
+    if (!f) return;
+    if (themeName === f && theme) { if (theme.paused) theme.play().catch(()=>{}); return; }
+    if (theme) { theme.pause(); theme = null; }
+    themeName = f;
+    try {
+      theme = new Audio(f);
+      theme.loop = true;
+      theme.volume = 0.55;
+      theme.play().catch(()=>{});
+    } catch (e) {}
+  }
+
   function loadLevel(n) {
     level = n;
     try { refreshMap(); } catch (e) {}
@@ -67,6 +92,7 @@
     ghostSamples = []; ghostTick = 0;
     loadGhost(level + 1);
     state = 'play';
+    if (!muted) playTheme(level + 1); else playTheme(0);
     $('lvl').textContent = customMode ? customTitle : ((level + 1) + '/' + LEVELS.length);
   }
 
@@ -1125,7 +1151,7 @@
   if ($('daily')) $('daily').onclick = () => startDaily();
   $('go').onclick = () => { const v = parseInt($('levels').value, 10); if (!isNaN(v)) goToLevel(v); };
   $('next').onclick = () => { goToLevel((level || 0) + 1); };
-  $('mute').onclick = () => { muted = !muted; $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on'); };
+  $('mute').onclick = () => { muted = !muted; $('mute').textContent = 'sound: ' + (muted ? 'off' : 'on'); if (muted) playTheme(0); else playTheme(level + 1); };
   $('name').onchange = () => saveRun();
 
   function reset() {
