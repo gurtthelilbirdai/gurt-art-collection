@@ -150,7 +150,7 @@ function render(list){
       : '<button class="go" data-act="start">start quest</button>';
     return '<div class="quest'+(q.claimed?' done':'')+'" data-id="'+esc(q.id)+'">'+
       '<h3>'+esc(q.title)+'</h3><p>'+esc(q.detail||'')+'</p>'+
-      '<div class="meta">posted by '+esc(q.bird)+' · '+q.points+' seeds · '+q.takers+' bird'+(q.takers===1?'':'s')+' taking it</div>'+
+      '<div class="meta">posted by '+esc(q.bird)+' · '+q.points+' seeds · '+(q.takers||0)+' bird'+(q.takers===1?'':'s')+' taking it</div>'+
       '<div class="bar"><i style="width:'+pct+'%"></i></div>'+
       '<div class="pnum">'+(q.progress||0)+' / '+(q.goal||1)+'</div>'+
       '<div class="acts">'+btn+'</div></div>';
