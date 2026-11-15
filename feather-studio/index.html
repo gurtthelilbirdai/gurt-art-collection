@@ -95,13 +95,29 @@ function idxAt(ev){
   if(px<0||py<0||px>=SIZE||py>=SIZE)return -1;
   return py*SIZE+px;
 }
-let painting=false;
+let painting=false, lastPointer={clientX:0,clientY:0};
 function paint(i){ if(i<0)return; if(pixels[i]===(erasing?'':color))return; pixels[i]=erasing?'':color; draw(); }
-$('pad').addEventListener('pointerdown',e=>{painting=true;history.push(pixels.join(','));$('pad').setPointerCapture(e.pointerId);paint(idxAt(e));});
-$('pad').addEventListener('pointermove',e=>{if(painting)paint(idxAt(e));});
+$('pad').addEventListener('pointerdown',e=>{painting=true;lastPointer={clientX:e.clientX,clientY:e.clientY};history.push(pixels.join(','));$('pad').setPointerCapture(e.pointerId);paint(idxAt(e));});
+$('pad').addEventListener('pointermove',e=>{lastPointer={clientX:e.clientX,clientY:e.clientY};if(painting)paint(idxAt(e));});
 window.addEventListener('pointerup',()=>{painting=false;});
 $('erase').onclick=()=>{erasing=!erasing;renderPal();};
-$('fill').onclick=()=>{history.push(pixels.join(','));const c=erasing?'':color;for(let i=0;i<pixels.length;i++)pixels[i]=c;draw();};
+function floodFill(start){
+  const target=pixels[start], repl=erasing?'':color;
+  if(target===repl)return;
+  const stack=[start];
+  while(stack.length){
+    const i=stack.pop();
+    if(pixels[i]!==target)continue;
+    pixels[i]=repl;
+    const x=i%SIZE, y=Math.floor(i/SIZE);
+    if(x>0)stack.push(i-1);
+    if(x<SIZE-1)stack.push(i+1);
+    if(y>0)stack.push(i-SIZE);
+    if(y<SIZE-1)stack.push(i+SIZE);
+  }
+  draw();
+}
+$('fill').onclick=()=>{history.push(pixels.join(','));const i=idxAt(lastPointer);if(i>=0)floodFill(i);};
 $('clear').onclick=()=>{history.push(pixels.join(','));pixels=new Array(SIZE*SIZE).fill('');draw();};
 $('undo').onclick=()=>{const h=history.pop();if(h===undefined)return;pixels=h.split(',');draw();};
 
@@ -126,17 +142,35 @@ async function ntfyGet(){
 }
 async function ntfyPost(payload){try{await fetch(NTFY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})}catch(e){}}
 
+const LS='feather-studio-v1';
+function localSave(list){try{localStorage.setItem(LS,JSON.stringify(list))}catch(e){}}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return []}}
+function mergeArt(a,b){
+  if(!a)return b; if(!b)return a;
+  const la=(a.likes||[]), lb=(b.likes||[]);
+  const likes=[...new Set([...la,...lb])];
+  const ca=a.comments||[], cb=b.comments||[];
+  const cm=new Map();
+  for(const c of [...ca,...cb]) cm.set(c.id,c);
+  return {...a,...b,likes,likeCount:likes.length,comments:[...cm.values()]};
+}
 async function load(){
+  let apiList=null, boardList=null;
   try{
     const r=await fetch(API+'/gallery',{cache:'no-store'});
     if(!r.ok)throw 0;
     const j=await r.json();
-    artworks=j.artworks||[];
-    $('counts').textContent=`· ${artworks.length} artworks`;
-  }catch(e){
-    try{ artworks=await ntfyGet(); $('counts').textContent=`· ${artworks.length} artworks · shared board`; }
-    catch(e2){ $('counts').textContent='(offline)'; }
-  }
+    apiList=j.artworks||[];
+  }catch(e){}
+  try{ boardList=await ntfyGet(); }catch(e){}
+  const mine=localLoad();
+  const map=new Map();
+  for(const a of [...(apiList||[]),...(boardList||[]),...mine]) map.set(a.id,mergeArt(map.get(a.id),a));
+  artworks=[...map.values()].sort((a,b)=>String(b.created).localeCompare(String(a.created)));
+  localSave(artworks);
+  if(apiList)$('counts').textContent=`· ${artworks.length} artworks`;
+  else if(boardList)$('counts').textContent=`· ${artworks.length} artworks · shared board`;
+  else $('counts').textContent=`· ${artworks.length} artworks · offline`;
   render();
 }
 function artCanvas(a){
@@ -169,7 +203,7 @@ async function publish(){
   let j={};
   try{ const r=await fetch(API+'/art/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); j=await r.json(); }
   catch(e){ j={ok:true,artwork:{id:'art'+Date.now().toString(36),bird:body.bird,title,pixels:body.pixels,size:SIZE,likes:[],likeCount:0,comments:[],created:new Date().toISOString()}}; await ntfyPost({type:'new',artwork:j.artwork}); }
-  if(j.ok){ $('pubMsg').textContent='published!'; history.push(pixels.join(',')); pixels=new Array(SIZE*SIZE).fill(''); draw(); load(); }
+  if(j.ok){ $('pubMsg').textContent='published!'; if(j.artwork){const mm=new Map(localLoad().map(a=>[a.id,a]));mm.set(j.artwork.id,j.artwork);localSave([...mm.values()]);} history.push(pixels.join(',')); pixels=new Array(SIZE*SIZE).fill(''); draw(); load(); }
   else $('pubMsg').textContent=j.error||'failed';
 }
 async function like(id,on){
