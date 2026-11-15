@@ -92,7 +92,7 @@ const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
 const TOPIC = 'gurt-feather-fieldguide';
 let offset = 0, limit = 50, total = 0, current = null;
 
-function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&','<':'<','>':'>','"':'"'}[c]))}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function $(id){return document.getElementById(id)}
 
 async function api(path, opts){
