@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Library — the flock's lending library</title>
+<style>
+:root{--bg:#141018;--panel:#1e1826;--ink:#f2ecff;--dim:#a99cc4;--accent:#8ec7ff;--gold:#f3c969;--line:#332a42}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:24px}
+h1{font-size:1.7rem;margin:0 0 4px}
+h2{font-size:1.1rem;margin:26px 0 10px;color:var(--gold)}
+.sub{color:var(--dim);margin:0 0 20px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select,textarea,button{font:inherit;color:var(--ink);background:#261f31;border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+input{flex:1;min-width:140px}
+textarea{width:100%;min-height:60px}
+button{cursor:pointer;background:#33405c;border-color:#4a5c80}
+button:hover{background:#3d4d70}
+button.primary{background:var(--accent);color:#10202f;border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+.stats{display:flex;gap:10px;flex-wrap:wrap}
+.stat{background:#251e30;border:1px solid var(--line);border-radius:11px;padding:8px 14px;min-width:80px;text-align:center}
+.stat b{display:block;font-size:1.3rem;color:var(--accent)}
+.stat span{color:var(--dim);font-size:.78rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.card{background:#241d2e;border:1px solid var(--line);border-radius:13px;padding:13px;display:flex;flex-direction:column;gap:7px}
+.card h3{margin:0;font-size:1.05rem;color:var(--gold)}
+.card .by{color:var(--dim);font-size:.85rem}
+.card .blurb{font-size:.9rem;color:#d8cff0}
+.tag{display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:20px;background:#3a2f4d;color:#d9cdf2;margin-right:5px}
+.tag.ok{background:#1f4a35;color:#b9f0d0}
+.tag.out{background:#4a2b2b;color:#f3c0c0}
+.loanlist{font-size:.85rem;color:var(--dim);margin-top:4px}
+.msg{margin-top:10px;color:var(--accent);min-height:1.3em}
+.err{color:#ff9d9d}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Feather Library</h1>
+<p class="sub">the flock's lending library. add a book, borrow one, bring it back.</p>
+
+<div class="panel">
+  <div class="stats" id="stats"></div>
+</div>
+
+<div class="panel">
+  <h2>search the shelves</h2>
+  <div class="row">
+    <input id="q" placeholder="title, author, bird or blurb">
+    <select id="genre"><option value="">every genre</option></select>
+    <button id="search">search</button>
+  </div>
+  <div class="msg" id="smsg"></div>
+</div>
+
+<div class="panel">
+  <h2>add a book</h2>
+  <div class="row">
+    <input id="bird" placeholder="your bird name" value="gurt">
+    <input id="title" placeholder="title">
+    <input id="author" placeholder="author">
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input id="bgenre" placeholder="genre" value="field notes">
+    <button class="primary" id="add">add to the shelf</button>
+  </div>
+  <textarea id="blurb" placeholder="a short blurb" style="margin-top:8px"></textarea>
+  <div class="msg" id="amsg"></div>
+</div>
+
+<h2>the shelves</h2>
+<div class="grid" id="books"></div>
+<div class="msg" id="bmsg"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;');
+const API = 'http://localhost:8600/api/featherlibrary';
+const NTFY = ['https://ntfy.nerdvpn.de/gurt-feather', 'https://ntfy.sh/gurt-feather'];
+const BIRD = 'gurt';
+let books = [];
+
+async function api(route, body) {
+  try {
+    const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
+    const r = await fetch(API + route, opt);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+async function ntfyGet() {
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/json?poll=1&limit=500', { cache: 'no-store' });
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const line of lines) {
+        let ev;
+        try { ev = JSON.parse(line); } catch (e) { continue; }
+        let m = ev.message;
+        if (typeof m === 'string') { try { m = JSON.parse(m); } catch (e) { continue; } }
+        if (m && typeof m === 'object') out.push(m);
+      }
+      if (out.length) return out;
+    } catch (e) { /* try next mirror */ }
+  }
+  return [];
+}
+
+async function ntfyPost(payload) {
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host, { method: 'POST', body: JSON.stringify(payload) });
+      if (r.ok) return true;
+    } catch (e) { /* try next mirror */ }
+  }
+  return false;
+}
+
+function bookCard(b) {
+  const state = b.available
+    ? '<span class="tag ok">on the shelf</span>'
+    : '<span class="tag out">out</span>';
+  const borrowBtn = b.available
+    ? '<button data-act="borrow" data-id="' + esc(b.id) + '">borrow it</button>'
+    : '';
+  const loans = (b.loanList || []).map(l =>
+    '<div>' + esc(l.bird) + ' · ' + (l.back ? 'returned' : 'has it now') + '</div>').join('');
+  return '<div class="card">' +
+    '<h3>' + esc(b.title) + '</h3>' +
+    '<div class="by">by ' + esc(b.author) + ' · added by ' + esc(b.bird) + '</div>' +
+    '<div><span class="tag">' + esc(b.genre) + '</span>' + state + '</div>' +
+    (b.blurb ? '<div class="blurb">' + esc(b.blurb) + '</div>' : '') +
+    '<div class="row">' + borrowBtn +
+    (b.available ? '' : '<button data-act="return" data-id="' + esc(b.id) + '">bring it back</button>') +
+    '</div>' +
+    '<div class="loanlist">' + (loans || 'no loans yet') + '</div>' +
+    '</div>';
+}
+
+function render() {
+  $('books').innerHTML = books.map(bookCard).join('') || '<p class="sub">the shelves are empty. add a book!</p>';
+  const genres = [...new Set(books.map(b => b.genre))].sort();
+  const sel = $('genre');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">every genre</option>' + genres.map(g => '<option>' + esc(g) + '</option>').join('');
+  sel.value = cur;
+  document.querySelectorAll('#books button').forEach(btn => {
+    btn.onclick = () => act(btn.dataset.act, btn.dataset.id);
+  });
+}
+
+async function loadStats() {
+  const d = await api('/stats');
+  let booksN = books.length, loansN = 0, outN = 0;
+  if (d) { booksN = d.books; loansN = d.loans; outN = d.out; }
+  else {
+    loansN = books.reduce((a, b) => a + (b.loans || 0), 0);
+    outN = books.reduce((a, b) => a + (b.out || 0), 0);
+  }
+  $('stats').innerHTML = [['books', booksN], ['loans', loansN], ['out now', outN]]
+    .map(s => '<div class="stat"><b>' + s[1] + '</b><span>' + s[0] + '</span></div>').join('');
+}
+
+async function load() {
+  const d = await api('/books');
+  if (d && d.books) { books = d.books; render(); loadStats(); return; }
+  const events = await ntfyGet();
+  const map = {};
+  for (const ev of events) {
+    if (ev.kind === 'book' && ev.book) map[ev.book.id] = ev.book;
+    else if (ev.kind === 'borrow' && ev.loan) {
+      const bid = ev.loan.book_id;
+      if (!map[bid]) continue;
+      map[bid].loans = (map[bid].loans || 0) + 1;
+      map[bid].out = (map[bid].out || 0) + 1;
+      map[bid].available = false;
+    } else if (ev.kind === 'return' && ev.loan) {
+      const bid = ev.loan.book_id;
+      if (!map[bid]) continue;
+      map[bid].out = Math.max(0, (map[bid].out || 1) - 1);
+      map[bid].available = map[bid].out === 0;
+    }
+  }
+  books = Object.values(map);
+  render();
+  loadStats();
+}
+
+async function act(kind, id) {
+  const b = books.find(x => x.id === id);
+  if (!b) return;
+  if (kind === 'borrow') {
+    const d = await api('/borrow', { book_id: id, bird: BIRD });
+    if (d && d.ok) {
+      $('bmsg').textContent = 'you have "' + b.title + '". bring it back gently.';
+      await ntfyPost({ kind: 'borrow', loan: { book_id: id, bird: BIRD } });
+      load();
+      return;
+    }
+    await ntfyPost({ kind: 'borrow', loan: { book_id: id, bird: BIRD } });
+    $('bmsg').textContent = 'borrowed on the shared board.';
+    load();
+    return;
+  }
+  if (kind === 'return') {
+    const loanId = (b.loanList && b.loanList.length) ? b.loanList[b.loanList.length - 1].id : '';
+    const d = await api('/return', { id: loanId });
+    if (d && d.ok) {
+      $('bmsg').textContent = 'returned. thank you.';
+      await ntfyPost({ kind: 'return', loan: { book_id: id, bird: BIRD } });
+      load();
+      return;
+    }
+    await ntfyPost({ kind: 'return', loan: { book_id: id, bird: BIRD } });
+    $('bmsg').textContent = 'returned on the shared board.';
+    load();
+  }
+}
+
+$('search').onclick = async () => {
+  const q = $('q').value.trim();
+  const g = $('genre').value;
+  const d = await api('/books?q=' + encodeURIComponent(q) + (g ? '&genre=' + encodeURIComponent(g) : ''));
+  if (d && d.books) { books = d.books; render(); $('smsg').textContent = d.count + ' book(s).'; }
+  else { $('smsg').textContent = 'search needs the local server right now.'; }
+};
+
+$('add').onclick = async () => {
+  const payload = {
+    bird: $('bird').value.trim() || BIRD,
+    title: $('title').value.trim(),
+    author: $('author').value.trim(),
+    genre: $('bgenre').value.trim() || 'field notes',
+    blurb: $('blurb').value.trim()
+  };
+  if (!payload.title) { $('amsg').innerHTML = '<span class="err">a book needs a title.</span>'; return; }
+  const d = await api('/book', payload);
+  if (d && d.ok) {
+    $('amsg').textContent = 'added to the shelf.';
+    await ntfyPost({ kind: 'book', book: d.book });
+    $('title').value = ''; $('author').value = ''; $('blurb').value = '';
+    load();
+    return;
+  }
+  await ntfyPost({ kind: 'book', book: { id: 'b' + Date.now().toString(36), bird: payload.bird, title: payload.title, author: payload.author, genre: payload.genre, blurb: payload.blurb, loans: 0, out: 0, available: true } });
+  $('amsg').textContent = 'added on the shared board.';
+  $('title').value = ''; $('author').value = ''; $('blurb').value = '';
+  load();
+};
+
+load();
+</script>
+</body>
+</html>
