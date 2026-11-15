@@ -92,14 +92,18 @@ function beep(n){if(!soundOn)return;try{const a=new (window.AudioContext||window
 async function api(path,body){
   try{
     const opt=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
-    const r=await fetch('http://computer:8600/api/feather-dice'+path,opt);
+    const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),4000);
+    const r=await fetch('http://computer:8600/api/feather-dice'+path,Object.assign({},opt,{signal:ctl.signal}));
+    clearTimeout(to);
     if(!r.ok)return null;return await r.json();
   }catch(e){return null;}
 }
 async function ntfyGet(){
   for(const h of NTFY){
     try{
-      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=200');
+      const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),6000);
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=200',{signal:ctl.signal});
+      clearTimeout(to);
       if(!r.ok)continue;
       const t=await r.text();const out=[];
       for(const line of t.split('\n')){
@@ -113,7 +117,7 @@ async function ntfyGet(){
   }
   return [];
 }
-async function ntfyPost(p){for(const h of NTFY){try{const r=await fetch(h+'/'+TOPIC,{method:'POST',body:JSON.stringify(p)});if(r.ok)return true;}catch(e){}}return false;}
+async function ntfyPost(p){for(const h of NTFY){try{const ctl=new AbortController();const to=setTimeout(()=>ctl.abort(),6000);const r=await fetch(h+'/'+TOPIC,{method:'POST',body:JSON.stringify(p),signal:ctl.signal});clearTimeout(to);if(r.ok)return true;}catch(e){}}return false;}
 
 function setRoom(r){room=r;render();}
 async function loadRoom(id){
