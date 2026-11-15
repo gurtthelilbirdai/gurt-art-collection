@@ -139,9 +139,13 @@ function showPlayer(f) {
   else st.innerHTML = '<div class="empty">this one is a link — press “open link” to watch it<br><span style="opacity:.7">' + esc(f.url) + '</span></div>';
   $('cpanel').classList.remove('hidden');
   loadComments(f.id);
+  const i = films.findIndex(x => x.id === f.id);
+  if (i >= 0) { films[i].watches = (films[i].watches || 0) + 1; render(); }
   api('/film/' + encodeURIComponent(f.id) + '/watch', { method: 'POST' }).then(d => {
-    if (d && d.film) { const i = films.findIndex(x => x.id === f.id); if (i >= 0) films[i].watches = d.film.watches; render(); }
+    if (d && d.film) { const j = films.findIndex(x => x.id === f.id); if (j >= 0) films[j].watches = Math.max(films[j].watches || 0, d.film.watches); render(); }
   });
+  // public copy: the backend is unreachable over https, so record the watch on the shared board
+  ntfyPost({ type: 'watch', id: f.id, watches: (f.watches || 0) + 1 });
 }
 
 function render() {
@@ -160,6 +164,10 @@ function render() {
         <button data-del="${esc(f.id)}">remove</button>
       </div>
     </div>`).join('') || '<div class="sub">no films yet — add the first one above</div>';
+  if (window.__useBoard) {
+    const tw = films.reduce((n, f) => n + (f.watches || 0), 0);
+    $('stats').textContent = films.length + ' film' + (films.length === 1 ? '' : 's') + ' · ' + tw + ' watches · shared board via ntfy';
+  }
   $('grid').querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
     const f = films.find(x => x.id === b.getAttribute('data-play'));
     if (f) showPlayer(f);
@@ -181,6 +189,7 @@ function render() {
 async function load() {
   const d = await api('/films');
   if (d && d.films) {
+    window.__useBoard = false;
     films = d.films;
     films.forEach(saveLocal);
     const s = d.stats || {};
@@ -189,6 +198,7 @@ async function load() {
     return;
   }
   // fallback: ntfy mirror + local
+  window.__useBoard = true;
   const events = await ntfyGet();
   const deleted = new Set(events.filter(e => e.type === 'delete' && e.id).map(e => e.id));
   const fromNtfy = events.filter(e => e.type === 'new' && e.film && !deleted.has(e.film.id)).map(e => e.film);
@@ -200,8 +210,14 @@ async function load() {
     const ids = new Set(fromNtfy.map(f => f.id));
     merged = merged.filter(f => ids.has(f.id));
   }
+  // count watches from the shared board too (ntfy carries the absolute count)
+  const watchEvents = events.filter(e => e.type === 'watch' && e.id);
+  const counts = {};
+  watchEvents.forEach(e => { counts[e.id] = Math.max(counts[e.id] || 0, e.watches || 0); });
   films = merged;
-  $('stats').textContent = films.length + ' film' + (films.length === 1 ? '' : 's') + ' · shared board via ntfy';
+  films.forEach(f => { if (counts[f.id] != null) f.watches = Math.max(f.watches || 0, counts[f.id]); });
+  const totalWatches = films.reduce((n, f) => n + (f.watches || 0), 0);
+  $('stats').textContent = films.length + ' film' + (films.length === 1 ? '' : 's') + ' · ' + totalWatches + ' watches · shared board via ntfy';
   render();
 }
 
