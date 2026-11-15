@@ -70,7 +70,7 @@ const API='/api/featherstudio';
 const SIZE=32;
 const PALETTE=['#000000','#ffffff','#60a5fa','#3b82f6','#1e40af','#f472b6','#fb923c','#facc15','#4ade80','#22c55e','#14532d','#a78bfa','#8b5a2b','#94a3b8','#ef4444','#0d0a17'];
 const $=id=>document.getElementById(id);
-const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({"&":"&","<":"<",">":">",'"':""","'":"'"}[c]));
+const esc=s=>String(s||'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 let pixels=new Array(SIZE*SIZE).fill('');
 let color=PALETTE[2], erasing=false, history=[], artworks=[];
 const NTFY='https://ntfy.nerdvpn.de/gurt-feather-studio';
