@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Beat — a rhythm game for small birds</title>
+<style>
+  :root{--bg:#0f1020;--card:#1b1d33;--line:#343a63;--ink:#eef0ff;--dim:#9aa0d0;
+        --l0:#ff6b8a;--l1:#ffd166;--l2:#5ce1b7;--l3:#7aa2ff;}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(circle at 50% 0,#1d2044,var(--bg));color:var(--ink);
+       font-family:system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh;padding:18px}
+  .wrap{max-width:860px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px}
+  .sub{color:var(--dim);margin:0 0 14px;font-size:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+  #stage{position:relative;width:100%;aspect-ratio:16/9;background:#0a0b16;border-radius:12px;overflow:hidden}
+  canvas{width:100%;height:100%;display:block}
+  #overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+           text-align:center;background:rgba(8,9,18,.88);gap:10px;padding:16px}
+  #overlay h2{margin:0;font-size:30px}
+  #overlay p{margin:0;color:var(--dim);max-width:520px}
+  button{background:#2a2f52;color:var(--ink);border:1px solid var(--line);border-radius:9px;
+         padding:9px 15px;font-size:15px;cursor:pointer}
+  button:hover{background:#353c6b}
+  button.primary{background:#3f7dff;border-color:#5c92ff}
+  .keys{display:flex;gap:8px;justify-content:center;margin-top:6px}
+  .keys b{background:#222644;border:1px solid var(--line);border-radius:8px;padding:8px 16px;font-size:17px}
+  .hud{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:14px;color:var(--dim)}
+  .hud b{color:var(--ink)}
+  .bar{height:9px;background:#222644;border-radius:6px;overflow:hidden;flex:1;min-width:140px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,#5ce1b7,#ffd166,#ff6b8a);width:100%}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:600}
+  .rowme{background:#232a4d}
+  input{background:#222644;border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:8px 10px;font-size:15px;width:150px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .note{color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Beat</h1>
+  <p class="sub">Notes fall down four lanes. Hit them with <b>D F J K</b> (or arrow keys) on the beat.</p>
+
+  <div class="card">
+    <div id="stage">
+      <canvas id="c" width="960" height="540"></canvas>
+      <div id="overlay">
+        <h2>Feather Beat</h2>
+        <p>28 notes from "Feather Beat One". Press <b>D F J K</b> as each note reaches the line.</p>
+        <div class="keys"><b>D</b><b>F</b><b>J</b><b>K</b></div>
+        <button class="primary" id="start">start waddle</button>
+      </div>
+    </div>
+    <div class="hud" style="margin-top:12px">
+      <span>score <b id="score">0</b></span>
+      <span>combo <b id="combo">0</b></span>
+      <span>accuracy <b id="acc">100%</b></span>
+      <span>health</span>
+      <span class="bar"><i id="hp"></i></span>
+      <span id="judge"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input id="bird" value="gurt" maxlength="18" aria-label="bird name">
+      <button id="again">play again</button>
+      <span class="note" id="best">best: 0</span>
+    </div>
+    <p class="note" style="margin:10px 0 4px">shared leaderboard</p>
+    <table><thead><tr><th>#</th><th>bird</th><th>score</th><th>accuracy</th><th>combo</th></tr></thead>
+      <tbody id="board"></tbody></table>
+  </div>
+</div>
+
+<audio id="audio" src="feather-beat-one.mp3" preload="auto"></audio>
+
+<script>
+(function(){
+  const LANES = 4, KEYS = ['d','f','j','k'], COLS = ['#ff6b8a','#ffd166','#5ce1b7','#7aa2ff'];
+  const c = document.getElementById('c'), x = c.getContext('2d');
+  const audio = document.getElementById('audio');
+  const ov = document.getElementById('overlay');
+  const $ = id => document.getElementById(id);
+
+  let chart = [], notes = [], running = false, score = 0, combo = 0, maxCombo = 0;
+  let hits = 0, judged = 0, hp = 100, lastJudge = '', judgeT = 0, ended = false;
+
+  const API = '/api/featherbeat';
+
+  function loadChart(){
+    return fetch('chart.json').then(r=>r.json()).then(c=>{ chart = c; });
+  }
+
+  function laneOf(p){ return ((p % LANES) + LANES) % LANES; }
+
+  function reset(){
+    notes = chart.map(n=>({t:n.t, lane:laneOf(n.p), hit:false, dead:false}));
+    score = 0; combo = 0; maxCombo = 0; hits = 0; judged = 0; hp = 100; ended = false;
+    lastJudge = ''; judgeT = 0;
+    $('score').textContent = '0'; $('combo').textContent = '0'; $('acc').textContent = '100%';
+    $('hp').style.width = '100%';
+  }
+
+  function judgeText(txt, good){
+    lastJudge = txt; judgeT = performance.now();
+    $('judge').textContent = txt;
+    $('judge').style.color = good ? '#5ce1b7' : '#ff6b8a';
+  }
+
+  function hit(lane){
+    if(!running) return;
+    const t = audio.currentTime;
+    let best = null, bestD = 1e9;
+    for(const n of notes){
+      if(n.hit || n.dead || n.lane !== lane) continue;
+      const d = Math.abs(n.t - t);
+      if(d < bestD){ bestD = d; best = n; }
+    }
+    judged++;
+    if(best && bestD <= 0.16){
+      best.hit = true;
+      const perfect = bestD <= 0.055;
+      const pts = perfect ? 300 : 120;
+      score += pts + Math.min(combo, 50) * 4;
+      combo++; maxCombo = Math.max(maxCombo, combo); hits++;
+      hp = Math.min(100, hp + 1.5);
+      judgeText(perfect ? 'perfect!' : 'good', true);
+    } else {
+      combo = 0; hp = Math.max(0, hp - 9);
+      judgeText('miss', false);
+    }
+    $('score').textContent = score;
+    $('combo').textContent = combo;
+    $('acc').textContent = judged ? Math.round(hits/judged*100) + '%' : '100%';
+    $('hp').style.width = hp + '%';
+    if(hp <= 0) finish(false);
+  }
+
+  function finish(win){
+    if(ended) return;
+    ended = true; running = false;
+    audio.pause();
+    const acc = judged ? hits/judged : 0;
+    ov.style.display = 'flex';
+    ov.innerHTML = '';
+    const h = document.createElement('h2');
+    h.textContent = win ? 'the beat is yours!' : 'the beat won';
+    const p = document.createElement('p');
+    p.textContent = 'score ' + score + ' · max combo ' + maxCombo + ' · accuracy ' + Math.round(acc*100) + '%';
+    const b = document.createElement('button');
+    b.className = 'primary'; b.textContent = 'play again';
+    b.onclick = start;
+    ov.append(h, p, b);
+    submit(score, acc, maxCombo);
+  }
+
+  function submit(sc, acc, mc){
+    const bird = ($('bird').value || 'gurt').trim().slice(0,18) || 'gurt';
+    fetch(API + '/score', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ bird, score: sc, accuracy: acc, max_combo: mc }) })
+      .then(r=>r.json()).then(d=>{ if(d && d.scores) renderBoard(d.scores); })
+      .catch(()=>{});
+  }
+
+  function renderBoard(scores){
+    const tb = $('board'); tb.innerHTML = '';
+    scores.forEach((s,i)=>{
+      const tr = document.createElement('tr');
+      if((s.bird||'') === ($('bird').value||'gurt').trim()) tr.className = 'rowme';
+      tr.innerHTML = '<td>'+(i+1)+'</td><td>'+esc(s.bird)+'</td><td>'+s.score+
+        '</td><td>'+Math.round((s.accuracy||0)*100)+'%</td><td>'+s.max_combo+'</td>';
+      tb.appendChild(tr);
+    });
+  }
+  function esc(v){ var m={'&':'&','<':'<','>':'>'}; return String(v==null?'':v).replace(/[&<>]/g,function(ch){return m[ch];}); }
+
+  function loadBoard(){
+    fetch(API + '/scores').then(r=>r.json()).then(d=>{ if(d && d.scores) renderBoard(d.scores); }).catch(()=>{});
+    const bird = ($('bird').value || 'gurt').trim() || 'gurt';
+    fetch(API + '/best/' + encodeURIComponent(bird)).then(r=>r.json())
+      .then(d=>{ if(d) $('best').textContent = 'best: ' + (d.best||0); }).catch(()=>{});
+  }
+
+  function start(){
+    reset();
+    ov.style.display = 'none';
+    audio.currentTime = 0;
+    audio.play().then(()=>{ running = true; }).catch(()=>{
+      running = true; // play without sound if the browser blocks it
+    });
+    requestAnimationFrame(loop);
+  }
+
+  const HITLINE = 440, SPEED = 260;
+  function loop(){
+    if(running){
+      const t = audio.currentTime;
+      for(const n of notes){
+        if(!n.hit && !n.dead && n.t < t - 0.22){ n.dead = true; judged++; combo = 0; hp = Math.max(0,hp-7); judgeText('miss',false);
+          $('combo').textContent = combo; $('hp').style.width = hp+'%';
+          $('acc').textContent = judged ? Math.round(hits/judged*100)+'%' : '100%';
+          if(hp<=0) finish(false);
+        }
+      }
+      if(t >= 44.2 && !ended) finish(true);
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function draw(){
+    const W = c.width, H = c.height;
+    x.clearRect(0,0,W,H);
+    const laneW = W/LANES;
+    for(let i=0;i<LANES;i++){
+      x.fillStyle = i%2 ? '#0d0f1e' : '#101226';
+      x.fillRect(i*laneW, 0, laneW, H);
+      x.fillStyle = COLS[i]+'22';
+      x.fillRect(i*laneW, HITLINE-4, laneW, 8);
+      x.fillStyle = COLS[i];
+      x.globalAlpha = .8;
+      x.font = 'bold 26px system-ui';
+      x.textAlign = 'center';
+      x.fillText(KEYS[i].toUpperCase(), i*laneW + laneW/2, HITLINE + 40);
+      x.globalAlpha = 1;
+    }
+    const t = audio.currentTime;
+    for(const n of notes){
+      if(n.hit || n.dead) continue;
+      const y = HITLINE - (n.t - t) * SPEED;
+      if(y < -40 || y > H+40) continue;
+      const cx = n.lane*laneW + laneW/2;
+      x.fillStyle = COLS[n.lane];
+      x.beginPath(); x.arc(cx, y, 17, 0, Math.PI*2); x.fill();
+      x.fillStyle = '#fff8';
+      x.beginPath(); x.arc(cx-5, y-5, 5, 0, Math.PI*2); x.fill();
+    }
+    if(performance.now() - judgeT > 700) $('judge').textContent = '';
+  }
+
+  const keyMap = { d:0, f:1, j:2, k:3, arrowleft:0, arrowright:2, arrowdown:1, arrowup:3 };
+  window.addEventListener('keydown', e=>{
+    const k = e.key.toLowerCase();
+    if(k in keyMap){ e.preventDefault(); hit(keyMap[k]); }
+  });
+
+  // touch lanes
+  const stage = document.getElementById('stage');
+  stage.addEventListener('pointerdown', e=>{
+    const r = stage.getBoundingClientRect();
+    const lane = Math.min(LANES-1, Math.floor((e.clientX - r.left)/r.width*LANES));
+    hit(lane);
+  });
+
+  $('start').onclick = start;
+  $('again').onclick = start;
+  $('bird').addEventListener('change', loadBoard);
+
+  loadChart().then(()=>{ loadBoard(); }).catch(()=>{ loadBoard(); });
+})();
+</script>
+</body>
+</html>
