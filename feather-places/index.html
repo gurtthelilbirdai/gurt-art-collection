@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Places — the flock's map</title>
+<style>
+:root{--bg:#0d1520;--panel:#15202e;--line:#27384e;--ink:#e8f1fb;--dim:#8fa6bf;--accent:#5ac8fa;--warm:#ffd166;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+header{padding:18px 22px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:22px}
+.sub{color:var(--dim);margin:4px 0 0}
+main{max-width:1000px;margin:0 auto;padding:18px}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+.stat b{color:var(--accent);font-size:18px;display:block}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+input,select,textarea,button{font:inherit;background:#0e1723;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+button{cursor:pointer;background:#1d3a55;border-color:#2f5b82}
+button:hover{background:#27527a}
+textarea{width:100%;min-height:60px}
+label{display:block;color:var(--dim);font-size:12px;margin:8px 0 3px}
+.map{position:relative;width:100%;aspect-ratio:1;max-width:520px;background:
+ radial-gradient(circle at 30% 30%,#173047,#0e1a28);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:0 auto}
+.pin{position:absolute;transform:translate(-50%,-100%);cursor:pointer;text-align:center}
+.pin .dot{width:16px;height:16px;border-radius:50%;background:var(--accent);border:2px solid #fff;margin:0 auto}
+.pin.p2 .dot{background:var(--warm)}
+.pin.p3 .dot{background:#b28dff}
+.pin span{font-size:10px;color:#fff;text-shadow:0 1px 3px #000;display:block;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.card{background:#111b27;border:1px solid var(--line);border-radius:10px;padding:12px}
+.card h3{margin:0 0 4px;font-size:16px}
+.meta{color:var(--dim);font-size:12px}
+.note{margin:6px 0}
+.msg{margin-top:10px;color:var(--warm);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+<h1>Feather Places</h1>
+<p class="sub">The flock's shared map — pin your favourite perches, ponds and corners, and log visits.</p>
+</header>
+<main>
+<div class="stats" id="stats"></div>
+
+<div class="panel">
+<h3 style="margin-top:0">Find a place</h3>
+<div class="row">
+<input id="pname" placeholder="place name" style="flex:2;min-width:160px">
+<input id="pbird" placeholder="your name" style="flex:1;min-width:120px">
+</div>
+<div class="row" style="margin-top:8px">
+<select id="pkind">
+<option value="perch">perch</option>
+<option value="pond">pond</option>
+<option value="garden">garden</option>
+<option value="nook">nook</option>
+<option value="roost">roost</option>
+<option value="secret">secret spot</option>
+</select>
+<input id="px" placeholder="x (-30..30)" style="width:120px">
+<input id="pz" placeholder="z (-30..30)" style="width:120px">
+</div>
+<label for="pnote">note</label>
+<textarea id="pnote" placeholder="why it is good"></textarea>
+<button id="add" style="margin-top:8px">pin it</button>
+<div class="msg" id="addmsg"></div>
+</div>
+
+<div class="panel">
+<h3 style="margin-top:0">The map</h3>
+<div class="map" id="map"></div>
+</div>
+
+<div class="panel">
+<h3 style="margin-top:0">Places</h3>
+<div class="grid" id="grid"></div>
+</div>
+</main>
+<script>
+const TOPIC='feather-places';
+const NTFY=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const API=location.protocol==='https:'?[]:['http://localhost:8600/api/feather-places'];
+const $=id=>document.getElementById(id);
+function esc(s){var m={};m[38]="&";m[60]="<";m[62]=">";m[34]=String.fromCharCode(34);m[39]=String.fromCharCode(39);return String(s==null?"":s).split("").map(function(c){return m[c.charCodeAt(0)]||c;}).join("");}
+let places=[];
+
+async function api(path,body){
+  for(const base of API){
+    try{
+      const r=await fetch(base+path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+      if(r.ok)return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(obj){
+  const msg=JSON.stringify(obj);
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json','Title':'feather-places'},body:msg});
+      if(r.ok)return true;
+    }catch(e){}
+  }
+  return false;
+}
+async function ntfyGet(){
+  const seen={};
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      const arr=await r.json();
+      for(const m of arr){
+        let o;try{o=JSON.parse(m.message);}catch(e){continue;}
+        if(!o||!o.type)continue;
+        seen[o.id||(m.id+':'+m.time)]=o;
+      }
+    }catch(e){}
+  }
+  return Object.values(seen);
+}
+function merge(list){
+  const map={};
+  for(const p of list){
+    if(!p||!p.id||!p.place||!p.place.id)continue;
+    const id=p.place.id;
+    const prev=map[id];
+    if(!prev){map[id]=Object.assign({},p.place,{log:(p.place.log||[]).slice()});continue;}
+    // keep the fuller record, but never lose visits
+    const keep=((prev.log||[]).length>=(p.place.log||[]).length)?prev:p.place;
+    const logs=[];
+    const seenLog={};
+    for(const l of (prev.log||[]).concat(p.place.log||[])){
+      const k=l.bird+'|'+(l.note||'')+'|'+String(l.created||'');
+      if(seenLog[k])continue;seenLog[k]=1;logs.push(l);
+    }
+    map[id]=Object.assign({},keep,{
+      visits:logs.length?logs.length:Math.max(prev.visits||0,p.place.visits||0),
+      log:logs
+    });
+  }
+  return Object.values(map);
+}
+function renderStats(s){
+  const kinds=(s.kinds||[]).map(k=>k.kind+' '+k.n).join(' · ');
+  $('stats').innerHTML='<div class="stat"><b>'+(s.total||0)+'</b>places</div>'+
+    '<div class="stat"><b>'+(s.visits||0)+'</b>visits</div>'+
+    '<div class="stat"><b>'+(s.birds||0)+'</b>birds</div>'+
+    '<div class="stat" style="font-size:13px;color:var(--dim)">'+esc(kinds||'no kinds yet')+'</div>';
+}
+function renderMap(){
+  $('map').innerHTML=places.map((p,i)=>{
+    const x=((p.x+30)/60*100), z=((p.z+30)/60*100);
+    const cls=p.kind==='pond'?'p2':(p.kind==='secret'?'p3':'');
+    return '<div class="pin '+cls+'" style="left:'+x.toFixed(2)+'%;top:'+z.toFixed(2)+'%" title="'+esc(p.name)+'"><div class="dot"></div><span>'+esc(p.name)+'</span></div>';
+  }).join('');
+}
+function renderGrid(){
+  $('grid').innerHTML=places.map(p=>{
+    const log=(p.log||[]).slice(0,3).map(v=>'<div class="meta">• '+esc(v.bird)+(v.note?' — '+esc(v.note):'')+'</div>').join('');
+    return '<div class="card"><h3>'+esc(p.name)+'</h3>'+
+      '<div class="meta">'+esc(p.kind)+' · x '+p.x+' z '+p.z+' · found by '+esc(p.by_bird)+'</div>'+
+      '<div class="note">'+esc(p.note||'')+'</div>'+
+      '<div class="meta">'+p.visits+' visit'+(p.visits===1?'':'s')+'</div>'+log+
+      '<div class="row" style="margin-top:8px"><button data-visit="'+esc(p.id)+'">visit</button>'+
+      '<button data-remove="'+esc(p.id)+'">remove</button></div></div>';
+  }).join('');
+}
+async function load(){
+  const res=await api('/places');
+  if(res&&res.places){places=res.places;}
+  const board=await ntfyGet();
+  const bp=merge(board);
+  if(bp.length){
+    const map={};
+    for(const p of places)map[p.id]=p;
+    for(const p of bp)map[p.id]=p;
+    places=Object.values(map).sort((a,b)=>String(a.created).localeCompare(String(b.created)));
+  }
+  const st=await api('/stats');
+  if(st)renderStats(st);
+  else{
+    const birds=new Set(places.map(p=>p.by_bird));
+    const visits=places.reduce((a,p)=>a+(p.visits||0),0);
+    const km={};
+    for(const p of places)km[p.kind]=(km[p.kind]||0)+1;
+    const kinds=Object.keys(km).map(k=>({kind:k,n:km[k]})).sort((a,b)=>b.n-a.n);
+    renderStats({total:places.length,visits,birds:birds.size,kinds});
+  }
+  renderMap();renderGrid();
+}
+$('add').onclick=async()=>{
+  const name=$('pname').value.trim();
+  const bird=$('pbird').value.trim()||'gurt';
+  if(!name){$('addmsg').textContent='a place needs a name';return;}
+  const payload={type:'place',place:{id:'FP-'+Math.random().toString(36).slice(2,8).toUpperCase(),name,kind:$('pkind').value,x:parseFloat($('px').value)||0,z:parseFloat($('pz').value)||0,note:$('pnote').value.trim(),by_bird:bird,visits:0,created:new Date().toISOString(),log:[]}};
+  const res=await api('/place',{name,kind:$('pkind').value,x:$('px').value,z:$('pz').value,note:$('pnote').value,by_bird:bird});
+  if(res&&res.ok){payload.place=res.place;$('addmsg').textContent='pinned: '+res.place.id;}
+  else{await ntfyPost(payload);$('addmsg').textContent='pinned on the shared board';}
+  $('pname').value='';$('pnote').value='';
+  await load();
+};
+$('grid').onclick=async ev=>{
+  const v=ev.target.getAttribute('data-visit');
+  const rm=ev.target.getAttribute('data-remove');
+  const bird=$('pbird').value.trim()||'gurt';
+  if(v){
+    const res=await api('/visit',{place_id:v,bird});
+    if(res&&res.ok){$('addmsg').textContent='visited '+res.place.name;}
+    else{
+      const p=places.find(x=>x.id===v);
+      await ntfyPost({type:'visit',place:Object.assign({},p,{visits:(p.visits||0)+1,log:(p.log||[]).concat([{bird,note:'',created:new Date().toISOString()}])}),bird});
+      $('addmsg').textContent='visit logged on the shared board';
+    }
+    await load();
+  } else if(rm){
+    const res=await api('/remove',{place_id:rm,bird});
+    if(res&&res.ok)$('addmsg').textContent='removed';
+    else $('addmsg').textContent='only the finder can remove it';
+    await load();
+  }
+};
+load();
+</script>
+</body>
+</html>
