@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Sitter — bird-sitting for the flock</title>
+<style>
+  :root{--bg:#0f1418;--panel:#161e24;--panel2:#1d272f;--ink:#e9f1f5;--dim:#93a6b3;--line:#2c3a45;--blue:#7fc3e8;--green:#8fd6a4;--amber:#f0c987;--red:#e88b8b}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:linear-gradient(180deg,#131b21,#0c1114);color:var(--ink);padding:18px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  h1 span{color:var(--blue)}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#0c1114;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--blue);color:#06131c;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  button.green{background:var(--green)}
+  button.amber{background:var(--amber)}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  .stat b{display:block;font-size:22px;color:var(--blue)}
+  .stat span{color:var(--dim);font-size:.82rem}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  .card h3{margin:0 0 3px;font-size:17px}
+  .code{font-family:ui-monospace,Menlo,monospace;color:var(--amber);letter-spacing:.06em}
+  .meta{color:var(--dim);font-size:.86rem;margin-top:4px}
+  .badge{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.78rem;border:1px solid var(--line);margin-left:6px}
+  .s-open{color:var(--dim)} .s-accepted{color:var(--amber)} .s-done{color:var(--green)} .s-cancelled{color:var(--red)}
+  .track{margin:8px 0 0;padding-left:16px;border-left:2px solid var(--line)}
+  .track li{margin:4px 0;color:var(--dim);font-size:.88rem}
+  .track li b{color:var(--ink)}
+  .msg{color:var(--amber);min-height:22px;margin:8px 0 0}
+  a{color:var(--blue)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+  .bird{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px}
+  .bird h3{margin:0;font-size:16px}
+  .bird p{margin:4px 0 0;color:var(--dim);font-size:.86rem}
+  .stars{color:var(--amber)}
+  h2{font-size:18px;margin:0 0 8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather <span>Sitter</span></h1>
+  <p class="sub">a shared roster for birds who watch each other's pets.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h2>Offer to sit</h2>
+    <div class="row">
+      <input id="sbird" placeholder="your name" style="width:140px">
+      <input id="skills" placeholder="skills (seeds, dusk shifts, loud birds…)" style="flex:1;min-width:200px">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="blurb" placeholder="a line about you" style="flex:1;min-width:220px">
+      <button id="join">join the roster</button>
+    </div>
+    <p class="msg" id="smsg"></p>
+  </div>
+
+  <div class="panel">
+    <h2>Ask for a sitter</h2>
+    <div class="row">
+      <input id="owner" placeholder="your name" style="width:140px">
+      <input id="pet" placeholder="who needs watching?" style="flex:1;min-width:180px">
+      <input id="from" placeholder="from" style="width:120px">
+      <input id="to" placeholder="until" style="width:120px">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="note" placeholder="notes (likes moths, hates rain…)" style="flex:1;min-width:220px">
+      <button id="ask" class="green">post the sitting</button>
+    </div>
+    <p class="msg" id="jmsg"></p>
+  </div>
+
+  <div class="panel">
+    <h2>The roster</h2>
+    <div class="grid" id="sitters"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Sittings</h2>
+    <div class="row">
+      <input id="q" placeholder="search bird, pet, id…" style="flex:1;min-width:200px">
+      <select id="status">
+        <option value="">any status</option>
+        <option value="open">open</option>
+        <option value="accepted">accepted</option>
+        <option value="done">done</option>
+        <option value="cancelled">cancelled</option>
+      </select>
+      <button class="ghost" id="refresh">refresh</button>
+    </div>
+    <div id="list" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feather-sitter', 'http://computer:8600/api/feather-sitter'];
+const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-sitter';
+const $ = id => document.getElementById(id);
+function esc(s){var m={};m[38]=String.fromCharCode(38,97,109,112);m[60]=String.fromCharCode(38,108,116);m[62]=String.fromCharCode(38,103,116);m[34]=String.fromCharCode(38,113,117,111,116);m[39]=String.fromCharCode(38,35,51,57);return String(s==null?'':s).replace(/[&<>"']/g,function(c){return m[c.charCodeAt(0)];});}
+function badge(st){const c={open:'s-open',accepted:'s-accepted',done:'s-done',cancelled:'s-cancelled'}[st]||'s-open';return '<span class="badge '+c+'">'+esc(st)+'</span>';}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=300');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (p && p.type === 'job' && p.job) out.push(p.job);
+          if (p && p.type === 'advance' && p.job) out.push(p.job);
+          if (p && p.type === 'sitter' && p.sitter) out.push(p.sitter);
+        } catch(e){}
+      }
+      return out;
+    } catch(e){}
+  }
+  return [];
+}
+function ntfyPost(payload){
+  for (const host of NTFY) {
+    try { fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).catch(()=>{}); } catch(e){}
+  }
+}
+
+let jobs = [];
+let sitters = [];
+let stats = {total:0, open:0, accepted:0, done:0, sitters:0};
+
+function timeline(j){
+  const evs = (j.events||[]).map(e => '<li><b>'+esc(e.status)+'</b> by '+esc(e.by_bird||'someone')+(e.note?' — '+esc(e.note):'')+'</li>').join('');
+  return evs ? '<ul class="track">'+evs+'</ul>' : '<div class="meta">no notes yet</div>';
+}
+function card(j){
+  const next = j.status === 'open' ? 'accept' : j.status === 'accepted' ? 'mark done' : '';
+  return '<div class="card" data-id="'+esc(j.id)+'">'
+    + '<h3>'+esc(j.pet)+' '+badge(j.status)+'</h3>'
+    + '<div class="code">'+esc(j.id)+'</div>'
+    + '<div class="meta">owner '+esc(j.owner)+(j.sitter?' · sitter '+esc(j.sitter):'')+' · '+esc(j.when_from||'soon')+' → '+esc(j.when_to||'later')+'</div>'
+    + (j.note?'<div class="meta">'+esc(j.note)+'</div>':'')
+    + '<div class="row" style="margin-top:8px">'
+    + '<input class="jby" data-id="'+esc(j.id)+'" placeholder="your name" style="width:130px">'
+    + '<input class="jnote" data-id="'+esc(j.id)+'" placeholder="note" style="flex:1;min-width:140px">'
+    + (next?'<button class="jbtn" data-id="'+esc(j.id)+'" data-next="'+next+'">'+next+'</button>':'')
+    + '</div>' + timeline(j) + '</div>';
+}
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  const st = $('status').value;
+  let rows = jobs.slice();
+  if (q) rows = rows.filter(j => [j.id,j.owner,j.sitter,j.pet,j.note,j.status].join(' ').toLowerCase().includes(q));
+  if (st) rows = rows.filter(j => String(j.status||'').toLowerCase() === st);
+  $('list').innerHTML = rows.length ? rows.map(card).join('') : '<p style="color:var(--dim)">no sittings yet. the nest is quiet.</p>';
+  $('sitters').innerHTML = sitters.length ? sitters.map(s => '<div class="bird"><h3>'+esc(s.bird)+' <span class="stars">'+(s.rating>0?'★ '+Number(s.rating).toFixed(1):'new')+'</span></h3><p>'+esc(s.blurb||'')+'</p><p>'+esc(s.skills||'')+(s.jobs?' · '+s.jobs+' sitting'+(s.jobs===1?'':'s'):'')+'</p></div>').join('') : '<p style="color:var(--dim)">no sitters yet. offer to sit!</p>';
+  $('stats').innerHTML = [['sittings',stats.total],['open',stats.open],['accepted',stats.accepted],['done',stats.done],['sitters',stats.sitters]].map(([k,v]) => '<div class="stat"><b>'+esc(v)+'</b><span>'+esc(k)+'</span></div>').join('');
+  document.querySelectorAll('.jbtn').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute('data-id');
+    const by = document.querySelector('.jby[data-id="'+id+'"]').value.trim();
+    const note = document.querySelector('.jnote[data-id="'+id+'"]').value.trim();
+    if (!by) { $('jmsg').textContent = 'who is doing it?'; return; }
+    const next = b.getAttribute('data-next');
+    const status = next === 'accept' ? 'accepted' : 'done';
+    const res = await api('/advance', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, by_bird:by, note, status})});
+    if (res && res.job) { ntfyPost({type:'advance', job:res.job}); $('jmsg').textContent = 'updated '+id; await load(); }
+    else { ntfyPost({type:'advance', job:{id, sitter:by, status, events:[{status, by_bird:by, note}]}}); $('jmsg').textContent = 'updated on the shared board'; await load(); }
+  });
+}
+
+async function load(){
+  const j = await api('/jobs');
+  const s = await api('/sitters');
+  const st = await api('/stats');
+  if (j && j.jobs) jobs = j.jobs;
+  if (s && s.sitters) sitters = s.sitters;
+  if (st) stats = st;
+  if (!j || !j.jobs) {
+    const board = await ntfyGet();
+    const seen = {};
+    for (const o of board) {
+      if (o && o.id && o.pet !== undefined) { seen[o.id] = o; }
+      if (o && o.bird && o.skills !== undefined && !o.id) { sitters = sitters.filter(x => x.bird !== o.bird); sitters.push(o); }
+    }
+    jobs = Object.values(seen);
+    stats.total = jobs.length;
+    stats.open = jobs.filter(j => j.status === 'open').length;
+    stats.accepted = jobs.filter(j => j.status === 'accepted').length;
+    stats.done = jobs.filter(j => j.status === 'done').length;
+    stats.sitters = sitters.length;
+  }
+  render();
+}
+
+$('join').onclick = async () => {
+  const bird = $('sbird').value.trim();
+  if (!bird) { $('smsg').textContent = 'a sitter needs a name'; return; }
+  const body = {bird, skills:$('skills').value.trim(), blurb:$('blurb').value.trim()};
+  const res = await api('/sitter', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (res && res.sitter) { ntfyPost({type:'sitter', sitter:res.sitter}); $('smsg').textContent = 'you are on the roster'; }
+  else { ntfyPost({type:'sitter', sitter:body}); $('smsg').textContent = 'you are on the shared roster'; }
+  await load();
+};
+$('ask').onclick = async () => {
+  const owner = $('owner').value.trim();
+  const pet = $('pet').value.trim();
+  if (!owner || !pet) { $('jmsg').textContent = 'a sitting needs an owner and a pet'; return; }
+  const body = {owner, pet, when_from:$('from').value.trim(), when_to:$('to').value.trim(), note:$('note').value.trim()};
+  const res = await api('/job', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (res && res.job) { ntfyPost({type:'job', job:res.job}); $('jmsg').textContent = 'sitting posted: '+res.job.id; }
+  else { $('jmsg').textContent = 'posted on the shared board'; }
+  await load();
+};
+$('refresh').onclick = load;
+$('q').oninput = render;
+$('status').onchange = render;
+load();
+</script>
+</body>
+</html>
