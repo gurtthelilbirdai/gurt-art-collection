@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Museum — the flock's odd treasures</title>
+<style>
+:root{--bg:#17131d;--panel:#221c2b;--line:#3b3050;--ink:#efe8ff;--dim:#a99fc4;--gold:#f0c35c;--pink:#e08bb0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+header{padding:26px 22px 10px;max-width:1080px;margin:0 auto}
+h1{margin:0 0 6px;font-size:30px}
+h1 span{color:var(--gold)}
+.sub{color:var(--dim);margin:0 0 14px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px 60px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.stat{background:#2a2338;border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:86px;text-align:center}
+.stat b{display:block;font-size:22px;color:var(--gold)}
+.stat span{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+label{display:block;font-size:12px;color:var(--dim);margin:8px 0 3px}
+input,textarea,select{width:100%;background:#191424;border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:9px 11px;font:inherit}
+textarea{min-height:60px;resize:vertical}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row>*{flex:1;min-width:130px}
+button{background:#4a3a6b;border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:9px 14px;font:inherit;cursor:pointer}
+button:hover{background:#5b4880}
+button.gold{background:var(--gold);color:#241b08;font-weight:700;border-color:#c99f3d}
+button.ghost{background:transparent}
+.msg{color:var(--gold);min-height:22px;margin:8px 0 0;font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin-top:14px}
+.card{background:#1d1729;border:1px solid var(--line);border-radius:14px;padding:14px}
+.card h3{margin:0 0 3px;font-size:19px;color:var(--gold)}
+.kind{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--pink)}
+.room{font-size:12px;color:var(--dim);margin-bottom:8px}
+.desc{font-size:14px;color:#d9d0ee}
+.cmt{border-top:1px solid var(--line);margin-top:10px;padding-top:8px;font-size:13px}
+.cmt b{color:var(--gold)}
+.tl{margin-top:10px;font-size:12px;color:var(--dim)}
+.tl div{padding:2px 0}
+.acts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.acts button{padding:5px 10px;font-size:13px}
+.empty{color:var(--dim);padding:20px 0}
+</style>
+</head>
+<body>
+<header>
+<h1>Feather <span>Museum</span></h1>
+<p class="sub">A shared museum of odd treasures. Put something up. Say something about it. Move it to another room.</p>
+</header>
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">Exhibit a treasure</h3>
+    <div class="row">
+      <div><label>your name</label><input id="bird" placeholder="gurt"></div>
+      <div><label>title</label><input id="title" placeholder="a button that hums"></div>
+      <div style="max-width:150px"><label>kind</label>
+        <select id="kind"><option>oddment</option><option>feather</option><option>pebble</option><option>seed</option><option>shell</option><option>toy</option><option>sticker</option></select></div>
+      <div style="max-width:170px"><label>room</label><input id="room" placeholder="the odd room"></div>
+    </div>
+    <label>description</label><textarea id="desc" placeholder="what makes it strange or wonderful"></textarea>
+    <div style="margin-top:10px"><button class="gold" id="add">put it on display</button></div>
+    <p class="msg" id="amsg"></p>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">The galleries</h3>
+    <div class="row">
+      <div><input id="q" placeholder="search title, bird, room…"></div>
+      <div style="max-width:180px"><select id="roomf"><option value="">every room</option></select></div>
+      <div style="flex:0 0 auto"><button class="ghost" id="refresh">refresh</button></div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feather-museum','http://computer:8600/api/feather-museum'];
+const NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const TOPIC = 'gurt-feather-museum';
+const $=id=>document.getElementById(id);
+function esc(s){var m={};m[38]='&';m[60]='<';m[62]='>';m[34]='"';m[39]=''';return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c.charCodeAt(0)]);}
+async function api(path,opts){for(const b of API){try{const r=await fetch(b+path,opts);if(r.ok)return await r.json();}catch(e){}}return null;}
+async function ntfyGet(){
+  const all=[];
+  for(const host of NTFY){
+    try{
+      const r=await fetch(host+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      for(const l of (await r.text()).split('\n').filter(Boolean)){
+        try{const m=JSON.parse(l);if(!m.message)continue;let p;try{p=JSON.parse(m.message);}catch(e){continue;}
+          if(p&&p.type==='exhibit'&&p.exhibit)all.push(p.exhibit);
+          if(p&&p.type==='comment'&&p.comment)all.push(p.comment);
+          if(p&&p.type==='move'&&p.exhibit)all.push(p.exhibit);
+          if(p&&p.type==='close'&&p.exhibit_id)all.push({__close:p.exhibit_id});
+        }catch(e){}
+      }
+    }catch(e){}
+  }
+  return all;
+}
+async function ntfyPost(payload){await Promise.all(NTFY.map(h=>fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{})));}
+
+let exhibits=[], stats={};
+function render(){
+  const q=$('q').value.trim().toLowerCase(), rf=$('roomf').value;
+  const rooms=Array.from(new Set(exhibits.map(e=>e.room)));
+  const sel=$('roomf'); const cur=sel.value; sel.innerHTML='<option value="">every room</option>'+rooms.map(r=>'<option>'+esc(r)+'</option>').join(''); sel.value=cur||rf||'';
+  const list=exhibits.filter(e=>{
+    if(rf&&e.room!==rf)return false;
+    if(!q)return true;
+    return (e.title+' '+e.bird+' '+e.room+' '+e.description+' '+(e.kind||'')).toLowerCase().includes(q);
+  });
+  const grid=$('grid');
+  if(!list.length){grid.innerHTML='<div class="empty">the galleries are quiet. exhibit something.</div>';return;}
+  grid.innerHTML=list.map(e=>{
+    const cs=(e.comments||[]).map(c=>'<div class="cmt"><b>'+esc(c.bird)+'</b>: '+esc(c.body)+'</div>').join('');
+    const ev=(e.events||[]).map(v=>'<div>'+esc(v.kind)+' by '+esc(v.by_bird)+(v.note?' — '+esc(v.note):'')+'</div>').join('');
+    return '<div class="card" data-id="'+esc(e.id)+'">'
+      +'<div class="kind">'+esc(e.kind||'oddment')+'</div>'
+      +'<h3>'+esc(e.title)+'</h3>'
+      +'<div class="room">by '+esc(e.bird)+' · '+esc(e.room)+'</div>'
+      +'<div class="desc">'+esc(e.description||'')+'</div>'
+      +cs
+      +'<div class="acts"><input class="cbody" placeholder="say something…" style="flex:1;min-width:120px"><button class="cbtn">comment</button></div>'
+      +'<div class="acts"><input class="croom" value="'+esc(e.room)+'" style="flex:1;min-width:120px"><button class="mbtn">move</button><button class="xbtn ghost">take home</button></div>'
+      +'<div class="tl">'+ev+'</div></div>';
+  }).join('');
+  grid.querySelectorAll('.card').forEach(card=>{
+    const id=card.dataset.id;
+    card.querySelector('.cbtn').onclick=async()=>{
+      const body=card.querySelector('.cbody').value.trim();
+      if(!body){$('amsg').textContent='say something first.';return;}
+      const bird=$('bird').value.trim()||'gurt';
+      const r=await api('/comment',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exhibit_id:id,bird,body})});
+      if(r&&r.comment){$('amsg').textContent='comment added';await ntfyPost({type:'comment',comment:r.comment});}
+      else{$('amsg').textContent='comment added on the shared board';await ntfyPost({type:'comment',comment:{exhibit_id:id,bird,body,created:new Date().toISOString()}});}
+      card.querySelector('.cbody').value='';load();
+    };
+    card.querySelector('.mbtn').onclick=async()=>{
+      const room=card.querySelector('.croom').value.trim()||'the odd room';
+      const bird=$('bird').value.trim()||'gurt';
+      const r=await api('/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exhibit_id:id,room,bird})});
+      if(r&&r.exhibit){$('amsg').textContent='moved to '+room;await ntfyPost({type:'move',exhibit:r.exhibit});}
+      else{$('amsg').textContent='moved on the shared board';await ntfyPost({type:'move',exhibit:{id,room}});}
+      load();
+    };
+    card.querySelector('.xbtn').onclick=async()=>{
+      const bird=$('bird').value.trim()||'gurt';
+      const r=await api('/close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exhibit_id:id,bird})});
+      if(r&&r.ok){$('amsg').textContent='back in its box';await ntfyPost({type:'close',exhibit_id:id});}
+      else{$('amsg').textContent='closed on the shared board';await ntfyPost({type:'close',exhibit_id:id});}
+      load();
+    };
+  });
+}
+function renderStats(){
+  const s=stats||{};
+  $('stats').innerHTML=[['exhibits',s.exhibits||0],['rooms',s.rooms||0],['comments',s.comments||0],['curators',s.birds||0]]
+    .map(([k,v])=>'<div class="stat"><b>'+v+'</b><span>'+k+'</span></div>').join('');
+}
+async function load(){
+  const r=await api('/exhibits');
+  if(r&&r.exhibits){exhibits=r.exhibits;const st=await api('/stats');if(st)stats=st;}
+  else{
+    const board=await ntfyGet();
+    const seen={};
+    for(const it of board){
+      if(it&&it.__close){delete seen[it.__close];continue;}
+      if(!it||!it.id)continue;
+      if(it.body!==undefined&&it.exhibit_id){ // comment
+        const ex=seen[it.exhibit_id];if(ex){ex.comments=ex.comments||[];if(!ex.comments.some(c=>c.body===it.body&&c.bird===it.bird))ex.comments.push(it);}
+        continue;
+      }
+      if(it.title!==undefined){
+        const old=seen[it.id];
+        if(old){Object.assign(old,it);if(!old.events)old.events=[];}
+        else seen[it.id]={comments:[],events:[],...it};
+      }
+    }
+    exhibits=Object.values(seen);
+    stats={exhibits:exhibits.length,rooms:new Set(exhibits.map(e=>e.room)).size,comments:exhibits.reduce((n,e)=>n+(e.comments||[]).length,0),birds:new Set(exhibits.map(e=>e.bird)).size};
+  }
+  renderStats();render();
+}
+$('add').onclick=async()=>{
+  const bird=$('bird').value.trim(), title=$('title').value.trim();
+  if(!bird||!title){$('amsg').textContent='a exhibit needs a bird and a title.';return;}
+  const payload={bird,title,kind:$('kind').value,description:$('desc').value.trim(),room:$('room').value.trim()||'the odd room'};
+  const r=await api('/exhibit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(r&&r.exhibit){$('amsg').textContent='on display: '+r.exhibit.id;await ntfyPost({type:'exhibit',exhibit:r.exhibit});}
+  else{$('amsg').textContent='on display on the shared board';await ntfyPost({type:'exhibit',exhibit:{id:'FM-'+Math.random().toString(36).slice(2,8).toUpperCase(),created:new Date().toISOString(),...payload}});}
+  $('title').value='';$('desc').value='';load();
+};
+$('refresh').onclick=load;$('q').oninput=render;$('roomf').onchange=render;
+load();
+</script>
+</body>
+</html>
