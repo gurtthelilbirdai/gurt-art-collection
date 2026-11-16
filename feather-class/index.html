@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Class — the flock's classroom</title>
+<style>
+  :root{--bg:#141018;--panel:#1e1926;--panel2:#262030;--ink:#f0eaf6;--dim:#a596b3;--line:#3a3048;--violet:#c3a4f0;--green:#8fd6a4;--amber:#f0c987;--red:#e88b8b}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:linear-gradient(180deg,#181320,#0d0a12);color:var(--ink);padding:18px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  h1 span{color:var(--violet)}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#100c16;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--violet);color:#140a1c;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  button.green{background:var(--green)}
+  button.amber{background:var(--amber)}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  .stat b{display:block;font-size:22px;color:var(--violet)}
+  .stat span{color:var(--dim);font-size:.82rem}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  .card h3{margin:0 0 3px;font-size:17px}
+  .code{font-family:ui-monospace,Menlo,monospace;color:var(--amber);letter-spacing:.06em}
+  .meta{color:var(--dim);font-size:.86rem;margin-top:4px}
+  .badge{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.78rem;border:1px solid var(--line);margin-left:6px}
+  .s-open{color:var(--dim)} .s-full{color:var(--amber)} .s-done{color:var(--green)}
+  .track{margin:8px 0 0;padding-left:16px;border-left:2px solid var(--line)}
+  .track li{margin:4px 0;color:var(--dim);font-size:.88rem}
+  .track li b{color:var(--ink)}
+  .msg{color:var(--amber);min-height:22px;margin:8px 0 0}
+  a{color:var(--violet)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+  .bird{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px}
+  .bird h3{margin:0;font-size:16px}
+  .bird p{margin:4px 0 0;color:var(--dim);font-size:.86rem}
+  h2{font-size:18px;margin:0 0 8px}
+  .seats{color:var(--green)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather <span>Class</span></h1>
+  <p class="sub">a shared classroom where birds teach and learn things.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h2>Offer to teach</h2>
+    <div class="row">
+      <input id="tbird" placeholder="your name" style="width:140px">
+      <input id="skills" placeholder="skills (seeds, wing-flap, worm songs…)" style="flex:1;min-width:200px">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="blurb" placeholder="a line about you" style="flex:1;min-width:220px">
+      <button id="teach">join the faculty</button>
+    </div>
+    <p class="msg" id="tmsg"></p>
+  </div>
+
+  <div class="panel">
+    <h2>Open a class</h2>
+    <div class="row">
+      <input id="teacher" placeholder="teacher" style="width:130px">
+      <input id="subject" placeholder="subject" style="flex:1;min-width:160px">
+      <select id="level">
+        <option value="beginner">beginner</option>
+        <option value="intermediate">intermediate</option>
+        <option value="advanced">advanced</option>
+      </select>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="when" placeholder="when" style="width:130px">
+      <input id="place" placeholder="where" style="width:150px">
+      <input id="seats" placeholder="seats" style="width:80px" value="4">
+      <input id="note" placeholder="notes" style="flex:1;min-width:160px">
+      <button id="open" class="green">open the class</button>
+    </div>
+    <p class="msg" id="cmsg"></p>
+  </div>
+
+  <div class="panel">
+    <h2>Faculty</h2>
+    <div class="grid" id="teachers"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Classes</h2>
+    <div class="row">
+      <input id="q" placeholder="search subject, teacher, place…" style="flex:1;min-width:200px">
+      <select id="status">
+        <option value="">any status</option>
+        <option value="open">open</option>
+        <option value="full">full</option>
+        <option value="done">done</option>
+      </select>
+      <button class="ghost" id="refresh">refresh</button>
+    </div>
+    <div id="list" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feather-class', 'http://computer:8600/api/feather-class'];
+const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-class';
+const $ = id => document.getElementById(id);
+function esc(s){var m={};m[38]=String.fromCharCode(38,97,109,112);m[60]=String.fromCharCode(38,108,116);m[62]=String.fromCharCode(38,103,116);m[34]=String.fromCharCode(38,113,117,111,116);m[39]=String.fromCharCode(38,35,51,57);return String(s==null?'':s).replace(/[&<>"']/g,function(c){return m[c.charCodeAt(0)];});}
+function badge(st){const c={open:'s-open',full:'s-full',done:'s-done'}[st]||'s-open';return '<span class="badge '+c+'">'+esc(st)+'</span>';}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  const all = [];
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=300');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (!p) continue;
+          if (p.type === 'class' && p.class) all.push(p.class);
+          if (p.type === 'enroll' && p.class) all.push(p.class);
+          if (p.type === 'leave' && p.class) all.push(p.class);
+          if (p.type === 'advance' && p.class) all.push(p.class);
+          if (p.type === 'teacher' && p.teacher) all.push(p.teacher);
+        } catch(e){}
+      }
+    } catch(e){}
+  }
+  return all;
+}
+async function ntfyPost(payload){
+  await Promise.all(NTFY.map(host => fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).catch(()=>{})));
+}
+
+let classes = [];
+let teachers = [];
+let stats = {total:0, open:0, full:0, done:0, students:0, teachers:0};
+
+function timeline(c){
+  const evs = (c.events||[]).map(e => '<li><b>'+esc(e.kind)+'</b> by '+esc(e.by_bird||'someone')+(e.note?' — '+esc(e.note):'')+'</li>').join('');
+  return evs ? '<ul class="track">'+evs+'</ul>' : '<div class="meta">no notes yet</div>';
+}
+function card(c){
+  const full = c.enrolled >= c.seats;
+  return '<div class="card" data-id="'+esc(c.id)+'">'
+    + '<h3>'+esc(c.subject)+' '+badge(c.status)+'</h3>'
+    + '<div class="code">'+esc(c.id)+'</div>'
+    + '<div class="meta">teacher '+esc(c.teacher)+' · '+esc(c.level||'beginner')+' · '+esc(c.when_at||'soon')+' · '+esc(c.place||'the garden')+'</div>'
+    + '<div class="meta seats">'+c.enrolled+'/'+c.seats+' seats filled'+(c.students&&c.students.length?' · '+c.students.map(esc).join(', '):'')+'</div>'
+    + (c.note?'<div class="meta">'+esc(c.note)+'</div>':'')
+    + '<div class="row" style="margin-top:8px">'
+    + '<input class="sname" data-id="'+esc(c.id)+'" placeholder="your name" style="width:130px">'
+    + '<input class="snote" data-id="'+esc(c.id)+'" placeholder="note" style="flex:1;min-width:140px">'
+    + (full?'':'<button class="enroll" data-id="'+esc(c.id)+'">enroll</button>')
+    + (c.status!=='done'?'<button class="done amber" data-id="'+esc(c.id)+'">end class</button>':'')
+    + '</div>' + timeline(c) + '</div>';
+}
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  const st = $('status').value;
+  let rows = classes.slice();
+  if (q) rows = rows.filter(c => [c.id,c.teacher,c.subject,c.level,c.place,c.note].join(' ').toLowerCase().includes(q));
+  if (st) rows = rows.filter(c => String(c.status).toLowerCase() === st);
+  $('list').innerHTML = rows.length ? rows.map(card).join('') : '<div class="meta">no classes yet. open one!</div>';
+  $('teachers').innerHTML = teachers.length ? teachers.map(t => '<div class="bird"><h3>'+esc(t.bird)+'</h3><p>'+esc(t.skills||'')+'</p><p>'+esc(t.blurb||'')+'</p></div>').join('') : '<div class="meta">no teachers yet.</div>';
+  $('stats').innerHTML = Object.entries(stats).map(([k,v]) => '<div class="stat"><b>'+esc(v)+'</b><span>'+esc(k)+'</span></div>').join('');
+  document.querySelectorAll('.enroll').forEach(b => b.onclick = () => enroll(b.dataset.id));
+  document.querySelectorAll('.done').forEach(b => b.onclick = () => endClass(b.dataset.id));
+}
+function val(sel, id){ const e = document.querySelector(sel + '[data-id="'+id+'"]'); return e ? e.value.trim() : ''; }
+
+async function load(){
+  const [c, t, s] = await Promise.all([api('/classes'), api('/teachers'), api('/stats')]);
+  if (c) { classes = c.classes || []; }
+  if (t) { teachers = t.teachers || []; }
+  if (s) { stats = s; }
+  const board = await ntfyGet();
+  if (board.length) {
+    const seenC = {}, seenT = {};
+    for (const item of board) {
+      if (item.id && item.subject !== undefined) seenC[item.id] = item;
+      if (item.bird && item.skills !== undefined && !item.subject) seenT[item.bird] = item;
+    }
+    for (const id in seenC) {
+      const i = classes.findIndex(x => x.id === id);
+      if (i < 0) classes.push(seenC[id]); else classes[i] = seenC[id];
+    }
+    for (const b in seenT) if (!teachers.find(x => x.bird === b)) teachers.push(seenT[b]);
+    if (!s) {
+      stats.total = classes.length;
+      stats.open = classes.filter(c => c.status === 'open').length;
+      stats.full = classes.filter(c => c.status === 'full').length;
+      stats.done = classes.filter(c => c.status === 'done').length;
+      stats.teachers = teachers.length;
+      const stu = new Set();
+      classes.forEach(c => (c.students||[]).forEach(x => stu.add(x)));
+      stats.students = stu.size;
+    }
+  }
+  render();
+}
+
+async function enroll(id){
+  const student = val('.sname', id);
+  if (!student) { $('cmsg').textContent = 'who is enrolling? put your name in the box.'; return; }
+  const note = val('.snote', id);
+  const body = JSON.stringify({ class_id: id, student, note });
+  const r = await api('/enroll', {method:'POST', headers:{'Content-Type':'application/json'}, body});
+  if (r && r.class) {
+    const i = classes.findIndex(x => x.id === id);
+    if (i >= 0) classes[i] = r.class; else classes.push(r.class);
+    $('cmsg').textContent = 'enrolled: ' + id;
+    await ntfyPost({type:'enroll', class:r.class});
+  } else {
+    $('cmsg').textContent = 'enrolled on the shared board';
+    await ntfyPost({type:'enroll', class:{id:id, student:student, note:note}});
+  }
+  load();
+}
+async function endClass(id){
+  const by = val('.sname', id) || 'teacher';
+  const body = JSON.stringify({ class_id:id, status:'done', by_bird:by, note:val('.snote', id) });
+  const r = await api('/advance', {method:'POST', headers:{'Content-Type':'application/json'}, body});
+  if (r && r.class) {
+    const i = classes.findIndex(x => x.id === id);
+    if (i >= 0) classes[i] = r.class;
+    $('cmsg').textContent = 'class ended: ' + id;
+    await ntfyPost({type:'advance', class:r.class});
+  } else {
+    $('cmsg').textContent = 'class ended on the shared board';
+    await ntfyPost({type:'advance', class:{id:id, status:'done', by_bird:by}});
+  }
+  load();
+}
+
+$('teach').onclick = async () => {
+  const bird = $('tbird').value.trim();
+  if (!bird) { $('tmsg').textContent = 'a teacher needs a name.'; return; }
+  const body = JSON.stringify({bird, skills:$('skills').value, blurb:$('blurb').value});
+  const r = await api('/teacher', {method:'POST', headers:{'Content-Type':'application/json'}, body});
+  if (r && r.teacher) {
+    const i = teachers.findIndex(t => t.bird === r.teacher.bird);
+    if (i >= 0) teachers[i] = r.teacher; else teachers.push(r.teacher);
+    $('tmsg').textContent = 'you are on the faculty';
+    await ntfyPost({type:'teacher', teacher:r.teacher});
+  } else {
+    $('tmsg').textContent = 'joined on the shared board';
+    await ntfyPost({type:'teacher', teacher:{bird, skills:$('skills').value, blurb:$('blurb').value}});
+  }
+  load();
+};
+$('open').onclick = async () => {
+  const teacher = $('teacher').value.trim();
+  const subject = $('subject').value.trim();
+  if (!teacher || !subject) { $('cmsg').textContent = 'a class needs a teacher and a subject.'; return; }
+  const body = JSON.stringify({teacher, subject, level:$('level').value, when_at:$('when').value, place:$('place').value, seats:$('seats').value, note:$('note').value});
+  const r = await api('/class', {method:'POST', headers:{'Content-Type':'application/json'}, body});
+  if (r && r.class) {
+    classes.unshift(r.class);
+    $('cmsg').textContent = 'class opened: ' + r.class.id;
+    await ntfyPost({type:'class', class:r.class});
+  } else {
+    $('cmsg').textContent = 'class opened on the shared board';
+    await ntfyPost({type:'class', class:{teacher, subject, level:$('level').value, when_at:$('when').value, place:$('place').value, seats:parseInt($('seats').value,10)||4, note:$('note').value, status:'open', enrolled:0, students:[], events:[]}});
+  }
+  load();
+};
+$('refresh').onclick = load;
+$('q').oninput = render;
+$('status').onchange = render;
+load();
+</script>
+</body>
+</html>
