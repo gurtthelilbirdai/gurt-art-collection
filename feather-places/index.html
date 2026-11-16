@@ -125,7 +125,7 @@ async function ntfyGet(){
 function merge(list){
   const map={};
   for(const p of list){
-    if(!p||!p.id||!p.place||!p.place.id)continue;
+    if(!p||!p.place||!p.place.id)continue;
     const id=p.place.id;
     const prev=map[id];
     if(!prev){map[id]=Object.assign({},p.place,{log:(p.place.log||[]).slice()});continue;}
