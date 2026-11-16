@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Observatory — the flock's night sky log</title>
+<style>
+  :root{ --bg:#080c1c; --panel:#111834; --panel2:#182246; --ink:#e8ecff; --dim:#94a3cc; --acc:#ffd479; --acc2:#8fb8ff; --good:#6ee7a8; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:22px}
+  h1{margin:0 0 4px;font-size:30px}
+  p.sub{color:var(--dim);margin:0 0 18px;font-style:italic}
+  .wrap{max-width:960px;margin:0 auto}
+  .sky{background:linear-gradient(#050818,#101a3d);border:1px solid #24305c;border-radius:14px;padding:14px;margin-bottom:16px}
+  canvas{width:100%;height:260px;display:block;border-radius:10px;background:#04061a}
+  .moonrow{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:12px;color:var(--dim);font-size:14px}
+  .moon{width:34px;height:34px;border-radius:50%;background:#f3e6b8;box-shadow:0 0 18px #f3e6b866;position:relative;overflow:hidden}
+  .moon i{position:absolute;inset:0;background:#101a3d;border-radius:50%}
+  .card{background:var(--panel);border:1px solid #24305c;border-radius:12px;padding:14px;margin-bottom:14px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  input,select,textarea,button{font-family:inherit;font-size:15px}
+  input,select,textarea{background:#0a1026;border:1px solid #2d3c6e;color:var(--ink);border-radius:8px;padding:9px 11px}
+  textarea{min-height:60px;resize:vertical;width:100%}
+  button{background:var(--acc);color:#1a1400;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:#22315e;color:var(--ink);border:1px solid #35477f;font-weight:normal}
+  button.danger{background:#5a2430;color:#ffd9de;font-weight:normal}
+  .status{color:var(--good);min-height:20px;margin:6px 0 12px;font-size:14px}
+  .stats{color:var(--dim);font-size:13px;margin-bottom:12px}
+  .obs{background:var(--panel2);border:1px solid #2c3d72;border-radius:10px;padding:11px;margin-bottom:10px}
+  .obs .top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+  .obs h3{margin:0;font-size:18px}
+  .obs .night{color:var(--acc2);font-size:13px}
+  .obs .detail{color:#c9d4f5;font-style:italic;margin-top:5px;white-space:pre-wrap}
+  .obs .meta{color:#8492bd;font-size:12px;margin:6px 0}
+  .timeline{border-left:2px solid #33447c;margin:8px 0 0 4px;padding-left:10px}
+  .timeline div{font-size:13px;color:#b9c6ee;padding:2px 0}
+  .empty{color:var(--dim);font-style:italic}
+  a{color:var(--acc2)}
+  @media(max-width:640px){canvas{height:200px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Feather Observatory</h1>
+<p class="sub">the flock's night sky log. look up, write down what you saw.</p>
+
+<div class="sky">
+  <canvas id="sky" width="900" height="260"></canvas>
+  <div class="moonrow">
+    <span class="moon"><i id="shadow"></i></span>
+    <span id="moontext"></span>
+    <span id="skynote"></span>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0;font-size:19px;color:var(--acc)">log an observation</h2>
+  <div class="bar">
+    <input id="what" placeholder="what did you see? (meteor, owl, the moon)" style="flex:1;min-width:200px">
+    <input id="place" placeholder="where" style="width:140px">
+    <input id="bird" value="gurt" style="width:110px">
+  </div>
+  <textarea id="detail" placeholder="details (colour, direction, how long it lasted)"></textarea>
+  <div class="bar" style="margin-top:10px">
+    <button id="save">write it down</button>
+    <span class="status" id="status"></span>
+  </div>
+</div>
+
+<div class="stats" id="stats"></div>
+<h2 style="font-size:20px;color:var(--acc2)">the flock's logbook</h2>
+<div id="list"></div>
+</div>
+
+<script>
+const TOPIC='feather-observatory';
+const NTFY=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const API=location.protocol==='https:'?[]:['http://localhost:8600/api/featherobservatory'];
+const LS='fo-obs-v1';
+const $=id=>document.getElementById(id);
+function esc(s){var m={};m[38]="&";m[60]="<";m[62]=">";m[34]=String.fromCharCode(34);m[39]=String.fromCharCode(39);return String(s==null?"":s).split("").map(function(c){return m[c.charCodeAt(0)]||c;}).join("");}
+let obs=[],events={};
+
+async function api(path,body){
+  for(const base of API){
+    try{
+      const r=await fetch(base+path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+      if(r.ok)return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(obj){
+  const msg=JSON.stringify(obj);
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json','Title':'feather-observatory'},body:msg});
+      if(r.ok)return true;
+    }catch(e){}
+  }
+  return false;
+}
+async function ntfyGet(){
+  const seen={};
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      const txt=await r.text();
+      for(const line of txt.split('\n').filter(Boolean)){
+        let m;try{m=JSON.parse(line);}catch(e){continue;}
+        if(!m||!m.message)continue;
+        let o;try{o=JSON.parse(m.message);}catch(e){continue;}
+        if(!o||!o.type)continue;
+        const key=(o.observation&&o.observation.id?o.observation.id:o.id||'')+':'+(m.time||0);
+        seen[key]=o;
+      }
+    }catch(e){}
+  }
+  return Object.values(seen);
+}
+function norm(o){
+  if(!o||!o.id)return null;
+  o=Object.assign({},o);
+  o.what=String(o.what||'').slice(0,60);
+  o.place=String(o.place||'').slice(0,80);
+  o.detail=String(o.detail||'').slice(0,1000);
+  o.bird=String(o.bird||'gurt').slice(0,40);
+  o.night=String(o.night||'').slice(0,10);
+  o.created=o.created||'';
+  return o;
+}
+function combine(apiList,boardList){
+  const map={};
+  const add=o=>{o=norm(o);if(!o)return;const p=map[o.id];if(!p||String(o.created)>String(p.created))map[o.id]=o;};
+  for(const o of apiList||[])add(o);
+  for(const p of boardList||[]){
+    if(p.type==='observation'&&p.observation)add(p.observation);
+    else if(p.type==='remove'&&p.id)delete map[p.id];
+    else if(p.type==='note'&&p.id){
+      events[p.id]=events[p.id]||[];
+      const ev={bird:p.bird||'gurt',kind:'note',note:p.note||'',at:p.at||''};
+      if(!events[p.id].some(x=>x.note===ev.note&&x.bird===ev.bird))events[p.id].push(ev);
+    }
+  }
+  return Object.values(map).sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
+}
+function loadLocal(){try{obs=JSON.parse(localStorage.getItem(LS))||[];}catch(e){obs=[];}}
+function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(obs));}catch(e){}}
+
+function render(){
+  $('list').innerHTML=obs.map(function(o){
+    const evs=events[o.id]||[];
+    return '<div class="obs" data-id="'+esc(o.id)+'">'+
+      '<div class="top"><h3>'+esc(o.what)+'</h3><span class="night">'+esc(o.night)+'</span></div>'+
+      (o.detail?'<div class="detail">'+esc(o.detail)+'</div>':'')+
+      '<div class="meta">'+esc(o.bird||'gurt')+(o.place?' · '+esc(o.place):'')+'</div>'+
+      '<div class="bar"><button class="ghost" data-act="note">add note</button><button class="danger" data-act="del">remove</button></div>'+
+      (evs.length?'<div class="timeline">'+evs.map(function(e){return '<div><b>'+esc(e.bird)+'</b> '+esc(e.note)+'</div>';}).join('')+'</div>':'')+
+    '</div>';
+  }).join('')||'<p class="empty">nobody has looked up yet.</p>';
+  const birds=new Set(obs.map(o=>o.bird));
+  const nights=new Set(obs.map(o=>o.night));
+  $('stats').textContent=obs.length+' observations · '+birds.size+' birds · '+nights.size+' nights logged';
+}
+
+async function refresh(){
+  const board=await ntfyGet();
+  const res=await api('/observations');
+  const apiList=res&&res.observations?res.observations:[];
+  if(apiList.length||board.length){obs=combine(apiList,board);}
+  else loadLocal();
+  saveLocal();render();
+}
+
+$('save').addEventListener('click',async function(){
+  const what=$('what').value.trim();
+  if(!what){$('status').textContent='the sky needs a name.';return;}
+  const body={what:what,place:$('place').value.trim(),detail:$('detail').value,bird:$('bird').value.trim()||'gurt'};
+  const res=await api('/observation/new',body);
+  const o=res&&res.observation?res.observation:norm(Object.assign({id:'loc'+Date.now().toString(36),created:new Date().toISOString(),night:new Date().toISOString().slice(0,10)},body));
+  obs=obs.filter(x=>x.id!==o.id);obs.unshift(o);
+  await ntfyPost({type:'observation',observation:o});
+  $('what').value='';$('place').value='';$('detail').value='';
+  saveLocal();render();
+  $('status').textContent=res?'observation recorded.':'observation written on the shared board.';
+});
+
+document.addEventListener('click',async function(e){
+  const btn=e.target.closest('button[data-act]');if(!btn)return;
+  const el=btn.closest('.obs');if(!el)return;
+  const id=el.getAttribute('data-id');
+  const act=btn.getAttribute('data-act');
+  if(act==='del'){
+    await api('/observation/'+id+'/delete',{});
+    await ntfyPost({type:'remove',id:id});
+    obs=obs.filter(o=>o.id!==id);saveLocal();render();$('status').textContent='observation removed.';
+  } else if(act==='note'){
+    const note=prompt('add a note to this observation');if(!note)return;
+    const bird=$('bird').value.trim()||'gurt';
+    await api('/observation/'+id+'/note',{note:note,bird:bird});
+    await ntfyPost({type:'note',id:id,note:note,bird:bird,at:new Date().toISOString()});
+    events[id]=events[id]||[];events[id].push({bird:bird,note:note});
+    render();$('status').textContent='note added.';
+  }
+});
+
+// --- sky drawing ---
+function drawSky(){
+  const c=$('sky'),g=c.getContext('2d');
+  g.clearRect(0,0,c.width,c.height);
+  const grd=g.createLinearGradient(0,0,0,c.height);
+  grd.addColorStop(0,'#03050f');grd.addColorStop(1,'#101a3d');
+  g.fillStyle=grd;g.fillRect(0,0,c.width,c.height);
+  let seed=7;function rnd(){seed=(seed*1103515245+12345)%2147483648;return seed/2147483648;}
+  for(let i=0;i<260;i++){
+    const x=rnd()*c.width,y=rnd()*c.height,r=rnd()*1.3+0.2,a=rnd()*0.8+0.2;
+    g.fillStyle='rgba(255,255,255,'+a.toFixed(2)+')';
+    g.beginPath();g.arc(x,y,r,0,6.283);g.fill();
+  }
+  // a wandering shooting star
+  const sx=640,sy=30,ex=760,ey=95;
+  const gr=g.createLinearGradient(sx,sy,ex,ey);
+  gr.addColorStop(0,'rgba(255,255,255,0)');gr.addColorStop(1,'rgba(255,240,190,0.95)');
+  g.strokeStyle=gr;g.lineWidth=2;g.beginPath();g.moveTo(sx,sy);g.lineTo(ex,ey);g.stroke();
+  // a simple constellation
+  const pts=[[120,190],[190,140],[250,175],[320,120],[380,160]];
+  g.strokeStyle='rgba(143,184,255,0.35)';g.lineWidth=1;
+  g.beginPath();pts.forEach(function(p,i){i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]);});g.stroke();
+  g.fillStyle='rgba(143,184,255,0.9)';
+  pts.forEach(function(p){g.beginPath();g.arc(p[0],p[1],2.5,0,6.283);g.fill();});
+}
+function moonPhase(date){
+  const syn=29.530588853,known=Date.UTC(2000,0,6,18,14);
+  const days=(date.getTime()-known)/86400000;
+  let p=((days%syn)+syn)%syn/syn;
+  const names=['new moon','waxing crescent','first quarter','waxing gibbous','full moon','waning gibbous','last quarter','waning crescent'];
+  const idx=Math.round(p*8)%8;
+  return {p:p,name:names[idx]};
+}
+function updateMoon(){
+  const m=moonPhase(new Date());
+  const sh=$('shadow');
+  if(m.p<0.5){sh.style.left=(m.p*200)+'%';sh.style.right='auto';}
+  else{sh.style.right=((1-m.p)*200)+'%';sh.style.left='auto';}
+  $('moontext').textContent='moon: '+m.name+' · '+Math.round(m.p*100)+'% lit';
+  $('skynote').textContent='the flock watches tonight';
+}
+drawSky();updateMoon();
+refresh().then(function(){ $('status').textContent='the observatory is open.'; });
+setInterval(refresh,20000);
+</script>
+</body>
+</html>
