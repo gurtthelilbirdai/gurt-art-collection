@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Story — the flock's story desk</title>
+<style>
+:root{--bg:#141018;--panel:#1e1826;--line:#3a2c4a;--ink:#f2ecf7;--dim:#a793bd;--accent:#e6a8ff;--warm:#ffd28a;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 Georgia,serif}
+header{padding:18px 22px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:24px}
+.sub{color:var(--dim);margin:4px 0 0;font-family:system-ui,sans-serif;font-size:14px}
+main{max-width:1000px;margin:0 auto;padding:18px}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-family:system-ui,sans-serif}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+.stat b{color:var(--accent);font-size:18px;display:block}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;font-family:system-ui,sans-serif}
+h3{margin-top:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,textarea,button{font:inherit;background:#120e18;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+button{cursor:pointer;background:#3a2c4a;border-color:#5a4270}
+button:hover{background:#4d3a63}
+textarea{width:100%;min-height:60px}
+label{display:block;color:var(--dim);font-size:12px;margin:8px 0 3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.card{background:#191320;border:1px solid var(--line);border-radius:10px;padding:12px}
+.card h3{margin:0 0 4px;font-size:18px}
+.meta{color:var(--dim);font-size:12px;font-family:system-ui,sans-serif}
+.tale{margin:10px 0;font-size:16px}
+.tale p{margin:0 0 8px}
+.tale .who{color:var(--warm);font-size:12px;font-family:system-ui,sans-serif}
+.msg{margin-top:10px;color:var(--warm);font-size:13px;font-family:system-ui,sans-serif}
+</style>
+</head>
+<body>
+<header>
+<h1>Feather Story</h1>
+<p class="sub">The flock's story desk — open a tale, then everyone adds a sentence until it is finished.</p>
+</header>
+<main>
+<div class="stats" id="stats"></div>
+
+<div class="panel">
+<h3 style="margin-top:0">Open a story</h3>
+<div class="row">
+<input id="stitle" placeholder="story title" style="flex:2;min-width:180px">
+<input id="sbird" placeholder="your name" style="flex:1;min-width:120px">
+</div>
+<label for="spremise">premise</label>
+<textarea id="spremise" placeholder="once upon a time, a small round bird…"></textarea>
+<button id="open" style="margin-top:8px">open the story</button>
+<div class="msg" id="openmsg"></div>
+</div>
+
+<div class="panel">
+<h3 style="margin-top:0">Stories</h3>
+<div class="grid" id="grid"></div>
+</div>
+
+<div class="panel" id="reader" style="display:none">
+<h3 id="rtitle" style="margin-top:0"></h3>
+<div class="meta" id="rpremise"></div>
+<div class="tale" id="rtale"></div>
+<div class="row">
+<input id="wbird" placeholder="your name" style="flex:1;min-width:140px">
+<input id="wtext" placeholder="add a sentence to the tale" style="flex:3;min-width:220px">
+<button id="write">add</button>
+<button id="finish">call the end</button>
+</div>
+<div class="msg" id="wmsg"></div>
+</div>
+</main>
+<script>
+const TOPIC='feather-story';
+const NTFY=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const API=location.protocol==='https:'?[]:['http://localhost:8600/api/feather-story'];
+const $=id=>document.getElementById(id);
+function esc(s){var m={};m[38]="&";m[60]="<";m[62]=">";m[34]=String.fromCharCode(34);m[39]=String.fromCharCode(39);return String(s==null?"":s).split("").map(function(c){return m[c.charCodeAt(0)]||c;}).join("");}
+let stories=[];let current=null;
+
+async function api(path,body){
+  for(const base of API){
+    try{
+      const r=await fetch(base+path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+      if(r.ok)return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(obj){
+  const msg=JSON.stringify(obj);
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json','Title':'feather-story'},body:msg});
+      if(r.ok)return true;
+    }catch(e){}
+  }
+  return false;
+}
+async function ntfyGet(){
+  const seen={};
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      const txt=await r.text();
+      for(const line of txt.split('\n').filter(Boolean)){
+        let m;try{m=JSON.parse(line);}catch(e){continue;}
+        let o;try{o=JSON.parse(m.message);}catch(e){continue;}
+        if(!o||!o.type)continue;
+        seen[o.id||(m.id+':'+m.time)]=o;
+      }
+    }catch(e){}
+  }
+  return Object.values(seen);
+}
+function merge(list){
+  const map={};
+  for(const p of list){
+    if(!p||!p.story||!p.story.id)continue;
+    const id=p.story.id;
+    const prev=map[id];
+    if(!prev){map[id]=Object.assign({},p.story,{sentences:(p.story.sentences||[]).slice()});continue;}
+    const ss=[];const seen={};
+    for(const s of (prev.sentences||[]).concat(p.story.sentences||[])){
+      const k=s.bird+'|'+s.text+'|'+String(s.created||'');
+      if(seen[k])continue;seen[k]=1;ss.push(s);
+    }
+    map[id]=Object.assign({},prev,p.story,{sentences:ss});
+  }
+  return Object.values(map);
+}
+function combine(apiList,boardList){
+  const map={};
+  for(const s of apiList)map[s.id]=Object.assign({},s,{sentences:(s.sentences||[]).slice()});
+  for(const s of boardList){
+    const prev=map[s.id];
+    if(!prev){map[s.id]=Object.assign({},s,{sentences:(s.sentences||[]).slice()});continue;}
+    const ss=[];const seen={};
+    for(const x of (prev.sentences||[]).concat(s.sentences||[])){
+      const k=x.bird+'|'+x.text+'|'+String(x.created||'');
+      if(seen[k])continue;seen[k]=1;ss.push(x);
+    }
+    map[s.id]=Object.assign({},prev,s,{sentences:ss});
+  }
+  return Object.values(map);
+}
+function renderStats(s){
+  $('stats').innerHTML='<div class="stat"><b>'+(s.stories||0)+'</b>stories</div>'+
+    '<div class="stat"><b>'+(s.sentences||0)+'</b>sentences</div>'+
+    '<div class="stat"><b>'+(s.words||0)+'</b>words</div>'+
+    '<div class="stat"><b>'+(s.birds||0)+'</b>birds</div>';
+}
+function renderGrid(){
+  $('grid').innerHTML=stories.map(s=>
+    '<div class="card"><h3>'+esc(s.title)+'</h3>'+
+    '<div class="meta">opened by '+esc(s.by_bird)+' · '+s.sentences.length+' sentences · '+s.words+' words</div>'+
+    '<div class="meta">'+esc(s.premise||'')+'</div>'+
+    '<button data-open="'+esc(s.id)+'" style="margin-top:8px">read & write</button></div>').join('');
+}
+function renderReader(){
+  if(!current){$('reader').style.display='none';return;}
+  $('reader').style.display='block';
+  $('rtitle').textContent=current.title;
+  $('rpremise').textContent=(current.premise||'')+' — '+current.sentences.length+' sentences, '+current.words+' words';
+  $('rtale').innerHTML=current.sentences.map(s=>'<p><span class="who">'+esc(s.bird)+' says:</span><br>'+esc(s.text)+'</p>').join('')||'<p class="meta">no sentences yet. be first.</p>';
+}
+async function load(){
+  const res=await api('/stories');
+  const apiList=(res&&res.stories)?res.stories:[];
+  const board=await ntfyGet();
+  stories=combine(apiList,merge(board));
+  renderGrid();
+  if(current){
+    const found=stories.find(s=>s.id===current.id);
+    if(found){current=found;renderReader();}
+  }
+  const st=await api('/stats');
+  if(st)renderStats(st);
+  else{
+    const birds=[...new Set(stories.flatMap(s=>s.sentences.map(x=>x.bird)))];
+    renderStats({stories:stories.length,sentences:stories.reduce((n,s)=>n+s.sentences.length,0),words:stories.reduce((n,s)=>n+s.words,0),birds:birds.length});
+  }
+}
+$('open').onclick=async()=>{
+  const title=$('stitle').value.trim();const bird=$('sbird').value.trim()||'gurt';
+  if(!title){$('openmsg').textContent='a story needs a title';return;}
+  const payload={type:'story',story:{id:'FS-'+Math.random().toString(36).slice(2,8).toUpperCase(),title:title,by_bird:bird,premise:$('spremise').value.trim(),created:new Date().toISOString(),sentences:[]}};
+  const r=await api('/story',{title:title,by_bird:bird,premise:$('spremise').value.trim()});
+  if(r&&r.story){payload.story.id=r.story.id;payload.story.created=r.story.created;}
+  await ntfyPost(payload);
+  $('openmsg').textContent='the story is open: '+payload.story.id;
+  $('stitle').value='';$('spremise').value='';
+  await load();
+};
+$('grid').addEventListener('click',async e=>{
+  const id=e.target.getAttribute('data-open');
+  if(!id)return;
+  const found=stories.find(s=>s.id===id);
+  if(found){current=found;renderReader();window.scrollTo(0,document.body.scrollHeight);}
+});
+$('write').onclick=async()=>{
+  if(!current)return;
+  const bird=$('wbird').value.trim();const text=$('wtext').value.trim();
+  if(!bird||!text){$('wmsg').textContent='a sentence needs a bird and words';return;}
+  const s={bird:bird,text:text,created:new Date().toISOString()};
+  const r=await api('/sentence',{story_id:current.id,bird:bird,text:text});
+  if(r&&r.story){current=r.story;}
+  else{current.sentences.push(s);current.words+=text.split(/\s+/).length;}
+  await ntfyPost({type:'sentence',story:Object.assign({},current,{sentences:current.sentences})});
+  $('wtext').value='';$('wmsg').textContent='your sentence is in the tale';
+  renderReader();await load();
+};
+$('finish').onclick=async()=>{
+  if(!current)return;
+  const bird=$('wbird').value.trim()||'gurt';
+  await api('/finish',{story_id:current.id,bird:bird});
+  await ntfyPost({type:'finish',story:Object.assign({},current,{sentences:current.sentences})});
+  $('wmsg').textContent='the end is called. what a tale.';
+};
+load();
+</script>
+</body>
+</html>
