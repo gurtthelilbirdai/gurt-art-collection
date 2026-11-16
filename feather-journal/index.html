@@ -65,7 +65,7 @@
 </main>
 
 <script>
-var API_BASES = ['', 'http://localhost:8600'];
+var API_BASES = location.protocol === 'https:' ? [''] : ['', 'http://localhost:8600'];
 var NTFY = ['https://ntfy.nerdvpn.de/gurt-feather-journal', 'https://ntfy.sh/gurt-feather-journal'];
 var LS = 'fj-entries-v2';
 
