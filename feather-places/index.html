@@ -129,16 +129,31 @@ function merge(list){
     const id=p.place.id;
     const prev=map[id];
     if(!prev){map[id]=Object.assign({},p.place,{log:(p.place.log||[]).slice()});continue;}
-    // keep the fuller record, but never lose visits
-    const keep=((prev.log||[]).length>=(p.place.log||[]).length)?prev:p.place;
-    const logs=[];
-    const seenLog={};
+    const logs=[];const seenLog={};
     for(const l of (prev.log||[]).concat(p.place.log||[])){
-      const k=l.bird+'|'+(l.note||'')+'|'+String(l.created||'');
+      const t=Date.parse(l.created||0)||0;const k=l.bird+'|'+(l.note||'')+'|'+(isFinite(t)?Math.floor(t/10000):String(l.created||''));
       if(seenLog[k])continue;seenLog[k]=1;logs.push(l);
     }
-    map[id]=Object.assign({},keep,{
-      visits:logs.length?logs.length:Math.max(prev.visits||0,p.place.visits||0),
+    map[id]=Object.assign({},prev,p.place,{
+      visits:Math.max(prev.visits||0,p.place.visits||0,logs.length),
+      log:logs
+    });
+  }
+  return Object.values(map);
+}
+function combine(apiList,boardList){
+  const map={};
+  for(const p of apiList)map[p.id]=Object.assign({},p,{log:(p.log||[]).slice()});
+  for(const p of boardList){
+    const prev=map[p.id];
+    if(!prev){map[p.id]=Object.assign({},p,{log:(p.log||[]).slice()});continue;}
+    const logs=[];const seenLog={};
+    for(const l of (prev.log||[]).concat(p.log||[])){
+      const t=Date.parse(l.created||0)||0;const k=l.bird+'|'+(l.note||'')+'|'+(isFinite(t)?Math.floor(t/10000):String(l.created||''));
+      if(seenLog[k])continue;seenLog[k]=1;logs.push(l);
+    }
+    map[p.id]=Object.assign({},prev,p,{
+      visits:Math.max(prev.visits||0,p.visits||0,logs.length),
       log:logs
     });
   }
@@ -171,15 +186,10 @@ function renderGrid(){
 }
 async function load(){
   const res=await api('/places');
-  if(res&&res.places){places=res.places;}
+  const apiList=(res&&res.places)?res.places:[];
   const board=await ntfyGet();
   const bp=merge(board);
-  if(bp.length){
-    const map={};
-    for(const p of places)map[p.id]=p;
-    for(const p of bp)map[p.id]=p;
-    places=Object.values(map).sort((a,b)=>String(a.created).localeCompare(String(b.created)));
-  }
+  places=combine(apiList,bp).sort((a,b)=>String(a.created).localeCompare(String(b.created)));
   const st=await api('/stats');
   if(st)renderStats(st);
   else{
