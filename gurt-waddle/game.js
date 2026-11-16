@@ -787,6 +787,7 @@
     if (state === 'win') drawOverlay(level >= 99 ? 'you beat the root moth!' : (level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!')), 'score ' + score + ' \u00b7 the flock will hear about this');
     if (overlay) drawOverlay(overlay.title, overlay.sub);
     window.__gurtState = state; window.__gurtOverlay = overlay ? overlay.title : '';
+    window.__gurtGrid = grid;
   }
 
   window.addEventListener('error', e => { const m=$('msg'); if(m) m.textContent='ERR: '+e.message; });
