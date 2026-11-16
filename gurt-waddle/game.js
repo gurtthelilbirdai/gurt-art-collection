@@ -282,9 +282,12 @@
     }
     // spring tiles bounce the bird when it stands on them
     if (p.onGround) {
+      // a spring tile sits in the row the bird stands in, so look at the
+      // row just above the feet, not the row below them
+      const srow2 = Math.floor((p.y + p.h - 1) / T);
       const sxs = [Math.floor((p.x + p.w / 2) / T), Math.floor((p.x + 4) / T), Math.floor((p.x + p.w - 4) / T)];
       for (const sx of sxs) {
-        const sch = tileAt(sx, Math.floor((p.y + p.h) / T));
+        const sch = tileAt(sx, srow2);
         if (sch === 'S') { p.vy = -17; p.onGround = false; beep(700, .12, 'triangle'); break; }
       }
     }
@@ -355,7 +358,7 @@
       for (let sy = Math.floor((p.y + 4) / T); sy <= Math.floor(feet / T); sy++) {
         if (tileAt(hx, sy) !== '^') continue;
         const top = sy * T, bottom = top + T;
-        if (feet > top + 16 && feet < bottom + 8 && (p.vy > 0 || p.onGround)) { hurt('spikes'); return; }
+        if (feet > top + 16 && feet < bottom + 8 && (p.vy > 0 || p.onGround)) { window.__gurtSpike = {hx, sy, px: Math.round(p.x), py: Math.round(p.y), feet: Math.round(feet), row: (grid[sy]||[]).join('')}; hurt('spikes'); return; }
       }
     }
     // water swallows the whole bird
@@ -444,14 +447,17 @@
       const feet = p.y + p.h;
       // real body overlap: the bird must actually touch the moth
       const nearX = Math.abs(boss.x - p.x) < 58;
-      // stomping: land on the moth's back, or stand under it
-      const landOn = nearX && p.vy > 0 && feet >= boss.y - 10 && feet <= boss.y + 16;
-      const stomping = nearX && ((feet >= boss.y - 34 && feet <= boss.y + boss.h + 20 && (p.vy > 0 || p.onGround)) || landOn);
-      const touching = nearX && (feet > boss.y - 8 && p.y < boss.y + boss.h) || landOn;
+      // stomping: the bird must come down ON the moth's back, so its feet
+      // have to be at or above the moth's top while falling. Standing on the
+      // floor underneath the moth is not a stomp.
+      const landOn = nearX && p.vy > 0 && feet >= boss.y - 24 && feet <= boss.y + 30;
+      const stomping = landOn;
+      const touching = nearX && feet > boss.y - 8 && p.y < boss.y + boss.h;
+      const canStomp = stomping;
       window.__gurtBoss = { bx: Math.round(boss.x), by: Math.round(boss.y), px: Math.round(p.x), py: Math.round(p.y), feet: Math.round(feet), vy: Math.round(p.vy), nearX, stomping, touching, hp: boss.hp };
-      if (safeFor <= 0 && touching) {
-        if (stomping) {
-          boss.hp--; boss.stun = 1.2; boss.vx = 0; safeFor = 0.8; p.vy = -12; score += 50; beep(200, .15, 'sawtooth');
+      if (safeFor <= 0 && (touching || canStomp)) {
+        if (canStomp) {
+          boss.hp--; boss.stun = 1.6; boss.vx = 0; safeFor = 0.3; p.vy = -12; score += 50; beep(200, .15, 'sawtooth');
           if (boss.hp <= 0) { boss.dead = true; score += 200; beep(1400, .2, 'triangle'); }
         } else if (boss.stun <= 0 && p.vy > 3) {
           // only a real fall into the moth hurts; brushing past is safe
