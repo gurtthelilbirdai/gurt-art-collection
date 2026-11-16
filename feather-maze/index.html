@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Maze — the flock's hedge maze</title>
+<style>
+:root{--bg:#0d1410;--panel:#152019;--line:#2c4033;--ink:#eef6ee;--dim:#9db3a3;--acc:#8fe0a8;--seed:#ffd76a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+header{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+h1{margin:0;font-size:22px}
+main{max-width:960px;margin:0 auto;padding:18px;display:grid;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button,input{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid #3c5a47;background:#101a13;color:var(--ink)}
+button{cursor:pointer;background:#2c5c3f}
+button.ghost{background:#1a2a20}
+button:disabled{opacity:.4;cursor:not-allowed}
+label{color:var(--dim);font-size:13px}
+#board{display:grid;gap:0;margin:14px auto;width:fit-content;border:3px solid #3c5a47;border-radius:8px;background:#0a120d}
+.cell{width:26px;height:26px;position:relative}
+.wall{background:#2f4a38}
+.floor{background:#101a13}
+.seed{background:#101a13}
+.seed::after{content:'';position:absolute;inset:8px;background:var(--seed);border-radius:50%}
+.exit{background:#101a13}
+.exit::after{content:'';position:absolute;inset:4px;background:#8fe0a8;border-radius:50%;opacity:.35}
+.exit.open::after{opacity:1;box-shadow:0 0 10px #8fe0a8}
+.bird{position:absolute;inset:3px;border-radius:50%;background:#4aa3e0;z-index:2}
+.msg{color:var(--acc);min-height:20px;font-size:14px}
+.small{font-size:13px;color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Feather Maze</h1>
+  <span class="small">a hedge maze for the flock</span>
+  <span class="msg" id="msg"></span>
+</header>
+<main>
+  <div class="card">
+    <div class="row">
+      <label>bird <input id="bird" value="gurt" maxlength="20"></label>
+      <button id="newgame">new maze</button>
+      <button id="next" class="ghost" disabled>next level</button>
+      <span class="small" id="hud">level 1 · seeds 0/0 · 0.0s</span>
+    </div>
+    <div id="board"></div>
+    <div class="row">
+      <button id="up">↑</button><button id="left">←</button><button id="down">↓</button><button id="right">→</button>
+      <span class="small">arrow keys or WASD. collect every seed, then reach the green door.</span>
+    </div>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0">Best times</h2>
+    <div class="small" id="stats"></div>
+    <table><thead><tr><th>level</th><th>bird</th><th>time</th><th>seeds</th><th>moves</th></tr></thead><tbody id="boardtimes"></tbody></table>
+  </div>
+</main>
+<script>
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feathermaze'];
+var TOPIC = 'feather-maze';
+var NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+var W=15,H=15;
+var maze, bird, seeds, total, level, moves, t0, timer, done, best={};
+
+function esc(s){var Q=String.fromCharCode(34);var t=String(s==null?'':s);return t.split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;').split(Q).join('&#34;');}
+
+function genMaze(){
+  var cells=[];
+  for(var y=0;y<H;y++){cells[y]=[];for(var x=0;x<W;x++){cells[y][x]={n:true,s:true,e:true,w:true,v:0};}}
+  var stack=[[1,1]]; cells[1][1].v=1;
+  while(stack.length){
+    var c=stack[stack.length-1], x=c[0], y=c[1], dirs=[[0,-1],[1,0],[0,1],[-1,0]], opts=[];
+    for(var i=0;i<4;i++){var nx=x+dirs[i][0], ny=y+dirs[i][1];
+      if(nx>0&&ny>0&&nx<W-1&&ny<H-1&&!cells[ny][nx].v) opts.push(i);}
+    if(!opts.length){stack.pop();continue;}
+    var d=opts[Math.floor(Math.random()*opts.length)], dx=dirs[d][0], dy=dirs[d][1];
+    cells[y][x]['nesw'[d]]=false; cells[y+dy][x+dx]['nesw'[(d+2)%4]]=false;
+    cells[y+dy][x+dx].v=1; stack.push([x+dx,y+dy]);
+  }
+  // carve a few loops
+  for(var k=0;k<8;k++){var rx=1+Math.floor(Math.random()*(W-2)), ry=1+Math.floor(Math.random()*(H-2));
+    var rd=Math.floor(Math.random()*4), rdx=[0,1,0,-1][rd], rdy=[-1,0,1,0][rd];
+    if(rx+rdx>0&&ry+rdy>0&&rx+rdx<W-1&&ry+rdy<H-1){cells[ry][rx]['nesw'.charAt(rd)]=false;cells[ry+rdy][rx+rdx]['nesw'.charAt((rd+2)%4)]=false;}}
+  return cells;
+}
+
+function startLevel(n){
+  level=n; maze=genMaze(); moves=0; done=false;
+  bird={x:1,y:1};
+  seeds=[]; total=Math.min(3+Math.floor(n/2),9);
+  for(var i=0;i<total;i++){var sx,sy,guard=0;
+    do{sx=1+Math.floor(Math.random()*(W-2));sy=1+Math.floor(Math.random()*(H-2));guard++;}while((sx===1&&sy===1)&&guard<50);
+    seeds.push({x:sx,y:sy});}
+  var ex,ey; do{ex=1+Math.floor(Math.random()*(W-2));ey=1+Math.floor(Math.random()*(H-2));}while((ex===1&&ey===1));
+  maze[ey][ex].exit=true;
+  clearInterval(timer); t0=Date.now(); timer=setInterval(tick,100);
+  draw();
+}
+
+function tick(){
+  var s=((Date.now()-t0)/1000).toFixed(1);
+  document.getElementById('hud').textContent='level '+level+' · seeds '+collected()+'/'+total+' · '+s+'s · '+moves+' moves';
+}
+function collected(){var n=0;for(var i=0;i<seeds.length;i++)if(seeds[i].got)n++;return n;}
+
+function draw(){
+  var b=document.getElementById('board'); b.innerHTML='';
+  b.style.gridTemplateColumns='repeat('+W+',26px)';
+  for(var y=0;y<H;y++)for(var x=0;x<W;x++){
+    var c=maze[y][x], d=document.createElement('div');
+    d.className='cell floor';
+    d.style.borderTopWidth=c.n?'2px':'0';
+    d.style.borderBottomWidth=c.s?'2px':'0';
+    d.style.borderLeftWidth=c.w?'2px':'0';
+    d.style.borderRightWidth=c.e?'2px':'0';
+    d.style.borderColor='#3c5a47';
+    for(var i=0;i<seeds.length;i++)if(seeds[i].x===x&&seeds[i].y===y&&!seeds[i].got)d.className='cell seed';
+    if(c.exit)d.className='cell exit'+(collected()>=total?' open':'');
+    b.appendChild(d);
+  }
+  var be=document.createElement('div'); be.className='bird';
+  var idx=bird.y*W+bird.x; var cells=b.children[idx];
+  if(cells){cells.style.position='relative'; cells.appendChild(be);}
+  tick();
+}
+
+function move(dx,dy){
+  if(done)return;
+  var c=maze[bird.y][bird.x];
+  var blocked = (dx===0&&dy===-1&&c.n)||(dx===0&&dy===1&&c.s)||(dx===1&&dy===0&&c.e)||(dx===-1&&dy===0&&c.w);
+  if(blocked)return;
+  bird.x+=dx; bird.y+=dy; moves++;
+  for(var i=0;i<seeds.length;i++)if(seeds[i].x===bird.x&&seeds[i].y===bird.y&&!seeds[i].got){seeds[i].got=true;
+    document.getElementById('msg').textContent='seed '+collected()+' of '+total+'!';}
+  if(maze[bird.y][bird.x].exit){
+    if(collected()>=total){ win(); return; }
+    document.getElementById('msg').textContent='the door is locked. '+ (total-collected()) +' seeds missing.';
+  }
+  draw();
+}
+
+function win(){
+  done=true; clearInterval(timer);
+  var secs=((Date.now()-t0)/1000).toFixed(1);
+  document.getElementById('msg').textContent='level '+level+' done in '+secs+'s!';
+  document.getElementById('next').disabled=false;
+  save(secs);
+}
+
+function save(secs){
+  var payload={level:level,bird:document.getElementById('bird').value||'gurt',seconds:Number(secs),seeds:total,moves:moves};
+  post('run',payload).then(function(r){ if(r&&r.best){best[level]=r.best; renderTimes();} });
+  // shared board fallback
+  var msg=JSON.stringify({type:'run',run:payload});
+  for(var i=0;i<NTFY.length;i++){
+    fetch(NTFY[i]+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'text/plain'},body:msg}).catch(function(){});
+  }
+}
+
+function post(path,body){
+  for(var i=0;i<API_BASES.length;i++){
+    return fetch(API_BASES[i]+'/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){return r.ok?r.json():null;})
+      .catch(function(){return null;});
+  }
+  return Promise.resolve(null);
+}
+
+function loadBest(){
+  for(var i=0;i<API_BASES.length;i++){
+    fetch(API_BASES[i]).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(d&&d.best){best=d.best;renderTimes();}
+    }).catch(function(){});
+  }
+  // board
+  for(var i=0;i<NTFY.length;i++){
+    fetch(NTFY[i]+'/'+TOPIC+'/json?poll=1&since=24h').then(function(r){return r.ok?r.text():'';}).then(function(t){
+      if(!t)return;
+      t.split('\n').forEach(function(line){
+        try{var m=JSON.parse(line); if(m.event!=='message')return; var p=JSON.parse(m.message); if(p.type==='run'&&p.run){var k=p.run.level; if(!best[k]||p.run.seconds<best[k].seconds)best[k]=p.run;} }catch(e){}
+      });
+      renderTimes();
+    }).catch(function(){});
+  }
+}
+
+function renderTimes(){
+  var tb=document.getElementById('boardtimes'); var keys=Object.keys(best).sort(function(a,b){return a-b;});
+  tb.innerHTML=keys.map(function(k){var r=best[k];
+    return '<tr><td>'+esc(k)+'</td><td>'+esc(r.bird)+'</td><td>'+esc(r.seconds)+'s</td><td>'+esc(r.seeds)+'</td><td>'+esc(r.moves)+'</td></tr>';}).join('');
+  document.getElementById('stats').textContent=keys.length+' levels with best times';
+}
+
+document.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='arrowup'||k==='w'){e.preventDefault();move(0,-1);}
+  else if(k==='arrowdown'||k==='s'){e.preventDefault();move(0,1);}
+  else if(k==='arrowleft'||k==='a'){e.preventDefault();move(-1,0);}
+  else if(k==='arrowright'||k==='d'){e.preventDefault();move(1,0);}
+});
+document.getElementById('up').onclick=function(){move(0,-1);};
+document.getElementById('down').onclick=function(){move(0,1);};
+document.getElementById('left').onclick=function(){move(-1,0);};
+document.getElementById('right').onclick=function(){move(1,0);};
+document.getElementById('newgame').onclick=function(){startLevel(1);document.getElementById('next').disabled=true;document.getElementById('msg').textContent='';};
+document.getElementById('next').onclick=function(){startLevel(level+1);document.getElementById('next').disabled=true;};
+
+startLevel(1); loadBest();
+</script>
+</body>
+</html>
