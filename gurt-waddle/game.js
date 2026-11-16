@@ -77,7 +77,7 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 || level === 100 ? 11 * T - 70 : yy * T - 40), w: 26, h: (level === 79 ? 58 : (level === 80 || level === 100 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 || level === 100 ? 11 * T - 70 : yy * T - 18), w: 26, h: (level === 79 ? 58 : (level === 80 || level === 100 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'c') crumbling.push({ x: xx, y: yy, timer: -1, back: 0 });
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
@@ -451,7 +451,7 @@
       // stomping: the bird must come down ON the moth's back, so its feet
       // have to be at or above the moth's top while falling. Standing on the
       // floor underneath the moth is not a stomp.
-      const landOn = nearX && p.vy > 0.8 && feet >= boss.y - 44 && feet <= boss.y + 60;
+      const landOn = nearX && p.vy > 0.2 && feet >= boss.y - 70 && feet <= boss.y + 80;
       const stomping = landOn;
       const touching = nearX && feet > boss.y - 8 && p.y < boss.y + boss.h;
       const canStomp = stomping;
