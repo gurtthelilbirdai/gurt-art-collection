@@ -448,6 +448,7 @@
       const landOn = nearX && p.vy > 0 && feet >= boss.y - 10 && feet <= boss.y + 16;
       const stomping = nearX && ((feet >= boss.y - 34 && feet <= boss.y + boss.h + 20 && (p.vy > 0 || p.onGround)) || landOn);
       const touching = nearX && (feet > boss.y - 8 && p.y < boss.y + boss.h) || landOn;
+      window.__gurtBoss = { bx: Math.round(boss.x), by: Math.round(boss.y), px: Math.round(p.x), py: Math.round(p.y), feet: Math.round(feet), vy: Math.round(p.vy), nearX, stomping, touching, hp: boss.hp };
       if (safeFor <= 0 && touching) {
         if (stomping) {
           boss.hp--; boss.stun = 1.2; boss.vx = 0; safeFor = 0.8; p.vy = -12; score += 50; beep(200, .15, 'sawtooth');
