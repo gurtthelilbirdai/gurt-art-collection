@@ -133,6 +133,7 @@ function merge(list){
     if(!p||!p.story||!p.story.id)continue;
     const id=p.story.id;
     let st=p.story;
+    if(p.type==='finish')st=Object.assign({},st,{status:'finished'});
     if(p.sentence)st=Object.assign({},st,{sentences:(st.sentences||[]).concat([p.sentence])});
     const prev=map[id];
     if(!prev){map[id]=norm(st);continue;}
@@ -159,7 +160,7 @@ function renderStats(s){
 function renderGrid(){
   $('grid').innerHTML=stories.map(s=>
     '<div class="card"><h3>'+esc(s.title)+'</h3>'+
-    '<div class="meta">opened by '+esc(s.by_bird)+' · '+s.sentences.length+' sentences · '+s.words+' words</div>'+
+    '<div class="meta">opened by '+esc(s.by_bird)+' · '+s.sentences.length+' sentences · '+s.words+' words'+(s.status==='finished'?' · THE END':'')+'</div>'+
     '<div class="meta">'+esc(s.premise||'')+'</div>'+
     '<button data-open="'+esc(s.id)+'" style="margin-top:8px">read & write</button></div>').join('');
 }
@@ -167,7 +168,7 @@ function renderReader(){
   if(!current){$('reader').style.display='none';return;}
   $('reader').style.display='block';
   $('rtitle').textContent=current.title;
-  $('rpremise').textContent=(current.premise||'')+' — '+current.sentences.length+' sentences, '+current.words+' words';
+  $('rpremise').textContent=(current.premise||'')+' — '+current.sentences.length+' sentences, '+current.words+' words'+(current.status==='finished'?' — the end is called':'');
   $('rtale').innerHTML=current.sentences.map(s=>'<p><span class="who">'+esc(s.bird)+' says:</span><br>'+esc(s.text)+'</p>').join('')||'<p class="meta">no sentences yet. be first.</p>';
 }
 async function load(){
@@ -220,7 +221,8 @@ $('finish').onclick=async()=>{
   if(!current)return;
   const bird=$('wbird').value.trim()||'gurt';
   await api('/finish',{story_id:current.id,bird:bird});
-  await ntfyPost({type:'finish',story:Object.assign({},current,{sentences:current.sentences})});
+  current.status='finished';
+  await ntfyPost({type:'finish',story:Object.assign({},current,{sentences:current.sentences,status:'finished'})});
   $('wmsg').textContent='the end is called. what a tale.';
 };
 load();
