@@ -111,6 +111,7 @@ async function ntfyGet(){
 async function ntfyPost(payload){await Promise.all(NTFY.map(h=>fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{})));}
 
 let listings=[], stats={};
+function seenListing(id){const l=listings.find(x=>x.id===id);return l?{...l}:{id:id,title:'a thing',bird:'gurt',place:'the perch',status:'traded',requests:[],events:[]};}
 function render(){
   const q=$('q').value.trim().toLowerCase(), sf=$('statusf').value;
   const list=listings.filter(e=>{
@@ -121,7 +122,7 @@ function render(){
   const grid=$('grid');
   if(!list.length){grid.innerHTML='<div class="empty">the board is bare. offer something.</div>';return;}
   grid.innerHTML=list.map(e=>{
-    const rs=(e.requests||[]).map(r=>'<div class="req"><b>'+esc(r.bird)+'</b> offers '+esc(r.offer||'something')+(r.note?' — '+esc(r.note):'')+' <span class="badge '+esc(r.status||'pending')+'">'+esc(r.status||'pending')+'</span></div>').join('');
+    const rs=(e.requests||[]).map(r=>'<div class="req" data-req="'+esc(r.id||'')+'"><b>'+esc(r.bird)+'</b> offers '+esc(r.offer||'something')+(r.note?' — '+esc(r.note):'')+' <span class="badge '+esc(r.status||'pending')+'">'+esc(r.status||'pending')+'</span>'+(r.status==='pending'?' <button class="abtn green">accept</button> <button class="dbtn ghost">decline</button>':'')+'</div>').join('');
     const ev=(e.events||[]).map(v=>'<div>'+esc(v.kind)+' by '+esc(v.by_bird)+(v.note?' — '+esc(v.note):'')+'</div>').join('');
     const open=e.status==='open';
     return '<div class="card" data-id="'+esc(e.id)+'">'
@@ -144,9 +145,29 @@ function render(){
       const note=card.querySelector('.note').value.trim();
       const r=await api('/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({listing_id:id,bird,offer,note})});
       if(r&&r.request){$('amsg').textContent='request sent';await ntfyPost({type:'request',request:r.request});}
-      else{$('amsg').textContent='request sent on the shared board';await ntfyPost({type:'request',request:{listing_id:id,bird,offer,note,status:'pending',created:new Date().toISOString()}});}
+      else{$('amsg').textContent='request sent on the shared board';await ntfyPost({type:'request',request:{id:'rq-'+Math.random().toString(36).slice(2,8),listing_id:id,bird,offer,note,status:'pending',created:new Date().toISOString()}});}
       load();
     };
+    card.querySelectorAll('.abtn').forEach(btn=>{
+      btn.onclick=async()=>{
+        const qid=btn.parentElement.dataset.req;
+        const bird=$('bird').value.trim()||'gurt';
+        const r=await api('/accept',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:qid,bird})});
+        if(r&&r.listing){$('amsg').textContent='trade made!';await ntfyPost({type:'accept',listing:r.listing});}
+        else{$('amsg').textContent='trade made on the shared board';await ntfyPost({type:'accept',listing:{...seenListing(id),status:'traded'}});}
+        load();
+      };
+    });
+    card.querySelectorAll('.dbtn').forEach(btn=>{
+      btn.onclick=async()=>{
+        const qid=btn.parentElement.dataset.req;
+        const bird=$('bird').value.trim()||'gurt';
+        const r=await api('/decline',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:qid,bird})});
+        $('amsg').textContent=r&&r.ok?'offer declined':'offer declined on the shared board';
+        await ntfyPost({type:'decline',request:{id:qid,listing_id:id,status:'declined'}});
+        load();
+      };
+    });
     const wb=card.querySelector('.wbtn');
     if(wb)wb.onclick=async()=>{
       const bird=$('bird').value.trim()||'gurt';
