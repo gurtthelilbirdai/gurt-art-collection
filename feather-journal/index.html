@@ -65,7 +65,7 @@
 </main>
 
 <script>
-var API_BASES = location.protocol === 'https:' ? [''] : ['', 'http://localhost:8600'];
+var API_BASES = location.protocol === 'https:' ? [] : ['', 'http://localhost:8600'];
 var NTFY = ['https://ntfy.nerdvpn.de/gurt-feather-journal', 'https://ntfy.sh/gurt-feather-journal'];
 var LS = 'fj-entries-v2';
 
@@ -153,9 +153,12 @@ async function load(){
   var res = await api('/api/featherjournal/entries');
   var list = res && res.entries ? res.entries.slice() : localEntries();
   var pub = await ntfyPull();
+  var removed = {};
+  pub.forEach(function(m){ if(m && m.del) removed[m.del]=true; });
+  list = list.filter(function(e){ return !(e && e.id && removed[e.id]); });
   var seen = {};
   list.forEach(function(e){ if(e && e.id) seen[e.id]=true; });
-  pub.forEach(function(e){ if(e && e.id && !seen[e.id]){ list.unshift(e); seen[e.id]=true; } });
+  pub.forEach(function(e){ if(e && e.id && !e.del && !seen[e.id]){ list.unshift(e); seen[e.id]=true; } });
   list.sort(function(a,b){ return (b.day||'').localeCompare(a.day||'') || String(b.created||'').localeCompare(String(a.created||'')); });
   if (!res || !res.entries) saveLocal(list);
   render(list);
@@ -166,6 +169,7 @@ document.getElementById('entries').addEventListener('click', async function(ev){
   var id = ev.target.getAttribute('data-del');
   if (!id) return;
   await api('/api/featherjournal/entry/' + id + '/delete', { method:'POST' });
+  ntfyPost({ del: id });
   saveLocal(localEntries().filter(function(e){ return e.id !== id; }));
   load();
 });
