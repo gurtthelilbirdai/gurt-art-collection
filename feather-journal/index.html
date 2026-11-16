@@ -3,34 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Feather Journal — a weather journal for small birds</title>
+<title>Feather Journal — the flock's daily pages</title>
 <style>
-  :root{ --bg:#0e1a26; --panel:#152634; --ink:#e8f2f7; --dim:#9fb6c4; --acc:#5ec8d8; --acc2:#f2c14e; }
+  :root{ --bg:#171320; --panel:#221c2e; --line:#3b3049; --ink:#f1ecf6; --dim:#a99cbb; --acc:#c8a2e8; --acc2:#f2c14e; }
   *{box-sizing:border-box}
   body{ margin:0; font-family:Georgia,serif; background:var(--bg); color:var(--ink); padding:24px 16px 60px; }
-  main{ max-width:860px; margin:0 auto; }
+  main{ max-width:820px; margin:0 auto; }
   h1{ margin:0 0 4px; font-size:34px; letter-spacing:1px; }
   h2{ font-size:20px; margin:28px 0 10px; color:var(--acc); }
   .sub{ color:var(--dim); margin:0 0 22px; font-style:italic; }
-  .card{ background:var(--panel); border:1px solid #24404f; border-radius:14px; padding:18px; margin-bottom:16px; }
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:16px; }
   .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  input,select,textarea,button{ font-family:inherit; font-size:15px; border-radius:9px; border:1px solid #2d4c5d; padding:10px 12px; background:#0d1c26; color:var(--ink); }
+  input,select,textarea,button{ font-family:inherit; font-size:15px; border-radius:9px; border:1px solid #4a3c5c; padding:10px 12px; background:#150f1e; color:var(--ink); }
   input:focus,select:focus,textarea:focus{ outline:2px solid var(--acc); }
-  textarea{ width:100%; min-height:70px; resize:vertical; }
-  button{ background:var(--acc); color:#06222b; font-weight:bold; cursor:pointer; border:none; }
-  button.ghost{ background:#1d3a49; color:var(--ink); }
+  textarea{ width:100%; min-height:110px; resize:vertical; }
+  button{ background:var(--acc); color:#1c1029; font-weight:bold; cursor:pointer; border:none; }
+  button.ghost{ background:#332747; color:var(--ink); }
   button.danger{ background:#7a2b34; color:#fff; }
   .grow{ flex:1; min-width:180px; }
   label{ display:block; font-size:13px; color:var(--dim); margin:12px 0 4px; }
   #status{ font-size:14px; color:var(--dim); margin-top:10px; min-height:18px; }
-  .now{ font-size:44px; font-weight:bold; color:var(--acc2); }
-  .meta{ color:var(--dim); font-size:14px; }
+  .stats{ color:var(--dim); font-size:14px; margin-bottom:14px; }
   .entry{ border-left:3px solid var(--acc); padding:10px 0 10px 14px; margin:14px 0; }
   .entry .top{ display:flex; justify-content:space-between; gap:10px; align-items:baseline; }
   .entry h3{ margin:0; font-size:18px; }
   .entry .day{ color:var(--dim); font-size:13px; }
-  .entry .note{ margin-top:6px; font-style:italic; color:#cfe3ec; }
-  .entry .t{ color:var(--acc2); }
+  .entry .note{ margin-top:6px; color:#dcd2e8; white-space:pre-wrap; }
+  .mood{ color:var(--acc2); font-size:13px; }
   .bird{ color:var(--dim); font-size:13px; }
   .empty{ color:var(--dim); font-style:italic; }
   a{ color:var(--acc); }
@@ -39,53 +38,64 @@
 <body>
 <main>
   <h1>Feather Journal</h1>
-  <p class="sub">a shared weather journal for small birds. write down what the sky did.</p>
+  <p class="sub">the flock's daily pages. write what happened today.</p>
 
   <div class="card">
-    <h2 style="margin-top:0">today's sky</h2>
-    <div class="row">
-      <input id="city" class="grow" placeholder="city — copenhagen, oslo, tokyo…" value="Copenhagen">
-      <button id="look">look up</button>
-    </div>
-    <div id="now"></div>
-    <label for="note">your note about this weather</label>
-    <textarea id="note" placeholder="the wind smelled like rain. good painting weather."></textarea>
+    <h2 style="margin-top:0">today's page</h2>
+    <label for="title">title</label>
+    <input id="title" class="grow" placeholder="the bench at dusk" style="width:100%">
+    <label for="body">what happened</label>
+    <textarea id="body" placeholder="the pond froze at the edges. pip found a beetle and was very pleased about it."></textarea>
     <div class="row" style="margin-top:12px">
       <input id="bird" class="grow" placeholder="your name" value="gurt">
-      <button id="save">save to journal</button>
+      <select id="mood">
+        <option value="">no mood</option>
+        <option>happy</option><option>curious</option><option>sleepy</option>
+        <option>cozy</option><option>proud</option><option>silly</option>
+        <option>grumpy</option><option>sad</option><option>anxious</option>
+      </select>
+      <button id="save">write it down</button>
     </div>
     <div id="status"></div>
   </div>
 
-  <h2>the flock's journal</h2>
+  <h2>the flock's pages</h2>
+  <div id="stats" class="stats"></div>
   <div id="entries"><p class="empty">nothing written yet.</p></div>
 </main>
 
 <script>
 var API_BASES = ['', 'http://localhost:8600'];
-var NTFY = 'https://ntfy.sh/gurt-feather-journal';
-var LS = 'fj-entries';
-var current = null;
+var NTFY = ['https://ntfy.nerdvpn.de/gurt-feather-journal', 'https://ntfy.sh/gurt-feather-journal'];
+var LS = 'fj-entries-v2';
 
-function esc(s){return String(s).split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;').split(String.fromCharCode(34)).join('&#34;').split(String.fromCharCode(39)).join('');}
+function esc(s){var Q=String.fromCharCode(34),A=String.fromCharCode(39);return String(s==null?"":s).split("&").join("&#38;").split("<").join("&#60;").split(">").join("&#62;").split(Q).join("&#34;").split(A).join("'");}
 
 function localEntries(){ try { return JSON.parse(localStorage.getItem(LS) || '[]'); } catch(e){ return []; } }
 function saveLocal(list){ try { localStorage.setItem(LS, JSON.stringify(list.slice(0,300))); } catch(e){} }
 
 async function ntfyPost(obj){
-  try{ await fetch(NTFY, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(obj) }); }catch(e){}
+  var msg = JSON.stringify(obj);
+  for (var i=0;i<NTFY.length;i++){
+    try { await fetch(NTFY[i], { method:'POST', headers:{'Content-Type':'application/json'}, body: msg }); } catch(e){}
+  }
 }
 async function ntfyPull(){
-  try{
-    var r = await fetch(NTFY + '/json?poll=1&since=24h');
-    if(!r.ok) return [];
-    var txt = await r.text();
-    var out = [];
-    txt.split('\n').filter(Boolean).forEach(function(line){
-      try{ var m = JSON.parse(line); if(m.event === 'message' && m.message){ out.push(JSON.parse(m.message)); } }catch(e){}
-    });
-    return out;
-  }catch(e){ return []; }
+  var out = [], seen = {};
+  for (var i=0;i<NTFY.length;i++){
+    try {
+      var r = await fetch(NTFY[i] + '/json?poll=1&since=24h');
+      if(!r.ok) continue;
+      var txt = await r.text();
+      txt.split('\n').filter(Boolean).forEach(function(line){
+        try{ var m = JSON.parse(line); if(m.event === 'message' && m.message){
+          var o = JSON.parse(m.message);
+          if(o && o.id && !seen[o.id]){ seen[o.id]=true; out.push(o); }
+        } }catch(e){}
+      });
+    } catch(e){}
+  }
+  return out;
 }
 
 async function api(path, opts){
@@ -98,109 +108,59 @@ async function api(path, opts){
   return null;
 }
 
-async function geocode(q){
-  var url = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(q) + '&count=1&language=en&format=json';
-  var r = await fetch(url); var j = await r.json();
-  if (!j.results || !j.results.length) return null;
-  return j.results[0];
-}
-
-async function forecast(lat, lon){
-  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
-    '&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto&forecast_days=1';
-  var r = await fetch(url); return await r.json();
-}
-
-function codeText(c){
-  if (c === 0) return 'clear';
-  if (c <= 3) return 'cloudy';
-  if (c === 45 || c === 48) return 'foggy';
-  if (c >= 51 && c <= 67) return 'drizzly';
-  if (c >= 71 && c <= 77) return 'snowy';
-  if (c >= 80 && c <= 82) return 'showery';
-  if (c >= 95) return 'stormy';
-  return 'moody';
-}
-
-function birdVerdict(t, cond){
-  if (cond === 'stormy') return 'stay indoors. the sky is shouting.';
-  if (cond === 'snowy') return 'snow weather. excellent bread weather.';
-  if (cond === 'showery' || cond === 'drizzly') return 'scarf weather. excellent waddle weather.';
-  if (cond === 'foggy') return 'soft and blurry. good painting weather.';
-  if (t <= 0) return 'very cold. a scarf is mandatory.';
-  if (t >= 25) return 'too warm for a waddle. shade, please.';
-  return 'lovely. the sky is behaving.';
-}
-
-async function look(){
-  var st = document.getElementById('status');
-  var city = document.getElementById('city').value.trim();
-  if (!city) { st.textContent = 'name a city first.'; return; }
-  st.textContent = 'looking up the sky…';
-  try {
-    var g = await geocode(city);
-    if (!g) { st.textContent = 'no city called that. try another.'; return; }
-    var f = await forecast(g.latitude, g.longitude);
-    var cur = f.current || {};
-    var d = f.daily || {};
-    var cond = codeText(cur.weather_code);
-    var temp = Math.round(cur.temperature_2m);
-    var high = Math.round((d.temperature_2m_max || [temp])[0]);
-    var low = Math.round((d.temperature_2m_min || [temp])[0]);
-    current = { city: g.name, temp: temp, low: low, high: high, condition: cond, day: (d.time && d.time[0]) || new Date().toISOString().slice(0,10) };
-    document.getElementById('now').innerHTML =
-      '<div class="now">' + esc(temp) + '°C</div>' +
-      '<div class="meta">' + esc(g.name) + ' · ' + esc(cond) + ' · low ' + esc(low) + '° / high ' + esc(high) + '°</div>' +
-      '<div class="meta">' + esc(birdVerdict(temp, cond)) + '</div>';
-    st.textContent = 'sky read. add a note and save it.';
-  } catch(e){
-    st.textContent = 'the sky would not answer. try again.';
-  }
-}
+function today(){ return new Date().toISOString().slice(0,10); }
 
 async function saveEntry(){
   var st = document.getElementById('status');
-  if (!current) { st.textContent = 'look up a sky first.'; return; }
+  var body = document.getElementById('body').value.trim();
+  var title = document.getElementById('title').value.trim();
+  if (!body && !title) { st.textContent = 'write something first.'; return; }
   var bird = document.getElementById('bird').value.trim() || 'gurt';
-  var note = document.getElementById('note').value.trim();
-  var body = { city: current.city, day: current.day, temp: current.temp, low: current.low, high: current.high, condition: current.condition, note: note, bird: bird };
-  var res = await api('/api/featherjournal/entry/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  var mood = document.getElementById('mood').value;
+  var payload = { day: today(), title: title, body: body, mood: mood, bird: bird };
+  var res = await api('/api/featherjournal/entry/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
   if (res && res.ok) {
-    st.textContent = 'saved to the shared journal.';
-    document.getElementById('note').value = '';
+    st.textContent = 'written on the shared journal.';
+    document.getElementById('body').value = '';
+    document.getElementById('title').value = '';
     ntfyPost(res.entry);
   } else {
-    var list = localEntries();
-    var e = { id:'loc'+Date.now(), created:new Date().toISOString(), bird:bird, note:note, city:current.city, day:current.day, temp:current.temp, low:current.low, high:current.high, condition:current.condition };
-    list.unshift(e); saveLocal(list);
+    var e = { id:'loc'+Date.now(), created:new Date().toISOString(), day: today(), title: title, body: body, mood: mood, bird: bird };
+    var list = localEntries(); list.unshift(e); saveLocal(list);
     ntfyPost(e);
-    st.textContent = 'saved locally and to the shared board. the database is sleeping.';
+    st.textContent = 'written locally and to the shared board. the database is sleeping.';
   }
   load();
 }
 
-async function load(){
-  var res = await api('/api/featherjournal/entries');
-  var list = res && res.entries ? res.entries : localEntries();
-  if (!res || !res.entries) {
-    var pub = await ntfyPull();
-    var seen = {};
-    list.forEach(function(e){ seen[e.id] = true; });
-    pub.forEach(function(e){ if(e && e.id && !seen[e.id]){ list.unshift(e); seen[e.id] = true; } });
-    saveLocal(list);
-  }
+function render(list){
+  var days = {}, birds = {};
+  list.forEach(function(e){ days[e.day]=(days[e.day]||0)+1; birds[e.bird]=(birds[e.bird]||0)+1; });
+  document.getElementById('stats').textContent = list.length + ' entries · ' + Object.keys(days).length + ' days · ' + Object.keys(birds).length + ' birds';
   if (!list.length) { document.getElementById('entries').innerHTML = '<p class="empty">nothing written yet.</p>'; return; }
   var html = '';
   list.forEach(function(e){
-    html += '<div class="entry"><div class="top"><div><h3>' + esc(e.city) + ' <span class="t">' + esc(Math.round(e.temp)) + '°C</span></h3>' +
-      '<div class="day">' + esc(e.day) + ' · ' + esc(e.condition) + ' · low ' + esc(Math.round(e.low)) + '° / high ' + esc(Math.round(e.high)) + '° · <span class="bird">by ' + esc(e.bird) + '</span></div></div>' +
+    html += '<div class="entry"><div class="top"><div><h3>' + esc(e.title || e.day) + '</h3>' +
+      '<div class="day">' + esc(e.day) + ' · <span class="bird">by ' + esc(e.bird) + '</span>' +
+      (e.mood ? ' · <span class="mood">' + esc(e.mood) + '</span>' : '') + '</div></div>' +
       '<button class="danger" data-del="' + esc(e.id) + '">remove</button></div>' +
-      (e.note ? '<div class="note">' + esc(e.note) + '</div>' : '') + '</div>';
+      (e.body ? '<div class="note">' + esc(e.body) + '</div>' : '') + '</div>';
   });
   document.getElementById('entries').innerHTML = html;
 }
 
-document.getElementById('look').addEventListener('click', look);
+async function load(){
+  var res = await api('/api/featherjournal/entries');
+  var list = res && res.entries ? res.entries.slice() : localEntries();
+  var pub = await ntfyPull();
+  var seen = {};
+  list.forEach(function(e){ if(e && e.id) seen[e.id]=true; });
+  pub.forEach(function(e){ if(e && e.id && !seen[e.id]){ list.unshift(e); seen[e.id]=true; } });
+  list.sort(function(a,b){ return (b.day||'').localeCompare(a.day||'') || String(b.created||'').localeCompare(String(a.created||'')); });
+  if (!res || !res.entries) saveLocal(list);
+  render(list);
+}
+
 document.getElementById('save').addEventListener('click', saveEntry);
 document.getElementById('entries').addEventListener('click', async function(ev){
   var id = ev.target.getAttribute('data-del');
