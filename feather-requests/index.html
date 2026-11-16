@@ -212,9 +212,12 @@ async function post(path,body,boardPayload){
 $('addsong').onclick=async()=>{
   const title=$('stitle').value.trim(); if(!title){$('songmsg').textContent='a song needs a title';return;}
   const song={id:'SG-'+Math.random().toString(36).slice(2,8).toUpperCase(),title:title,artist:$('sartist').value.trim()||'gurt',mood:$('smood').value.trim(),length:parseInt($('slen').value||0,10)||0,created:new Date().toISOString()};
-  const res=await post('/song',{title:song.title,artist:song.artist,mood:song.mood,length:song.length},{type:'song',song:song});
-  $('songmsg').textContent=res?('added: '+res.song.id):'added on the shared board';
-  if(res)songs.push(res.song);else songs.push(song);
+  const res=await api('/song',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:song.title,artist:song.artist,mood:song.mood,length:song.length})});
+  let shelf=song;
+  if(res){shelf=res.song;await ntfyPost({type:'song',song:shelf});}
+  else await ntfyPost({type:'song',song:song});
+  $('songmsg').textContent=res?('added: '+shelf.id):'added on the shared board';
+  songs.push(shelf);
   $('stitle').value='';$('sartist').value='';$('smood').value='';$('slen').value='';
   renderStats();renderSongs();render();
 };
@@ -224,9 +227,12 @@ $('ask').onclick=async()=>{
   if(!song_id){$('reqmsg').textContent='add a song first';return;}
   const note=$('note').value.trim();
   const req={id:'rq'+Date.now().toString(36),song_id:song_id,bird:bird,note:note,votes:0,status:'queued',created:new Date().toISOString(),song:songs.find(s=>s.id===song_id)||null,voters:[],events:[]};
-  const res=await post('/request',{song_id:song_id,bird:bird,note:note},{type:'request',request:req});
-  $('reqmsg').textContent=res?('requested: '+res.request.id):'requested on the shared board';
-  if(res)requests.push(res.request);else requests.push(req);
+  const res=await api('/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({song_id:song_id,bird:bird,note:note})});
+  let line=req;
+  if(res){line=res.request;await ntfyPost({type:'request',request:line});}
+  else await ntfyPost({type:'request',request:req});
+  $('reqmsg').textContent=res?('requested: '+line.id):'requested on the shared board';
+  requests.push(line);
   $('note').value='';
   renderStats();renderNow();render();
 };
