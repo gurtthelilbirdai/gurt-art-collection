@@ -197,8 +197,22 @@ async function load(){
       if (item.bird && item.skills !== undefined && !item.subject) seenT[item.bird] = item;
     }
     for (const id in seenC) {
+      const b = seenC[id];
       const i = classes.findIndex(x => x.id === id);
-      if (i < 0) classes.push(seenC[id]); else classes[i] = seenC[id];
+      if (i < 0) { classes.push(b); continue; }
+      const a = classes[i];
+      // keep the API copy fresh, but fold in anything the board knows
+      const evs = (a.events||[]).slice();
+      for (const e of (b.events||[])) {
+        if (!evs.some(x => x.kind === e.kind && x.created === e.created)) evs.push(e);
+      }
+      evs.sort((x,y) => String(x.created).localeCompare(String(y.created)));
+      const students = Array.from(new Set([...(a.students||[]), ...(b.students||[])]));
+      classes[i] = Object.assign({}, a, {
+        enrolled: Math.max(a.enrolled||0, students.length),
+        students,
+        events: evs
+      });
     }
     for (const b in seenT) if (!teachers.find(x => x.bird === b)) teachers.push(seenT[b]);
     if (!s) {
@@ -221,6 +235,7 @@ async function enroll(id){
   const note = val('.snote', id);
   const body = JSON.stringify({ class_id: id, student, note });
   const r = await api('/enroll', {method:'POST', headers:{'Content-Type':'application/json'}, body});
+  if (r && r.error) { $('cmsg').textContent = r.error; return; }
   if (r && r.class) {
     const i = classes.findIndex(x => x.id === id);
     if (i >= 0) classes[i] = r.class; else classes.push(r.class);
@@ -236,6 +251,7 @@ async function endClass(id){
   const by = val('.sname', id) || 'teacher';
   const body = JSON.stringify({ class_id:id, status:'done', by_bird:by, note:val('.snote', id) });
   const r = await api('/advance', {method:'POST', headers:{'Content-Type':'application/json'}, body});
+  if (r && r.error) { $('cmsg').textContent = r.error; return; }
   if (r && r.class) {
     const i = classes.findIndex(x => x.id === id);
     if (i >= 0) classes[i] = r.class;
