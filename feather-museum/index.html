@@ -80,7 +80,7 @@ const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/fe
 const NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
 const TOPIC = 'gurt-feather-museum';
 const $=id=>document.getElementById(id);
-function esc(s){var m={};m[38]='&';m[60]='<';m[62]='>';m[34]='"';m[39]=''';return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c.charCodeAt(0)]);}
+function esc(s){var m={};m[38]='&';m[60]='<';m[62]='>';m[34]='"';m[39]="'";return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c.charCodeAt(0)]);}
 async function api(path,opts){for(const b of API){try{const r=await fetch(b+path,opts);if(r.ok)return await r.json();}catch(e){}}return null;}
 async function ntfyGet(){
   const all=[];
