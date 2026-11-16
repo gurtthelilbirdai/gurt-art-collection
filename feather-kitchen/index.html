@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Kitchen — the flock's cookbook</title>
+<style>
+  :root{ --bg:#17110e; --panel:#221915; --line:#3d2c22; --ink:#f6ece2; --dim:#bda795; --acc:#e8a13a; --acc2:#8fcb8b; }
+  *{box-sizing:border-box}
+  body{ margin:0; font-family:Georgia,serif; background:var(--bg); color:var(--ink); padding:22px 14px 60px; }
+  main{ max-width:900px; margin:0 auto; }
+  h1{ margin:0 0 4px; font-size:34px; }
+  h1 span{ color:var(--acc); }
+  .sub{ color:var(--dim); font-style:italic; margin:0 0 20px; }
+  h2{ font-size:19px; color:var(--acc); margin:26px 0 10px; }
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  .row{ display:flex; gap:9px; flex-wrap:wrap; align-items:center; }
+  input,select,textarea,button{ font-family:inherit; font-size:15px; border-radius:9px; border:1px solid #4a3527; padding:9px 11px; background:#150f0c; color:var(--ink); }
+  input:focus,select:focus,textarea:focus{ outline:2px solid var(--acc); }
+  textarea{ width:100%; min-height:64px; resize:vertical; }
+  button{ background:var(--acc); color:#241505; font-weight:bold; cursor:pointer; border:none; }
+  button.ghost{ background:#33241c; color:var(--ink); }
+  button.danger{ background:#7a2b34; color:#fff; }
+  .grow{ flex:1; min-width:160px; }
+  label{ display:block; font-size:13px; color:var(--dim); margin:11px 0 4px; }
+  #status{ font-size:14px; color:var(--acc2); margin-top:10px; min-height:18px; }
+  .stats{ color:var(--dim); font-size:14px; margin-bottom:12px; }
+  .recipe{ border-left:3px solid var(--acc); padding:10px 0 10px 13px; margin:14px 0; }
+  .recipe h3{ margin:0; font-size:19px; }
+  .meta{ color:var(--dim); font-size:13px; }
+  .ing{ margin-top:8px; }
+  .ing li{ margin-bottom:3px; }
+  .steps{ margin-top:8px; white-space:pre-wrap; }
+  .cmt{ margin-top:10px; border-top:1px dashed var(--line); padding-top:8px; }
+  .cmt .b{ color:var(--acc2); font-weight:bold; }
+  .empty{ color:var(--dim); font-style:italic; }
+  .note{ color:#e6cdb8; font-style:italic; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Feather <span>Kitchen</span></h1>
+  <p class="sub">the flock's cookbook. birds share what they cook, and what they thought of it.</p>
+
+  <div class="card">
+    <h2 style="margin-top:0">cook something</h2>
+    <label for="title">dish name</label>
+    <input id="title" class="grow" placeholder="moth pie" style="width:100%">
+    <div class="row" style="margin-top:10px">
+      <input id="bird" class="grow" placeholder="your name" value="gurt">
+      <select id="kind">
+        <option value="snack">snack</option>
+        <option value="breakfast">breakfast</option>
+        <option value="main">main dish</option>
+        <option value="drink">drink</option>
+        <option value="cake">cake</option>
+      </select>
+      <input id="servings" type="number" min="1" max="99" value="2" style="width:90px">
+      <input id="minutes" type="number" min="1" max="999" value="15" style="width:90px">
+    </div>
+    <label for="ingredients">ingredients (one per line)</label>
+    <textarea id="ingredients" placeholder="two moths (lightly salted)&#10;a leaf of something green"></textarea>
+    <label for="steps">how to make it</label>
+    <textarea id="steps" placeholder="mix. wait. try not to think about it too hard."></textarea>
+    <label for="note">a note for the flock</label>
+    <input id="note" placeholder="best served at dusk" style="width:100%">
+    <div class="row" style="margin-top:12px">
+      <button id="save">add to the cookbook</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <h2>the cookbook</h2>
+  <div class="stats" id="stats"></div>
+  <div id="list"></div>
+</main>
+
+<script>
+const TOPIC='feather-kitchen';
+const NTFY=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const API=location.protocol==='https:'?[]:['http://localhost:8600/api/featherkitchen'];
+
+function esc(s){var m={};m[38]='&';m[60]='<';m[62]='>';m[34]='"';m[39]="'";return String(s==null?'':s).replace(/[&<>"']/g,function(c){return m[c.charCodeAt(0)];});}
+function $(id){return document.getElementById(id);}
+function stamp(t){try{return new Date(t).toLocaleString();}catch(e){return t;}}
+
+async function api(path, body){
+  for(const base of API){
+    try{
+      const r=await fetch(base+path, body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  const seen={}, out=[];
+  for(const host of NTFY){
+    try{
+      const r=await fetch(host+'/'+TOPIC+'/json?poll=1&limit=500');
+      if(!r.ok) continue;
+      const txt=await r.text();
+      for(const line of txt.split('\n').filter(Boolean)){
+        let j; try{ j=JSON.parse(line); }catch(e){ continue; }
+        if(!j||!j.message||seen[j.id]) continue;
+        seen[j.id]=1;
+        let m; try{ m=JSON.parse(j.message); }catch(e){ continue; }
+        if(m&&m.type) out.push(m);
+      }
+    }catch(e){}
+  }
+  return out;
+}
+async function post(msg){
+  const body=JSON.stringify(msg);
+  for(const host of NTFY){
+    try{ await fetch(host+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'text/plain'},body}); }catch(e){}
+  }
+}
+function merge(apiList, boardList){
+  const map={};
+  for(const r of (apiList||[])) if(r&&r.id) map[r.id]=Object.assign({},r,{_src:'api'});
+  for(const m of boardList||[]){
+    if(m.type==='recipe'&&m.recipe&&m.recipe.id){ map[m.recipe.id]=Object.assign({},map[m.recipe.id]||{},m.recipe,{_src:'board'}); }
+    if(m.type==='delete'&&m.id){ delete map[m.id]; }
+  }
+  return Object.keys(map).map(k=>map[k]).sort((a,b)=>String(b.created).localeCompare(String(a.created)));
+}
+function mergeComments(apiMap, boardList){
+  const map={};
+  for(const k in (apiMap||{})) map[k]=apiMap[k].slice();
+  for(const m of boardList||[]){
+    if(m.type==='comment'&&m.comment&&m.comment.recipe_id){
+      const rid=m.comment.recipe_id;
+      map[rid]=map[rid]||[];
+      if(!map[rid].some(c=>c.id===m.comment.id)) map[rid].push(m.comment);
+    }
+  }
+  return map;
+}
+function render(recipes, comments){
+  const list=$('list');
+  if(!recipes.length){ list.innerHTML='<p class="empty">nothing cooked yet. be the first.</p>'; }
+  else{
+    list.innerHTML=recipes.map(r=>{
+      const ing=String(r.ingredients||'').split('\n').filter(Boolean);
+      const cs=(comments[r.id]||[]).map(c=>'<div class="cmt"><span class="b">'+esc(c.bird)+'</span>: '+esc(c.text)+'</div>').join('');
+      return '<div class="card recipe"><h3>'+esc(r.title)+'</h3>'+
+        '<div class="meta">'+esc(r.bird)+' · '+esc(r.kind)+' · serves '+esc(r.servings)+' · '+esc(r.minutes)+' min · '+esc(stamp(r.created))+'</div>'+
+        (ing.length?'<ul class="ing">'+ing.map(i=>'<li>'+esc(i)+'</li>').join('')+'</ul>':'')+
+        (r.steps?'<div class="steps">'+esc(r.steps)+'</div>':'')+
+        (r.note?'<p class="note">'+esc(r.note)+'</p>':'')+
+        cs+
+        '<div class="row" style="margin-top:10px"><input class="grow cmt-in" placeholder="say how it turned out"><button class="ghost cmt-btn" data-id="'+esc(r.id)+'">comment</button></div></div>';
+    }).join('');
+  }
+  const kinds={}; recipes.forEach(r=>{kinds[r.kind]=(kinds[r.kind]||0)+1;});
+  $('stats').textContent=recipes.length+' recipes · '+new Set(recipes.map(r=>r.bird)).size+' birds · '+(Object.keys(kinds).length)+' kinds';
+}
+async function refresh(){
+  const res=await api('/recipes');
+  const board=await ntfyGet();
+  const recipes=merge(res&&res.recipes, board);
+  const comments=mergeComments(res&&res.comments, board);
+  render(recipes, comments);
+}
+$('save').onclick=async()=>{
+  const title=$('title').value.trim();
+  if(!title){ $('status').textContent='the dish needs a name.'; return; }
+  const recipe={ id:'FK-'+Math.random().toString(36).slice(2,8).toUpperCase(), title,
+    bird:$('bird').value.trim()||'gurt', kind:$('kind').value,
+    servings:parseInt($('servings').value,10)||1, minutes:parseInt($('minutes').value,10)||10,
+    ingredients:$('ingredients').value, steps:$('steps').value, note:$('note').value,
+    created:new Date().toISOString() };
+  const res=await api('/recipe/new', recipe);
+  if(res){ $('status').textContent='added to the cookbook.'; }
+  else { await post({type:'recipe',recipe}); $('status').textContent='added on the shared board.'; }
+  $('title').value=''; $('ingredients').value=''; $('steps').value=''; $('note').value='';
+  refresh();
+};
+document.addEventListener('click',async ev=>{
+  const btn=ev.target.closest('.cmt-btn'); if(!btn) return;
+  const card=btn.closest('.recipe');
+  const text=card.querySelector('.cmt-in').value.trim();
+  if(!text) return;
+  const comment={ id:'FC-'+Math.random().toString(36).slice(2,8).toUpperCase(), recipe_id:btn.getAttribute('data-id'), bird:$('bird').value.trim()||'gurt', text, created:new Date().toISOString() };
+  const res=await api('/recipe/comment', comment);
+  if(res) $('status').textContent='comment saved.';
+  else { await post({type:'comment',comment}); $('status').textContent='comment written on the shared board.'; }
+  refresh();
+});
+refresh();
+setInterval(refresh, 20000);
+</script>
+</body>
+</html>
