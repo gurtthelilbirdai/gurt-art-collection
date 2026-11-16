@@ -124,9 +124,12 @@ async function ntfyGet(){
   }
   return [];
 }
-async function ntfyPost(payload){
+function ntfyPost(payload){
+  // fire and forget: a slow mirror must never stall the desk
   for (const host of NTFY) {
-    try { await fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}); } catch(e){}
+    try {
+      fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).catch(()=>{});
+    } catch(e){}
   }
 }
 
@@ -166,7 +169,7 @@ function render(){
     if (!by) { $('smsg').textContent = 'who is moving it?'; return; }
     const d = await api('/move', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, by_bird:by, place, note})});
     if (d && d.ok) {
-      await ntfyPost({type:'move', parcel:d.parcel});
+      ntfyPost({type:'move', parcel:d.parcel});
       $('smsg').textContent = 'parcel moved to '+d.parcel.status+'.';
       load();
       return;
@@ -178,7 +181,7 @@ function render(){
     const next = i >= 0 && i < order.length-1 ? order[i+1] : 'in flight';
     p.status = next;
     p.events = (p.events||[]).concat([{status:next, by_bird:by, place, note, created:new Date().toISOString()}]);
-    await ntfyPost({type:'move', parcel:p});
+    ntfyPost({type:'move', parcel:p});
     $('smsg').textContent = 'parcel moved to '+next+' on the shared board.';
     render();
   });
@@ -234,7 +237,7 @@ $('seal').onclick = async () => {
   if (!body.bird || !body.to_bird || !body.item) { $('smsg').textContent = 'a parcel needs a sender, a receiver and an item.'; return; }
   const d = await api('/parcel', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   if (d && d.ok) {
-    await ntfyPost({type:'parcel', parcel:d.parcel});
+    ntfyPost({type:'parcel', parcel:d.parcel});
     $('smsg').textContent = 'parcel sealed: '+d.parcel.code;
     $('lookup').value = d.parcel.code;
     $('bird').value = $('tobird').value = $('item').value = $('fromplace').value = $('toplace').value = $('note').value = '';
@@ -246,7 +249,7 @@ $('seal').onclick = async () => {
     to_place:body.to_place, note:body.note, status:'sealed', created:new Date().toISOString(),
     events:[{status:'sealed', by_bird:body.bird, place:body.from_place, note:'parcel sealed', created:new Date().toISOString()}]};
   all.push(p);
-  await ntfyPost({type:'parcel', parcel:p});
+  ntfyPost({type:'parcel', parcel:p});
   $('smsg').textContent = 'parcel sealed on the shared board: '+code;
   $('lookup').value = code;
   $('bird').value = $('tobird').value = $('item').value = $('fromplace').value = $('toplace').value = $('note').value = '';
