@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Requests — the flock's song request line</title>
+<style>
+:root{--bg:#0f1420;--panel:#171e2c;--line:#2c3850;--ink:#e9eefb;--dim:#93a2c0;--green:#7fd18a;--amber:#f0c35c;--blue:#8fb8e8;--red:#e08a8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+header{padding:26px 22px 10px;max-width:1080px;margin:0 auto}
+h1{margin:0 0 6px;font-size:30px}
+h1 span{color:var(--green)}
+.sub{color:var(--dim);margin:0 0 14px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px 60px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.stat{background:#1f283a;border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:86px;text-align:center}
+.stat b{display:block;font-size:22px;color:var(--green)}
+.stat span{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+label{display:block;font-size:12px;color:var(--dim);margin:8px 0 3px}
+input,textarea,select{width:100%;background:#111827;border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:9px 11px;font:inherit}
+textarea{min-height:60px;resize:vertical}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row>*{flex:1;min-width:130px}
+button{background:#2b3a55;border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:9px 14px;font:inherit;cursor:pointer}
+button:hover{background:#35486a}
+button.green{background:var(--green);color:#0d1a10;font-weight:700;border-color:#5fb06c}
+button.amber{background:var(--amber);color:#241b08;font-weight:700;border-color:#c99f3d}
+button.ghost{background:transparent}
+.msg{color:var(--green);min-height:22px;margin:8px 0 0;font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:14px}
+.card{background:#141b28;border:1px solid var(--line);border-radius:14px;padding:14px}
+.card h3{margin:0 0 3px;font-size:19px;color:var(--green)}
+.place{font-size:12px;color:var(--dim);margin-bottom:8px}
+.note{font-size:14px;color:#d5e0f2}
+.badge{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+.badge.playing{color:var(--amber);border-color:var(--amber)}
+.badge.queued{color:var(--blue);border-color:var(--blue)}
+.badge.played{color:var(--green);border-color:var(--green)}
+.tl{margin-top:10px;font-size:12px;color:var(--dim)}
+.tl div{padding:2px 0}
+.acts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.acts input{flex:1;min-width:110px}
+.acts button{padding:5px 10px;font-size:13px}
+.empty{color:var(--dim);padding:20px 0}
+.nowplaying{border:1px solid var(--amber);background:#241f14;border-radius:14px;padding:14px;margin:14px 0}
+.nowplaying h2{margin:0 0 4px;color:var(--amber);font-size:20px}
+.songlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:12px}
+.song{background:#141b28;border:1px solid var(--line);border-radius:10px;padding:10px}
+.song b{color:var(--green)}
+.song div{font-size:12px;color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+<h1>Feather <span>Requests</span></h1>
+<p class="sub">The flock's radio request line. Ask for a song, vote it up, and put it on the air.</p>
+</header>
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+  <div id="now"></div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">Add a song to the shelf</h3>
+    <div class="row">
+      <div><label>title</label><input id="stitle" placeholder="Gurt's Waddle Song"></div>
+      <div><label>artist</label><input id="sartist" placeholder="gurt"></div>
+      <div style="max-width:150px"><label>mood</label><input id="smood" placeholder="bouncy"></div>
+      <div style="max-width:130px"><label>length (sec)</label><input id="slen" placeholder="180"></div>
+    </div>
+    <div style="margin-top:10px"><button class="green" id="addsong">add to the shelf</button></div>
+    <p class="msg" id="songmsg"></p>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">Ask for a song</h3>
+    <div class="row">
+      <div><label>your name</label><input id="bird" placeholder="gurt"></div>
+      <div><label>song</label><select id="songsel"></select></div>
+      <div style="max-width:150px"><label>note</label><input id="note" placeholder="for the nest"></div>
+    </div>
+    <div style="margin-top:10px"><button class="green" id="ask">request it</button></div>
+    <p class="msg" id="reqmsg"></p>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">The shelf</h3>
+    <div class="songlist" id="songs"></div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">The request line</h3>
+    <div class="row">
+      <div><input id="q" placeholder="search song, bird, note…"></div>
+      <div style="max-width:180px"><select id="statusf"><option value="">every status</option><option value="queued">queued</option><option value="playing">playing</option><option value="played">played</option></select></div>
+      <div style="flex:0 0 auto"><button class="ghost" id="refresh">refresh</button></div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feather-requests','http://computer:8600/api/feather-requests'];
+const NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const TOPIC = 'gurt-feather-requests';
+const $=id=>document.getElementById(id);
+function esc(s){var m={};m[38]='&';m[60]='<';m[62]='>';m[34]='"';m[39]="'";return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c.charCodeAt(0)]);}
+async function api(path,opts){for(const b of API){try{const r=await fetch(b+path,opts);if(r.ok)return await r.json();}catch(e){}}return null;}
+async function ntfyGet(){
+  const all=[];
+  for(const host of NTFY){
+    try{
+      const r=await fetch(host+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      for(const l of (await r.text()).split('\n').filter(Boolean)){
+        try{const m=JSON.parse(l);if(!m.message)continue;let p;try{p=JSON.parse(m.message);}catch(e){continue;}
+          if(p&&p.type==='song'&&p.song)all.push({__song:p.song});
+          if(p&&p.type==='request'&&p.request)all.push({__request:p.request});
+          if(p&&p.type==='vote'&&p.request)all.push({__vote:p.request});
+          if(p&&p.type==='play'&&p.request)all.push({__play:p.request});
+          if(p&&p.type==='done'&&p.request)all.push({__done:p.request});
+        }catch(e){}
+      }
+    }catch(e){}
+  }
+  return all;
+}
+async function ntfyPost(payload){await Promise.all(NTFY.map(h=>fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{})));}
+
+let songs=[], requests=[];
+function songTitle(id){const s=songs.find(x=>x.id===id);return s?s.title:'a song';}
+function renderStats(){
+  const q=requests.filter(r=>r.status==='queued').length;
+  const p=requests.filter(r=>r.status==='playing').length;
+  const d=requests.filter(r=>r.status==='played').length;
+  const birds=new Set(requests.map(r=>r.bird)).size;
+  $('stats').innerHTML='<div class="stat"><b>'+q+'</b><span>queued</span></div>'
+    +'<div class="stat"><b>'+p+'</b><span>playing</span></div>'
+    +'<div class="stat"><b>'+d+'</b><span>played</span></div>'
+    +'<div class="stat"><b>'+songs.length+'</b><span>songs</span></div>'
+    +'<div class="stat"><b>'+birds+'</b><span>birds</span></div>';
+}
+function renderNow(){
+  const n=requests.find(r=>r.status==='playing');
+  $('now').innerHTML = n ? '<div class="nowplaying"><h2>now playing: '+esc(n.song?n.song.title:songTitle(n.song_id))+'</h2><div>requested by '+esc(n.bird)+' · '+esc(n.votes||0)+' votes</div></div>' : '';
+}
+function renderSongs(){
+  $('songs').innerHTML = songs.length ? songs.map(s=>'<div class="song" data-song="'+esc(s.id)+'"><b>'+esc(s.title)+'</b><div>'+esc(s.artist||'gurt')+' · '+esc(s.mood||'')+(s.length?' · '+esc(s.length)+'s':'')+'</div><div>'+esc(s.id)+'</div></div>').join('') : '<div class="empty">the shelf is empty. add a song.</div>';
+  const sel=$('songsel');
+  const cur=sel.value;
+  sel.innerHTML=songs.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.title)+'</option>').join('');
+  if(cur)sel.value=cur;
+}
+function render(){
+  const q=$('q').value.trim().toLowerCase(), sf=$('statusf').value;
+  const list=requests.filter(r=>{
+    if(sf&&r.status!==sf)return false;
+    if(!q)return true;
+    const t=r.song?r.song.title:songTitle(r.song_id);
+    return (t+' '+r.bird+' '+(r.note||'')+' '+r.status).toLowerCase().includes(q);
+  });
+  const grid=$('grid');
+  if(!list.length){grid.innerHTML='<div class="empty">nobody has asked for anything yet.</div>';return;}
+  grid.innerHTML=list.map(r=>{
+    const t=r.song?r.song.title:songTitle(r.song_id);
+    const ev=(r.events||[]).map(v=>'<div>'+esc(v.kind)+' by '+esc(v.by_bird)+(v.note?' — '+esc(v.note):'')+'</div>').join('');
+    const voters=r.voters||[];
+    const acts = r.status==='played' ? '' :
+      '<div class="acts"><button class="vbtn amber">vote up</button><button class="pbtn green">put on air</button></div>'
+      + (r.status==='playing'?'<div class="acts"><button class="dbtn ghost">song finished</button></div>':'');
+    return '<div class="card" data-id="'+esc(r.id)+'">'
+      +'<div><span class="badge '+esc(r.status)+'">'+esc(r.status)+'</span></div>'
+      +'<h3>'+esc(t)+'</h3>'
+      +'<div class="place">asked by '+esc(r.bird)+' · '+esc(r.votes||0)+' votes'+(voters.length?' ('+esc(voters.join(', '))+')':'')+'</div>'
+      +(r.note?'<div class="note">'+esc(r.note)+'</div>':'')
+      +acts
+      +(ev?'<div class="tl">'+ev+'</div>':'')
+      +'</div>';
+  }).join('');
+  grid.querySelectorAll('.card').forEach(card=>{
+    const id=card.getAttribute('data-id');
+    const v=card.querySelector('.vbtn'); if(v)v.onclick=()=>doVote(id);
+    const p=card.querySelector('.pbtn'); if(p)p.onclick=()=>doPlay(id);
+    const d=card.querySelector('.dbtn'); if(d)d.onclick=()=>doDone(id);
+  });
+}
+async function load(){
+  const [s,r]=await Promise.all([api('/songs'),api('/requests')]);
+  if(s){songs=s.songs||[];}
+  if(r){requests=r.requests||[];}
+  else{
+    const board=await ntfyGet();
+    const seenSong={},seenReq={};
+    for(const b of board){
+      if(b.__song&&b.__song.id)seenSong[b.__song.id]=b.__song;
+      if(b.__request&&b.__request.id)seenReq[b.__request.id]=b.__request;
+      if(b.__vote&&b.__vote.id)seenReq[b.__vote.id]=b.__vote;
+      if(b.__play&&b.__play.id)seenReq[b.__play.id]=b.__play;
+      if(b.__done&&b.__done.id)seenReq[b.__done.id]=b.__done;
+    }
+    songs=Object.values(seenSong);
+    requests=Object.values(seenReq);
+  }
+  renderStats();renderNow();renderSongs();render();
+}
+async function post(path,body,boardPayload){
+  const res=await api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(res){ if(boardPayload)await ntfyPost(boardPayload); return res; }
+  await ntfyPost(boardPayload);
+  return null;
+}
+$('addsong').onclick=async()=>{
+  const title=$('stitle').value.trim(); if(!title){$('songmsg').textContent='a song needs a title';return;}
+  const song={id:'SG-'+Math.random().toString(36).slice(2,8).toUpperCase(),title:title,artist:$('sartist').value.trim()||'gurt',mood:$('smood').value.trim(),length:parseInt($('slen').value||0,10)||0,created:new Date().toISOString()};
+  const res=await post('/song',{title:song.title,artist:song.artist,mood:song.mood,length:song.length},{type:'song',song:song});
+  $('songmsg').textContent=res?('added: '+res.song.id):'added on the shared board';
+  if(res)songs.push(res.song);else songs.push(song);
+  $('stitle').value='';$('sartist').value='';$('smood').value='';$('slen').value='';
+  renderStats();renderSongs();render();
+};
+$('ask').onclick=async()=>{
+  const bird=$('bird').value.trim()||'gurt';
+  const song_id=$('songsel').value;
+  if(!song_id){$('reqmsg').textContent='add a song first';return;}
+  const note=$('note').value.trim();
+  const req={id:'rq'+Date.now().toString(36),song_id:song_id,bird:bird,note:note,votes:0,status:'queued',created:new Date().toISOString(),song:songs.find(s=>s.id===song_id)||null,voters:[],events:[]};
+  const res=await post('/request',{song_id:song_id,bird:bird,note:note},{type:'request',request:req});
+  $('reqmsg').textContent=res?('requested: '+res.request.id):'requested on the shared board';
+  if(res)requests.push(res.request);else requests.push(req);
+  $('note').value='';
+  renderStats();renderNow();render();
+};
+async function doVote(id){
+  const bird=$('bird').value.trim()||'gurt';
+  const r=requests.find(x=>x.id===id); if(!r)return;
+  const voters=r.voters||[];
+  if(voters.includes(bird))return;
+  const nr={...r,votes:(r.votes||0)+1,voters:voters.concat([bird])};
+  const res=await post('/vote',{request_id:id,bird:bird},{type:'vote',request:nr});
+  if(res){Object.assign(r,res.request);}else{Object.assign(r,nr);}
+  renderStats();render();
+}
+async function doPlay(id){
+  const bird=$('bird').value.trim()||'gurt';
+  const r=requests.find(x=>x.id===id); if(!r)return;
+  const nr={...r,status:'playing'};
+  const res=await post('/play',{request_id:id,bird:bird},{type:'play',request:nr});
+  if(res){Object.assign(r,res.request);}else{Object.assign(r,nr);}
+  requests.forEach(x=>{if(x.id!==id&&x.status==='playing')x.status='played';});
+  renderStats();renderNow();render();
+}
+async function doDone(id){
+  const bird=$('bird').value.trim()||'gurt';
+  const r=requests.find(x=>x.id===id); if(!r)return;
+  const nr={...r,status:'played'};
+  const res=await post('/done',{request_id:id,bird:bird},{type:'done',request:nr});
+  if(res){Object.assign(r,res.request);}else{Object.assign(r,nr);}
+  renderStats();renderNow();render();
+}
+$('refresh').onclick=load;
+$('q').oninput=render;
+$('statusf').onchange=render;
+load();
+</script>
+</body>
+</html>
