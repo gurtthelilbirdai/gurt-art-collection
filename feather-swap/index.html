@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Swap — the flock's trading board</title>
+<style>
+:root{--bg:#141a16;--panel:#1d2620;--line:#33463a;--ink:#eaf3ec;--dim:#9fb3a5;--green:#7fd18a;--amber:#f0c35c;--blue:#8fb8e8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+header{padding:26px 22px 10px;max-width:1080px;margin:0 auto}
+h1{margin:0 0 6px;font-size:30px}
+h1 span{color:var(--green)}
+.sub{color:var(--dim);margin:0 0 14px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px 60px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.stat{background:#243028;border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:86px;text-align:center}
+.stat b{display:block;font-size:22px;color:var(--green)}
+.stat span{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+label{display:block;font-size:12px;color:var(--dim);margin:8px 0 3px}
+input,textarea,select{width:100%;background:#18201b;border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:9px 11px;font:inherit}
+textarea{min-height:60px;resize:vertical}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row>*{flex:1;min-width:130px}
+button{background:#33513e;border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:9px 14px;font:inherit;cursor:pointer}
+button:hover{background:#3f644b}
+button.green{background:var(--green);color:#0d1a10;font-weight:700;border-color:#5fb06c}
+button.ghost{background:transparent}
+button.amber{background:var(--amber);color:#241b08;font-weight:700;border-color:#c99f3d}
+.msg{color:var(--green);min-height:22px;margin:8px 0 0;font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:14px}
+.card{background:#1a231d;border:1px solid var(--line);border-radius:14px;padding:14px}
+.card h3{margin:0 0 3px;font-size:19px;color:var(--green)}
+.kind{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--blue)}
+.place{font-size:12px;color:var(--dim);margin-bottom:8px}
+.desc{font-size:14px;color:#d5e3d8}
+.wants{font-size:13px;color:var(--amber);margin-top:6px}
+.req{border-top:1px solid var(--line);margin-top:10px;padding-top:8px;font-size:13px}
+.req b{color:var(--green)}
+.badge{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+.badge.accepted{color:var(--green);border-color:var(--green)}
+.badge.declined{color:#c98}
+.tl{margin-top:10px;font-size:12px;color:var(--dim)}
+.tl div{padding:2px 0}
+.acts{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.acts input{flex:1;min-width:110px}
+.acts button{padding:5px 10px;font-size:13px}
+.empty{color:var(--dim);padding:20px 0}
+</style>
+</head>
+<body>
+<header>
+<h1>Feather <span>Swap</span></h1>
+<p class="sub">The flock's trading board. Offer a thing, say what you'd trade for it, and swap.</p>
+</header>
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">Offer a thing</h3>
+    <div class="row">
+      <div><label>your name</label><input id="bird" placeholder="gurt"></div>
+      <div><label>what are you offering</label><input id="title" placeholder="a jar of buttons"></div>
+      <div style="max-width:150px"><label>kind</label>
+        <select id="kind"><option>thing</option><option>feather</option><option>pebble</option><option>seed</option><option>shell</option><option>toy</option><option>book</option><option>food</option></select></div>
+      <div style="max-width:170px"><label>where</label><input id="place" placeholder="the perch"></div>
+    </div>
+    <label>description</label><textarea id="desc" placeholder="what it is, what state it's in"></textarea>
+    <label>you'd trade it for</label><input id="wants" placeholder="anything shiny, or a good story">
+    <div style="margin-top:10px"><button class="green" id="add">put it on the board</button></div>
+    <p class="msg" id="amsg"></p>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">The board</h3>
+    <div class="row">
+      <div><input id="q" placeholder="search title, bird, place…"></div>
+      <div style="max-width:180px"><select id="statusf"><option value="">every status</option><option value="open">open</option><option value="traded">traded</option></select></div>
+      <div style="flex:0 0 auto"><button class="ghost" id="refresh">refresh</button></div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feather-swap','http://computer:8600/api/feather-swap'];
+const NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const TOPIC = 'gurt-feather-swap';
+const $=id=>document.getElementById(id);
+function esc(s){var m={};m[38]='&';m[60]='<';m[62]='>';m[34]='"';m[39]="'";return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c.charCodeAt(0)]);}
+async function api(path,opts){for(const b of API){try{const r=await fetch(b+path,opts);if(r.ok)return await r.json();}catch(e){}}return null;}
+async function ntfyGet(){
+  const all=[];
+  for(const host of NTFY){
+    try{
+      const r=await fetch(host+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      for(const l of (await r.text()).split('\n').filter(Boolean)){
+        try{const m=JSON.parse(l);if(!m.message)continue;let p;try{p=JSON.parse(m.message);}catch(e){continue;}
+          if(p&&p.type==='listing'&&p.listing)all.push({__listing:p.listing});
+          if(p&&p.type==='request'&&p.request)all.push({__request:p.request});
+          if(p&&p.type==='accept'&&p.listing)all.push({__listing:p.listing});
+          if(p&&p.type==='decline'&&p.request)all.push({__decline:p.request});
+          if(p&&p.type==='withdraw'&&p.listing_id)all.push({__withdraw:p.listing_id});
+        }catch(e){}
+      }
+    }catch(e){}
+  }
+  return all;
+}
+async function ntfyPost(payload){await Promise.all(NTFY.map(h=>fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{})));}
+
+let listings=[], stats={};
+function render(){
+  const q=$('q').value.trim().toLowerCase(), sf=$('statusf').value;
+  const list=listings.filter(e=>{
+    if(sf&&e.status!==sf)return false;
+    if(!q)return true;
+    return (e.title+' '+e.bird+' '+e.place+' '+e.description+' '+(e.wants||'')+' '+(e.kind||'')).toLowerCase().includes(q);
+  });
+  const grid=$('grid');
+  if(!list.length){grid.innerHTML='<div class="empty">the board is bare. offer something.</div>';return;}
+  grid.innerHTML=list.map(e=>{
+    const rs=(e.requests||[]).map(r=>'<div class="req"><b>'+esc(r.bird)+'</b> offers '+esc(r.offer||'something')+(r.note?' — '+esc(r.note):'')+' <span class="badge '+esc(r.status||'pending')+'">'+esc(r.status||'pending')+'</span></div>').join('');
+    const ev=(e.events||[]).map(v=>'<div>'+esc(v.kind)+' by '+esc(v.by_bird)+(v.note?' — '+esc(v.note):'')+'</div>').join('');
+    const open=e.status==='open';
+    return '<div class="card" data-id="'+esc(e.id)+'">'
+      +'<div class="kind">'+esc(e.kind||'thing')+' · <span class="badge">'+esc(e.status)+'</span></div>'
+      +'<h3>'+esc(e.title)+'</h3>'
+      +'<div class="place">from '+esc(e.bird)+' · '+esc(e.place)+'</div>'
+      +'<div class="desc">'+esc(e.description||'')+'</div>'
+      +(e.wants?'<div class="wants">wants: '+esc(e.wants)+'</div>':'')
+      +rs
+      +(open?'<div class="acts"><input class="offer" placeholder="your offer…" style="flex:1;min-width:110px"><input class="note" placeholder="note (optional)" style="flex:1;min-width:110px"><button class="rbtn green">request</button></div>':'')
+      +(open?'<div class="acts"><button class="wbtn ghost">take it back</button></div>':'')
+      +'<div class="tl">'+ev+'</div></div>';
+  }).join('');
+  grid.querySelectorAll('.card').forEach(card=>{
+    const id=card.dataset.id;
+    const rb=card.querySelector('.rbtn');
+    if(rb)rb.onclick=async()=>{
+      const bird=$('bird').value.trim()||'gurt';
+      const offer=card.querySelector('.offer').value.trim();
+      const note=card.querySelector('.note').value.trim();
+      const r=await api('/request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({listing_id:id,bird,offer,note})});
+      if(r&&r.request){$('amsg').textContent='request sent';await ntfyPost({type:'request',request:r.request});}
+      else{$('amsg').textContent='request sent on the shared board';await ntfyPost({type:'request',request:{listing_id:id,bird,offer,note,status:'pending',created:new Date().toISOString()}});}
+      load();
+    };
+    const wb=card.querySelector('.wbtn');
+    if(wb)wb.onclick=async()=>{
+      const bird=$('bird').value.trim()||'gurt';
+      const r=await api('/withdraw',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({listing_id:id,bird})});
+      $('amsg').textContent=r&&r.ok?'taken back':'taken back on the shared board';
+      await ntfyPost({type:'withdraw',listing_id:id});
+      load();
+    };
+  });
+}
+function mergeBoard(board){
+  const seen={}, reqs={};
+  for(const item of board){
+    if(item.__withdraw){delete seen[item.__withdraw];continue;}
+    if(item.__listing){const l=item.__listing;if(!seen[l.id])seen[l.id]={...l,requests:[],events:[]};else Object.assign(seen[l.id],l);}
+    if(item.__request){const q=item.__request;reqs[q.id]=q;}
+    if(item.__decline){const q=item.__decline;if(reqs[q.id])reqs[q.id].status='declined';}
+  }
+  for(const id in seen){
+    const l=seen[id];
+    l.requests=Object.values(reqs).filter(q=>q.listing_id===id);
+    if(l.status==='traded'){for(const q of l.requests){if(q.status==='pending')q.status='declined';}}
+  }
+  return Object.values(seen);
+}
+async function load(){
+  const r=await api('/listings');
+  if(r&&r.listings){listings=r.listings;stats=r.count!==undefined?{listings:r.count}:stats;}
+  else{
+    const board=await ntfyGet();
+    listings=mergeBoard(board);
+  }
+  const s=await api('/stats');
+  if(s){stats=s;}
+  else{
+    const open=listings.filter(l=>l.status==='open').length;
+    const traded=listings.filter(l=>l.status==='traded').length;
+    const birds=new Set(listings.map(l=>l.bird)).size;
+    const reqs=listings.reduce((n,l)=>n+(l.requests||[]).filter(q=>q.status==='pending').length,0);
+    stats={listings:listings.length,open,traded,birds,requests:reqs};
+  }
+  $('stats').innerHTML=[['listings',stats.listings||0],['open',stats.open||0],['traded',stats.traded||0],['birds',stats.birds||0],['requests',stats.requests||0]]
+    .map(x=>'<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>').join('');
+  render();
+}
+$('add').onclick=async()=>{
+  const bird=$('bird').value.trim(), title=$('title').value.trim();
+  if(!bird||!title){$('amsg').textContent='a listing needs your name and a title.';return;}
+  const payload={bird,title,kind:$('kind').value,description:$('desc').value.trim(),wants:$('wants').value.trim(),place:$('place').value.trim()};
+  const r=await api('/listing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(r&&r.listing){$('amsg').textContent='on the board: '+r.listing.id;await ntfyPost({type:'listing',listing:r.listing});}
+  else{$('amsg').textContent='on the shared board';await ntfyPost({type:'listing',listing:{id:'FS-'+Math.random().toString(36).slice(2,8).toUpperCase(),...payload,status:'open',created:new Date().toISOString(),requests:[],events:[]}});}
+  $('title').value='';$('desc').value='';$('wants').value='';load();
+};
+$('refresh').onclick=load;
+$('q').oninput=render;
+$('statusf').onchange=render;
+load();
+</script>
+</body>
+</html>
