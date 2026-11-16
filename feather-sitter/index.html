@@ -196,7 +196,13 @@ async function load(){
     const board = await ntfyGet();
     const seen = {};
     for (const o of board) {
-      if (o && o.id && o.pet !== undefined) { seen[o.id] = o; }
+      if (o && o.id) {
+        const prev = seen[o.id] || {};
+        const evs = (prev.events||[]).concat(o.events||[]);
+        const seenEv = {}; const uniq = [];
+        for (const e of evs) { const k = (e.status||'')+'|'+(e.by_bird||'')+'|'+(e.note||''); if (!seenEv[k]) { seenEv[k]=1; uniq.push(e); } }
+        seen[o.id] = Object.assign({}, prev, o, {events:uniq});
+      }
       if (o && o.bird && o.skills !== undefined && !o.id) { sitters = sitters.filter(x => x.bird !== o.bird); sitters.push(o); }
     }
     jobs = Object.values(seen);
@@ -225,7 +231,12 @@ $('ask').onclick = async () => {
   const body = {owner, pet, when_from:$('from').value.trim(), when_to:$('to').value.trim(), note:$('note').value.trim()};
   const res = await api('/job', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   if (res && res.job) { ntfyPost({type:'job', job:res.job}); $('jmsg').textContent = 'sitting posted: '+res.job.id; }
-  else { $('jmsg').textContent = 'posted on the shared board'; }
+  else {
+    const id = 'FS-' + Math.random().toString(36).slice(2,8).toUpperCase();
+    const job = {id, owner, pet, sitter:'', when_from:body.when_from, when_to:body.when_to, note:body.note, status:'open', created:new Date().toISOString(), events:[{status:'open', by_bird:owner, note:'sitting requested'}]};
+    ntfyPost({type:'job', job});
+    $('jmsg').textContent = 'posted on the shared board: '+id;
+  }
   await load();
 };
 $('refresh').onclick = load;
