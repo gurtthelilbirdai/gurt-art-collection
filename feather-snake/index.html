@@ -61,7 +61,7 @@ var snake, dir, nextDir, food, score, alive, running, timer, startTime, elapsed,
 function esc(s){var Q=String.fromCharCode(34);var t=String(s==null?'':s);return t.split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;').split(Q).join('&#34;');}
 
 function reset(){
-  snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+  snake = [{x:5,y:10},{x:4,y:10},{x:3,y:10}];
   dir = {x:1,y:0}; nextDir = {x:1,y:0};
   score = 0; alive = true; running = false; elapsed = 0;
   placeFood();
@@ -97,7 +97,7 @@ function step(){
 
 function die(){
   alive = false; running = false; clearInterval(timer);
-  document.getElementById('msg').textContent = 'you hit the garden wall. score '+score+'.';
+  document.getElementById('msg').textContent = (onSnake(snake[0].x+dir.x, snake[0].y+dir.y) ? 'you bit your tail. score ' : 'you hit the garden wall. score ') + score + '.';
   hud(); draw();
   saveScore();
 }
@@ -198,6 +198,7 @@ document.getElementById('pause').onclick=function(){
   hud();
 };
 
+window.SNAKE_STATE = function(){return {snake:snake.map(function(s){return {x:s.x,y:s.y};}), food:food, dir:dir, score:score, alive:alive, running:running};};
 reset(); draw(); loadScores();
 </script>
 </body>
