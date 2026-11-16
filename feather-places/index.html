@@ -112,11 +112,13 @@ async function ntfyGet(){
     try{
       const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=300');
       if(!r.ok)continue;
-      const arr=await r.json();
-      for(const m of arr){
+      const txt=await r.text();
+      for(const line of txt.split('\n').filter(Boolean)){
+        let m;try{m=JSON.parse(line);}catch(e){continue;}
+        if(!m||!m.message)continue;
         let o;try{o=JSON.parse(m.message);}catch(e){continue;}
         if(!o||!o.type)continue;
-        seen[o.id||(m.id+':'+m.time)]=o;
+        seen[(o.place&&o.place.id?o.place.id+':'+String(o.created||m.time):m.id+':'+m.time)]=o;
       }
     }catch(e){}
   }
