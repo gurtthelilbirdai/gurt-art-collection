@@ -116,30 +116,27 @@ async function api(path, opts){
   return null;
 }
 async function ntfyGet(){
+  const all = [];
   for (const host of NTFY) {
     try {
       const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=300');
       if (!r.ok) continue;
       const lines = (await r.text()).split('\n').filter(Boolean);
-      const out = [];
       for (const l of lines) {
         try {
           const m = JSON.parse(l); if (!m.message) continue;
           let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
-          if (p && p.type === 'job' && p.job) out.push(p.job);
-          if (p && p.type === 'advance' && p.job) out.push(p.job);
-          if (p && p.type === 'sitter' && p.sitter) out.push(p.sitter);
+          if (p && p.type === 'job' && p.job) all.push(p.job);
+          if (p && p.type === 'advance' && p.job) all.push(p.job);
+          if (p && p.type === 'sitter' && p.sitter) all.push(p.sitter);
         } catch(e){}
       }
-      return out;
     } catch(e){}
   }
-  return [];
+  return all;
 }
-function ntfyPost(payload){
-  for (const host of NTFY) {
-    try { fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).catch(()=>{}); } catch(e){}
-  }
+async function ntfyPost(payload){
+  await Promise.all(NTFY.map(host => fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).catch(()=>{})));
 }
 
 let jobs = [];
