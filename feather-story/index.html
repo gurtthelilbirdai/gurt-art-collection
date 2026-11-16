@@ -142,13 +142,27 @@ function merge(list){
   return Object.values(map);
 }
 function combine(apiList,boardList){
-  const map={};
-  for(const s of apiList)map[s.id]=norm(s);
-  for(const s of boardList){
+  const map={};const byTitle={};
+  const add=(s)=>{
+    const t=String(s.title||'').trim().toLowerCase();
     const prev=map[s.id];
-    if(!prev){map[s.id]=norm(s);continue;}
-    map[s.id]=norm(Object.assign({},prev,s,{sentences:(prev.sentences||[]).concat(s.sentences||[])}));
-  }
+    let merged;
+    if(prev)merged=norm(Object.assign({},prev,s,{sentences:(prev.sentences||[]).concat(s.sentences||[])}));
+    else merged=norm(s);
+    if(t&&byTitle[t]){
+      const other=map[byTitle[t]];
+      const keep=other.created<=merged.created?other:merged;
+      const drop=keep===other?merged:other;
+      delete map[drop.id];
+      map[keep.id]=norm(Object.assign({},keep,{sentences:(keep.sentences||[]).concat(drop.sentences||[])}));
+      byTitle[t]=keep.id;
+      return;
+    }
+    map[merged.id]=merged;
+    if(t)byTitle[t]=merged.id;
+  };
+  for(const s of apiList)add(s);
+  for(const s of boardList)add(s);
   return Object.values(map);
 }
 function renderStats(s){
