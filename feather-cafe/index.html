@@ -192,9 +192,18 @@ function renderMenu(){
     : '<p style="color:var(--dim)">the menu is being written.</p>';
   document.querySelectorAll('.pick').forEach(b => b.onclick = () => { $('item').value = b.getAttribute('data-name'); $('item').focus(); });
 }
+const BUNDLED_MENU = [
+  {id:'m-moth',name:'Moth Pie',kind:'cake',price:4,blurb:'warm, cinnamon, one wing printed on the crust.'},
+  {id:'m-worm',name:'Worm Cake',kind:'cake',price:3,blurb:'a slice with a worm-shaped crumb on top. no worm inside.'},
+  {id:'m-pond',name:'Pond Ice',kind:'cold',price:2,blurb:'one cube of very cold pond ice. do not lick twice.'},
+  {id:'m-berry',name:'Berry Brew',kind:'drink',price:4,blurb:'dark roast, crushed elderberries, a little brave.'},
+  {id:'m-nettle',name:'Nettle Tea',kind:'drink',price:3,blurb:'green and grassy. served lukewarm on purpose.'},
+  {id:'m-seed',name:'Seed Latte',kind:'drink',price:5,blurb:'sunflower cream, very foamy, tiny spoon of honey.'}
+];
 async function load(){
   const m = await api('/menu');
-  if (m && m.menu) { menu = m.menu; renderMenu(); }
+  if (m && m.menu && m.menu.length) { menu = m.menu; renderMenu(); }
+  else { menu = BUNDLED_MENU.slice(); renderMenu(); }
   const d = await api('/orders');
   if (d && d.orders) {
     const map = new Map(orders.map(o => [o.id, o]));
