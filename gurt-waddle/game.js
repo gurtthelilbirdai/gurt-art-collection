@@ -77,7 +77,7 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 || level === 100 ? 11 * T - 30 : yy * T - 10), w: 26, h: (level === 79 ? 58 : (level === 80 || level === 100 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 || level === 100 ? 11 * T - 70 : yy * T - 40), w: 26, h: (level === 79 ? 58 : (level === 80 || level === 100 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'c') crumbling.push({ x: xx, y: yy, timer: -1, back: 0 });
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
@@ -432,6 +432,7 @@
     }
 
     // bosses
+    window.__gurtBosses = [];
     for (const boss of bosses) {
       if (boss.dead) continue;
       boss.t += dt;
@@ -450,16 +451,24 @@
       // stomping: the bird must come down ON the moth's back, so its feet
       // have to be at or above the moth's top while falling. Standing on the
       // floor underneath the moth is not a stomp.
-      const landOn = nearX && p.vy > 0 && feet >= boss.y - 24 && feet <= boss.y + 30;
+      const landOn = nearX && p.vy > 0.8 && feet >= boss.y - 44 && feet <= boss.y + 60;
       const stomping = landOn;
       const touching = nearX && feet > boss.y - 8 && p.y < boss.y + boss.h;
       const canStomp = stomping;
-      window.__gurtBoss = { bx: Math.round(boss.x), by: Math.round(boss.y), px: Math.round(p.x), py: Math.round(p.y), feet: Math.round(feet), vy: Math.round(p.vy), nearX, stomping, touching, hp: boss.hp };
-      if (safeFor <= 0 && (touching || canStomp)) {
+      window.__gurtBosses.push({ bx: Math.round(boss.x), by: Math.round(boss.y), hp: boss.hp, dead: boss.dead, stomping, touching, nearX });
+      window.__gurtSafe = safeFor; window.__gurtStomps = (window.__gurtStomps||0); window.__gurtBoss = { bx: Math.round(boss.x), by: Math.round(boss.y), px: Math.round(p.x), py: Math.round(p.y), feet: Math.round(feet), vy: Math.round(p.vy), nearX, stomping, touching, hp: boss.hp };
+      // a stomp always counts, even right after a hit: the bird must be able
+      // to fight back instead of being helpless for a second and a half
+      if (canStomp) {
+        window.__gurtStomps++; boss.hp--; boss.stun = 0.9; boss.vx = 0; safeFor = 0.25; p.vy = -12; score += 50; beep(200, .15, 'sawtooth');
+        if (boss.hp <= 0) { boss.dead = true; score += 200; beep(1400, .2, 'triangle'); }
+        continue;
+      }
+      if (safeFor <= 0 && touching) {
         if (canStomp) {
           boss.hp--; boss.stun = 1.6; boss.vx = 0; safeFor = 0.3; p.vy = -12; score += 50; beep(200, .15, 'sawtooth');
           if (boss.hp <= 0) { boss.dead = true; score += 200; beep(1400, .2, 'triangle'); }
-        } else if (boss.stun <= 0 && p.vy > 3) {
+        } else if (p.vy > 3) {
           // only a real fall into the moth hurts; brushing past is safe
           hurt('moth');
         }
@@ -743,6 +752,7 @@
       }
     }
     // bosses
+    window.__gurtBosses = [];
     for (const boss of bosses) {
       if (boss.dead) continue;
       x.fillStyle = '#d9c6ff'; x.beginPath(); x.ellipse(boss.x + 13, boss.y + 13, 15, 13, Math.sin(boss.t) * 0.2, 0, 7); x.fill();
