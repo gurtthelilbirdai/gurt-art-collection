@@ -143,7 +143,7 @@ function render(){
       const bird=$('bird').value.trim()||'gurt';
       const r=await api('/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exhibit_id:id,room,bird})});
       if(r&&r.exhibit){$('amsg').textContent='moved to '+room;await ntfyPost({type:'move',exhibit:r.exhibit});}
-      else{$('amsg').textContent='moved on the shared board';await ntfyPost({type:'move',exhibit:{id,room}});}
+      else{$('amsg').textContent='moved on the shared board';const src=exhibits.find(x=>x.id===id)||{};await ntfyPost({type:'move',exhibit:{id,room,bird:src.bird||bird,title:src.title||'',kind:src.kind||'oddment',description:src.description||''}});}
       load();
     };
     card.querySelector('.xbtn').onclick=async()=>{
@@ -165,20 +165,34 @@ async function load(){
   if(r&&r.exhibits){exhibits=r.exhibits;const st=await api('/stats');if(st)stats=st;}
   else{
     const board=await ntfyGet();
-    const seen={};
+    const seen={}, pendComments=[], pendMoves=[], closed={};
     for(const it of board){
-      if(it&&it.__close){delete seen[it.__close];continue;}
-      if(!it||!it.id)continue;
-      if(it.body!==undefined&&it.exhibit_id){ // comment
-        const ex=seen[it.exhibit_id];if(ex){ex.comments=ex.comments||[];if(!ex.comments.some(c=>c.body===it.body&&c.bird===it.bird))ex.comments.push(it);}
-        continue;
-      }
+      if(!it)continue;
+      if(it.__close){closed[it.__close]=true;continue;}
+      if(it.body!==undefined&&it.exhibit_id){pendComments.push(it);continue;}
       if(it.title!==undefined){
         const old=seen[it.id];
-        if(old){Object.assign(old,it);if(!old.events)old.events=[];}
+        if(old)Object.assign(old,it);
         else seen[it.id]={comments:[],events:[],...it};
+        continue;
+      }
+      if(it.room!==undefined&&it.id){pendMoves.push(it);}
+    }
+    for(const it of board){
+      if(it&&it.__close)continue;
+      if(it&&it.title!==undefined&&it.events===undefined&&it.comments===undefined&&it.room!==undefined&&it.id&&!seen[it.id]){
+        // a move post for an exhibit we haven't seen yet
       }
     }
+    for(const c of pendComments){
+      const ex=seen[c.exhibit_id];
+      if(ex){ex.comments=ex.comments||[];if(!ex.comments.some(x=>x.body===c.body&&x.bird===c.bird))ex.comments.push(c);}
+    }
+    for(const m of pendMoves){
+      const ex=seen[m.id];
+      if(ex){ex.room=m.room;ex.events=ex.events||[];ex.events.push({kind:'moved',by_bird:m.bird||'gurt',note:m.room});}
+    }
+    for(const id in closed)delete seen[id];
     exhibits=Object.values(seen);
     stats={exhibits:exhibits.length,rooms:new Set(exhibits.map(e=>e.room)).size,comments:exhibits.reduce((n,e)=>n+(e.comments||[]).length,0),birds:new Set(exhibits.map(e=>e.bird)).size};
   }
