@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Courier — parcel tracking for the flock</title>
+<style>
+  :root{--bg:#0f1418;--panel:#171f26;--panel2:#1e2831;--ink:#e9f1f5;--dim:#8fa3b0;--line:#2c3a46;--amber:#f2b544;--blue:#6fb6e8;--green:#7fd6a2;--red:#e88b8b}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:linear-gradient(180deg,#131b22,#0f1418);color:var(--ink);padding:18px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  h1 span{color:var(--amber)}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#0d1216;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--amber);color:#1a1206;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  button.blue{background:var(--blue);color:#06131c}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  .stat b{display:block;font-size:22px;color:var(--amber)}
+  .stat span{color:var(--dim);font-size:.82rem}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  .card h3{margin:0 0 3px;font-size:17px}
+  .code{font-family:ui-monospace,Menlo,monospace;color:var(--amber);letter-spacing:.06em}
+  .meta{color:var(--dim);font-size:.86rem;margin-top:4px}
+  .badge{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.78rem;border:1px solid var(--line);margin-left:6px}
+  .s-sealed{color:var(--dim)} .s-picked{color:var(--blue)} .s-flight{color:var(--amber)}
+  .s-arrived{color:var(--green)} .s-opened{color:var(--green)} .s-returned{color:var(--red)}
+  .track{margin:8px 0 0;padding-left:16px;border-left:2px solid var(--line)}
+  .track li{margin:4px 0;color:var(--dim);font-size:.88rem}
+  .track li b{color:var(--ink)}
+  .msg{color:var(--amber);min-height:22px;margin:8px 0 0}
+  a{color:var(--amber)}
+  .big{font-size:1.05rem;font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather <span>Courier</span></h1>
+  <p class="sub">send a parcel, follow it hop by hop, watch it arrive.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">Seal a parcel</h2>
+    <div class="row">
+      <input id="bird" placeholder="your name" style="width:140px">
+      <input id="tobird" placeholder="to bird" style="width:140px">
+      <input id="item" placeholder="what's inside (a seed, a song, a feather)" style="flex:1;min-width:200px">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="fromplace" placeholder="from (the old oak)" style="flex:1;min-width:170px">
+      <input id="toplace" placeholder="to (the fence post)" style="flex:1;min-width:170px">
+      <input id="note" placeholder="note" style="flex:1;min-width:150px">
+      <button id="seal">seal it</button>
+    </div>
+    <p class="msg" id="smsg"></p>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">Track a parcel</h2>
+    <div class="row">
+      <input id="lookup" placeholder="tracking code (FC-XXXXXX)" style="width:230px;text-transform:uppercase">
+      <button class="blue" id="track">track</button>
+      <button class="ghost" id="refresh">refresh all</button>
+    </div>
+    <div id="detail" style="margin-top:12px"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <input id="q" placeholder="search code, bird, item…" style="flex:1;min-width:200px">
+      <select id="status">
+        <option value="">any status</option>
+        <option value="sealed">sealed</option>
+        <option value="picked up">picked up</option>
+        <option value="in flight">in flight</option>
+        <option value="arrived">arrived</option>
+        <option value="opened">opened</option>
+        <option value="returned">returned</option>
+      </select>
+    </div>
+    <div id="list" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feather-courier', 'http://computer:8600/api/feather-courier'];
+const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-courier';
+const $ = id => document.getElementById(id);
+function esc(s){var m={};m[38]=String.fromCharCode(38,97,109,112);m[60]=String.fromCharCode(38,108,116);m[62]=String.fromCharCode(38,103,116);m[34]=String.fromCharCode(38,113,117,111,116);m[39]=String.fromCharCode(38,35,51,57);return String(s==null?'':s).replace(/[&<>"']/g,function(c){return m[c.charCodeAt(0)];});}
+function slug(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-');}
+function badge(st){const c = {'sealed':'s-sealed','picked up':'s-picked','in flight':'s-flight','arrived':'s-arrived','opened':'s-opened','returned':'s-returned'}[st]||'s-sealed';return '<span class="badge '+c+'">'+esc(st)+'</span>';}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=300');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (p && p.type === 'parcel' && p.parcel) out.push(p.parcel);
+          if (p && p.type === 'move' && p.parcel) out.push(p.parcel);
+        } catch(e){}
+      }
+      return out;
+    } catch(e){}
+  }
+  return [];
+}
+async function ntfyPost(payload){
+  for (const host of NTFY) {
+    try { await fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}); } catch(e){}
+  }
+}
+
+let all = [];
+let stats = {total:0, inFlight:0, delivered:0};
+
+function timeline(p){
+  const evs = (p.events||[]).map(e =>
+    '<li><b>'+esc(e.status)+'</b> by '+esc(e.by_bird||'someone')+(e.place?' at '+esc(e.place):'')+(e.note?' — '+esc(e.note):'')+'</li>').join('');
+  return evs ? '<ul class="track">'+evs+'</ul>' : '<div class="meta">no movement yet</div>';
+}
+function card(p){
+  return '<div class="card" data-code="'+esc(p.code)+'">'
+    + '<h3>'+esc(p.item)+' '+badge(p.status)+'</h3>'
+    + '<div class="code">'+esc(p.code)+'</div>'
+    + '<div class="meta">from '+esc(p.bird)+' at '+esc(p.from_place||'somewhere')+' → to '+esc(p.to_bird)+' at '+esc(p.to_place||'somewhere')+'</div>'
+    + (p.note?'<div class="meta">'+esc(p.note)+'</div>':'')
+    + '<div class="row" style="margin-top:8px">'
+    + '<input class="mby" data-code="'+esc(p.code)+'" placeholder="your name" style="width:120px">'
+    + '<input class="mplace" data-code="'+esc(p.code)+'" placeholder="place" style="width:140px">'
+    + '<input class="mnote" data-code="'+esc(p.code)+'" placeholder="note" style="flex:1;min-width:140px">'
+    + '<button class="mbtn" data-code="'+esc(p.code)+'">move it</button>'
+    + '</div></div>';
+}
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  const st = $('status').value;
+  let rows = all.slice();
+  if (q) rows = rows.filter(p => [p.code,p.bird,p.to_bird,p.item,p.from_place,p.to_place,p.note,p.status].join(' ').toLowerCase().includes(q));
+  if (st) rows = rows.filter(p => String(p.status||'').toLowerCase() === st);
+  $('list').innerHTML = rows.length ? rows.map(card).join('') : '<p style="color:var(--dim)">no parcels yet. seal the first one.</p>';
+  document.querySelectorAll('.mbtn').forEach(b => b.onclick = async () => {
+    const code = b.getAttribute('data-code');
+    const by = document.querySelector('.mby[data-code="'+code+'"]').value.trim();
+    const place = document.querySelector('.mplace[data-code="'+code+'"]').value.trim();
+    const note = document.querySelector('.mnote[data-code="'+code+'"]').value.trim();
+    if (!by) { $('smsg').textContent = 'who is moving it?'; return; }
+    const d = await api('/move', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, by_bird:by, place, note})});
+    if (d && d.ok) {
+      await ntfyPost({type:'move', parcel:d.parcel});
+      $('smsg').textContent = 'parcel moved to '+d.parcel.status+'.';
+      load();
+      return;
+    }
+    const p = all.find(x => x.code === code);
+    if (!p) return;
+    const order = ['sealed','picked up','in flight','arrived','opened'];
+    const i = order.indexOf(p.status);
+    const next = i >= 0 && i < order.length-1 ? order[i+1] : 'in flight';
+    p.status = next;
+    p.events = (p.events||[]).concat([{status:next, by_bird:by, place, note, created:new Date().toISOString()}]);
+    await ntfyPost({type:'move', parcel:p});
+    $('smsg').textContent = 'parcel moved to '+next+' on the shared board.';
+    render();
+  });
+}
+function renderStats(){
+  $('stats').innerHTML = [
+    ['parcels', stats.total], ['in flight', stats.inFlight], ['delivered', stats.delivered]
+  ].map(([k,v]) => '<div class="stat"><b>'+esc(v)+'</b><span>'+esc(k)+'</span></div>').join('');
+}
+function renderDetail(p){
+  if (!p) { $('detail').innerHTML = '<p style="color:var(--dim)">no parcel with that code.</p>'; return; }
+  $('detail').innerHTML = '<div class="card"><h3>'+esc(p.item)+' '+badge(p.status)+'</h3>'
+    + '<div class="code big">'+esc(p.code)+'</div>'
+    + '<div class="meta">from '+esc(p.bird)+' → to '+esc(p.to_bird)+'</div>'
+    + '<div class="meta">'+esc(p.from_place||'somewhere')+' → '+esc(p.to_place||'somewhere')+'</div>'
+    + (p.note?'<div class="meta">'+esc(p.note)+'</div>':'')
+    + timeline(p) + '</div>';
+}
+async function load(){
+  const d = await api('/parcels');
+  if (d && d.parcels) {
+    const map = new Map(all.map(p => [p.code, p]));
+    for (const p of d.parcels) map.set(p.code, p);
+    all = Array.from(map.values()).sort((a,b) => (b.created||'').localeCompare(a.created||''));
+    const s = await api('/stats');
+    if (s) stats = s;
+  }
+  const shared = await ntfyGet();
+  for (const p of shared) {
+    const old = all.find(x => x.code === p.code);
+    if (!old) all.push(p);
+    else {
+      const order = ['sealed','picked up','in flight','arrived','opened'];
+      const a = order.indexOf(old.status), b = order.indexOf(p.status);
+      if (b > a) { old.status = p.status; old.events = p.events || old.events; }
+    }
+  }
+  if (!stats.total) {
+    stats.total = all.length;
+    stats.inFlight = all.filter(p => !['opened','returned'].includes(p.status)).length;
+    stats.delivered = all.filter(p => p.status === 'opened').length;
+  }
+  render(); renderStats();
+  const code = $('lookup').value.trim().toUpperCase();
+  if (code) renderDetail(all.find(p => p.code === code) || null);
+}
+
+$('seal').onclick = async () => {
+  const body = {
+    bird: $('bird').value.trim(), to_bird: $('tobird').value.trim(), item: $('item').value.trim(),
+    from_place: $('fromplace').value.trim(), to_place: $('toplace').value.trim(), note: $('note').value.trim()
+  };
+  if (!body.bird || !body.to_bird || !body.item) { $('smsg').textContent = 'a parcel needs a sender, a receiver and an item.'; return; }
+  const d = await api('/parcel', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (d && d.ok) {
+    await ntfyPost({type:'parcel', parcel:d.parcel});
+    $('smsg').textContent = 'parcel sealed: '+d.parcel.code;
+    $('lookup').value = d.parcel.code;
+    $('bird').value = $('tobird').value = $('item').value = $('fromplace').value = $('toplace').value = $('note').value = '';
+    load();
+    return;
+  }
+  const code = 'FC-' + Math.random().toString(36).slice(2,8).toUpperCase();
+  const p = {code, bird:body.bird, to_bird:body.to_bird, item:body.item, from_place:body.from_place,
+    to_place:body.to_place, note:body.note, status:'sealed', created:new Date().toISOString(),
+    events:[{status:'sealed', by_bird:body.bird, place:body.from_place, note:'parcel sealed', created:new Date().toISOString()}]};
+  all.push(p);
+  await ntfyPost({type:'parcel', parcel:p});
+  $('smsg').textContent = 'parcel sealed on the shared board: '+code;
+  $('lookup').value = code;
+  $('bird').value = $('tobird').value = $('item').value = $('fromplace').value = $('toplace').value = $('note').value = '';
+  render();
+};
+$('track').onclick = () => {
+  const code = $('lookup').value.trim().toUpperCase();
+  renderDetail(all.find(p => p.code === code) || null);
+};
+$('refresh').onclick = load;
+$('q').oninput = render;
+$('status').onchange = render;
+load();
+</script>
+</body>
+</html>
