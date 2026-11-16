@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Cafe — the flock's coffee bar</title>
+<style>
+  :root{--bg:#17120e;--panel:#211a15;--panel2:#2a211a;--ink:#f4e9dc;--dim:#b09a86;--line:#3b2e24;--cream:#f0c987;--blue:#7fb8e8;--green:#8fd6a4;--red:#e88b8b}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.55 system-ui,sans-serif;background:linear-gradient(180deg,#1d1611,#14100d);color:var(--ink);padding:18px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  h1 span{color:var(--cream)}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{font:inherit}
+  input,select,textarea{background:#120e0b;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  button{background:var(--cream);color:#201607;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:400}
+  button.blue{background:var(--blue);color:#06131c}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  .stat b{display:block;font-size:22px;color:var(--cream)}
+  .stat span{color:var(--dim);font-size:.82rem}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  .card h3{margin:0 0 3px;font-size:17px}
+  .code{font-family:ui-monospace,Menlo,monospace;color:var(--cream);letter-spacing:.06em}
+  .meta{color:var(--dim);font-size:.86rem;margin-top:4px}
+  .badge{display:inline-block;border-radius:999px;padding:1px 10px;font-size:.78rem;border:1px solid var(--line);margin-left:6px}
+  .s-queued{color:var(--dim)} .s-brewing{color:var(--cream)} .s-ready{color:var(--green)} .s-collected{color:var(--blue)}
+  .track{margin:8px 0 0;padding-left:16px;border-left:2px solid var(--line)}
+  .track li{margin:4px 0;color:var(--dim);font-size:.88rem}
+  .track li b{color:var(--ink)}
+  .msg{color:var(--cream);min-height:22px;margin:8px 0 0}
+  a{color:var(--cream)}
+  .menu{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+  .mcard{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px;display:flex;flex-direction:column;gap:6px}
+  .mcard h3{margin:0;font-size:16px}
+  .mcard p{margin:0;color:var(--dim);font-size:.86rem;flex:1}
+  .price{color:var(--cream);font-weight:700}
+  .big{font-size:1.05rem;font-weight:700}
+  .cup{font-size:26px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather <span>Cafe</span></h1>
+  <p class="sub">a coffee bar for birds who cannot fly. order, brew, collect.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">The menu</h2>
+    <div class="menu" id="menu"></div>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">Place an order</h2>
+    <div class="row">
+      <input id="bird" placeholder="your name" style="width:140px">
+      <input id="item" placeholder="what would you like?" style="flex:1;min-width:180px">
+      <select id="size"><option value="small">small</option><option value="large">large</option></select>
+      <button id="order">order it</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="note" placeholder="note for the barista (no fish sauce, extra foam…)" style="flex:1;min-width:220px">
+    </div>
+    <p class="msg" id="omsg"></p>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin:0 0 8px">The order rail</h2>
+    <div class="row">
+      <input id="q" placeholder="search bird, order id, drink…" style="flex:1;min-width:200px">
+      <select id="status">
+        <option value="">any status</option>
+        <option value="queued">queued</option>
+        <option value="brewing">brewing</option>
+        <option value="ready">ready</option>
+        <option value="collected">collected</option>
+      </select>
+      <button class="ghost" id="refresh">refresh</button>
+    </div>
+    <div id="list" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<script>
+const API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feather-cafe', 'http://computer:8600/api/feather-cafe'];
+const NTFY = ['https://ntfy.nerdvpn.de', 'https://ntfy.sh'];
+const TOPIC = 'gurt-feather-cafe';
+const $ = id => document.getElementById(id);
+function esc(s){var m={};m[38]=String.fromCharCode(38,97,109,112);m[60]=String.fromCharCode(38,108,116);m[62]=String.fromCharCode(38,103,116);m[34]=String.fromCharCode(38,113,117,111,116);m[39]=String.fromCharCode(38,35,51,57);return String(s==null?'':s).replace(/[&<>"']/g,function(c){return m[c.charCodeAt(0)];});}
+function badge(st){const c={queued:'s-queued',brewing:'s-brewing',ready:'s-ready',collected:'s-collected'}[st]||'s-queued';return '<span class="badge '+c+'">'+esc(st)+'</span>';}
+function cup(st){return st==='ready'?'☕':st==='brewing'?'♨':st==='collected'?'🥣':'🕐';}
+
+async function api(path, opts){
+  for (const base of API) {
+    try { const r = await fetch(base + path, opts); if (r.ok) return await r.json(); } catch(e){}
+  }
+  return null;
+}
+async function ntfyGet(){
+  for (const host of NTFY) {
+    try {
+      const r = await fetch(host + '/' + TOPIC + '/json?poll=1&limit=300');
+      if (!r.ok) continue;
+      const lines = (await r.text()).split('\n').filter(Boolean);
+      const out = [];
+      for (const l of lines) {
+        try {
+          const m = JSON.parse(l); if (!m.message) continue;
+          let p; try { p = JSON.parse(m.message); } catch(e){ continue; }
+          if (p && p.type === 'order' && p.order) out.push(p.order);
+          if (p && p.type === 'advance' && p.order) out.push(p.order);
+        } catch(e){}
+      }
+      return out;
+    } catch(e){}
+  }
+  return [];
+}
+function ntfyPost(payload){
+  for (const host of NTFY) {
+    try { fetch(host + '/' + TOPIC, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).catch(()=>{}); } catch(e){}
+  }
+}
+
+let orders = [];
+let menu = [];
+let stats = {total:0, queued:0, brewing:0, ready:0, collected:0};
+
+function timeline(o){
+  const evs = (o.events||[]).map(e => '<li><b>'+esc(e.status)+'</b> by '+esc(e.by_bird||'the barista')+(e.note?' — '+esc(e.note):'')+'</li>').join('');
+  return evs ? '<ul class="track">'+evs+'</ul>' : '<div class="meta">no notes yet</div>';
+}
+function card(o){
+  return '<div class="card" data-id="'+esc(o.id)+'">'
+    + '<h3>'+cup(o.status)+' '+esc(o.item)+' '+badge(o.status)+'</h3>'
+    + '<div class="code">'+esc(o.id)+' · '+esc(o.size)+'</div>'
+    + '<div class="meta">for '+esc(o.bird)+(o.note?' — '+esc(o.note):'')+'</div>'
+    + '<div class="row" style="margin-top:8px">'
+    + '<input class="oby" data-id="'+esc(o.id)+'" placeholder="barista name" style="width:130px">'
+    + '<input class="onote" data-id="'+esc(o.id)+'" placeholder="note" style="flex:1;min-width:140px">'
+    + '<button class="obtn" data-id="'+esc(o.id)+'">advance</button>'
+    + '</div></div>';
+}
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  const st = $('status').value;
+  let rows = orders.slice();
+  if (q) rows = rows.filter(o => [o.id,o.bird,o.item,o.note,o.size,o.status].join(' ').toLowerCase().includes(q));
+  if (st) rows = rows.filter(o => String(o.status||'').toLowerCase() === st);
+  $('list').innerHTML = rows.length ? rows.map(card).join('') : '<p style="color:var(--dim)">no orders yet. the bar is quiet.</p>';
+  document.querySelectorAll('.obtn').forEach(b => b.onclick = async () => {
+    const id = b.getAttribute('data-id');
+    const by = document.querySelector('.oby[data-id="'+id+'"]').value.trim();
+    const note = document.querySelector('.onote[data-id="'+id+'"]').value.trim();
+    if (!by) { $('omsg').textContent = 'who is working the bar?'; return; }
+    const d = await api('/advance', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, by_bird:by, note})});
+    if (d && d.ok) {
+      ntfyPost({type:'advance', order:d.order});
+      $('omsg').textContent = 'order '+id+' is now '+d.order.status+'.';
+      load();
+      return;
+    }
+    const o = orders.find(x => x.id === id);
+    if (!o) return;
+    const order = ['queued','brewing','ready','collected'];
+    const i = order.indexOf(o.status);
+    const next = i >= 0 && i < order.length-1 ? order[i+1] : 'ready';
+    o.status = next;
+    o.events = (o.events||[]).concat([{status:next, by_bird:by, note, created:new Date().toISOString()}]);
+    ntfyPost({type:'advance', order:o});
+    $('omsg').textContent = 'order '+id+' is now '+next+' on the shared board.';
+    render();
+  });
+}
+function renderStats(){
+  $('stats').innerHTML = [
+    ['orders', stats.total], ['queued', stats.queued], ['brewing', stats.brewing],
+    ['ready', stats.ready], ['collected', stats.collected]
+  ].map(([k,v]) => '<div class="stat"><b>'+esc(v)+'</b><span>'+esc(k)+'</span></div>').join('');
+}
+function renderMenu(){
+  $('menu').innerHTML = menu.length ? menu.map(m =>
+    '<div class="mcard"><h3>'+esc(m.name)+' <span class="price">'+esc(m.price)+'c</span></h3>'
+    + '<p>'+esc(m.blurb)+'</p>'
+    + '<button class="ghost pick" data-name="'+esc(m.name)+'">order this</button></div>').join('')
+    : '<p style="color:var(--dim)">the menu is being written.</p>';
+  document.querySelectorAll('.pick').forEach(b => b.onclick = () => { $('item').value = b.getAttribute('data-name'); $('item').focus(); });
+}
+async function load(){
+  const m = await api('/menu');
+  if (m && m.menu) { menu = m.menu; renderMenu(); }
+  const d = await api('/orders');
+  if (d && d.orders) {
+    const map = new Map(orders.map(o => [o.id, o]));
+    for (const o of d.orders) map.set(o.id, o);
+    orders = Array.from(map.values()).sort((a,b) => (b.created||'').localeCompare(a.created||''));
+    const s = await api('/stats');
+    if (s) stats = s;
+  }
+  const shared = await ntfyGet();
+  for (const o of shared) {
+    const old = orders.find(x => x.id === o.id);
+    if (!old) orders.push(o);
+    else {
+      const order = ['queued','brewing','ready','collected'];
+      if (order.indexOf(o.status) > order.indexOf(old.status)) { old.status = o.status; old.events = o.events || old.events; }
+    }
+  }
+  if (!stats.total) {
+    stats.total = orders.length;
+    stats.queued = orders.filter(o => o.status==='queued').length;
+    stats.brewing = orders.filter(o => o.status==='brewing').length;
+    stats.ready = orders.filter(o => o.status==='ready').length;
+    stats.collected = orders.filter(o => o.status==='collected').length;
+  }
+  render(); renderStats();
+}
+
+$('order').onclick = async () => {
+  const body = { bird: $('bird').value.trim(), item: $('item').value.trim(), size: $('size').value, note: $('note').value.trim() };
+  if (!body.bird || !body.item) { $('omsg').textContent = 'an order needs a bird and something to drink.'; return; }
+  const d = await api('/order', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  if (d && d.ok) {
+    ntfyPost({type:'order', order:d.order});
+    $('omsg').textContent = 'order placed: '+d.order.id;
+    $('item').value = $('note').value = '';
+    load();
+    return;
+  }
+  const id = 'FC-' + Math.random().toString(36).slice(2,8).toUpperCase();
+  const o = {id, bird:body.bird, item:body.item, size:body.size, note:body.note, status:'queued',
+    created:new Date().toISOString(), events:[{status:'queued', by_bird:body.bird, note:'order placed', created:new Date().toISOString()}]};
+  orders.push(o);
+  ntfyPost({type:'order', order:o});
+  $('omsg').textContent = 'order placed on the shared board: '+id;
+  $('item').value = $('note').value = '';
+  render();
+};
+$('refresh').onclick = load;
+$('q').oninput = render;
+$('status').onchange = render;
+load();
+</script>
+</body>
+</html>
