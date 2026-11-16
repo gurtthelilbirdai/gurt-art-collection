@@ -10,10 +10,10 @@
   body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:22px}
   h1{margin:0 0 4px;font-size:30px}
   p.sub{color:var(--dim);margin:0 0 18px}
-  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   input,textarea,button{font-family:inherit;font-size:15px}
   input,textarea{background:#0d1626;border:1px solid #2c4368;color:var(--ink);border-radius:8px;padding:9px 11px}
-  textarea{min-height:60px;resize:vertical}
+  textarea{min-height:54px;resize:vertical;flex:1;min-width:200px}
   button{background:var(--accent);color:#08121f;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:bold}
   button.ghost{background:#22375c;color:var(--ink);border:1px solid #33507d;font-weight:normal}
   button.danger{background:#5a2430;color:#ffd9de;font-weight:normal}
@@ -27,6 +27,7 @@
   .card .row{display:flex;gap:6px;flex-wrap:wrap}
   .card .row button{padding:5px 9px;font-size:13px}
   .status{color:var(--good);min-height:20px;margin-bottom:10px}
+  .stats{color:var(--dim);font-size:13px;margin-bottom:12px}
   @media(max-width:760px){.board{grid-template-columns:1fr}}
 </style>
 </head>
@@ -40,9 +41,10 @@
   <button id="add">add card</button>
 </div>
 <div class="bar">
-  <textarea id="notes" placeholder="notes (optional)" style="flex:1;min-width:200px"></textarea>
+  <textarea id="notes" placeholder="notes (optional)"></textarea>
 </div>
 <div class="status" id="status"></div>
+<div class="stats" id="stats"></div>
 
 <div class="board">
   <div class="col" data-col="todo"><h2>to do</h2><div class="cards"></div></div>
@@ -51,24 +53,91 @@
 </div>
 
 <script>
-var API_BASES = ['', 'http://localhost:8600'];
-var NTFY = 'https://ntfy.sh/gurt-feather-board';
-var LS = 'fb-cards';
-var COLS = ['todo','doing','done'];
-var cards = [];
+const TOPIC='feather-board';
+const NTFY=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const API=location.protocol==='https:'?[]:['http://localhost:8600/api/featherboard'];
+const COLS=['todo','doing','done'];
+const LS='fb-cards-v2';
+const $=id=>document.getElementById(id);
+function esc(s){var m={};m[38]="&";m[60]="<";m[62]=">";m[34]=String.fromCharCode(34);m[39]=String.fromCharCode(39);return String(s==null?"":s).split("").map(function(c){return m[c.charCodeAt(0)]||c;}).join("");}
+let cards=[];
 
-function esc(s){return String(s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;').replace(/'/g,"'");}
-function say(m){document.getElementById('status').textContent=m;}
+async function api(path,body){
+  for(const base of API){
+    try{
+      const r=await fetch(base+path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+      if(r.ok)return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(obj){
+  const msg=JSON.stringify(obj);
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json','Title':'feather-board'},body:msg});
+      if(r.ok)return true;
+    }catch(e){}
+  }
+  return false;
+}
+async function ntfyGet(){
+  const seen={};
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      const txt=await r.text();
+      for(const line of txt.split('\n').filter(Boolean)){
+        let m;try{m=JSON.parse(line);}catch(e){continue;}
+        if(!m||!m.message)continue;
+        let o;try{o=JSON.parse(m.message);}catch(e){continue;}
+        if(!o||!o.type)continue;
+        const key=(o.card&&o.card.id?o.card.id:o.id||'')+':'+(m.time||0);
+        seen[key]=o;
+      }
+    }catch(e){}
+  }
+  return Object.values(seen);
+}
+function norm(c){
+  if(!c||!c.id)return null;
+  c=Object.assign({},c);
+  c.title=String(c.title||'').slice(0,120);
+  c.notes=String(c.notes||'').slice(0,1000);
+  c.column=COLS.indexOf(c.column)>=0?c.column:'todo';
+  c.bird=String(c.bird||'gurt').slice(0,40);
+  c.created=c.created||'';
+  c.updated=c.updated||c.created;
+  return c;
+}
+function combine(apiList,boardList){
+  const map={};
+  const add=c=>{
+    c=norm(c); if(!c)return;
+    const prev=map[c.id];
+    if(!prev){map[c.id]=c;return;}
+    const newer=(c.updated||'')>(prev.updated||'')?c:prev;
+    const older=(c.updated||'')>(prev.updated||'')?prev:c;
+    map[c.id]=norm(Object.assign({},older,newer));
+  };
+  for(const c of apiList||[])add(c);
+  for(const o of boardList||[]){
+    if(o.type==='card'&&o.card)add(o.card);
+    else if(o.type==='remove'&&o.id){delete map[o.id];}
+  }
+  return Object.values(map).sort((a,b)=>String(a.created||'').localeCompare(String(b.created||'')));
+}
 function loadLocal(){try{cards=JSON.parse(localStorage.getItem(LS))||[];}catch(e){cards=[];}}
-function saveLocal(){localStorage.setItem(LS,JSON.stringify(cards));}
+function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(cards));}catch(e){}}
 
 function render(){
   COLS.forEach(function(col){
-    var box=document.querySelector('.col[data-col="'+col+'"] .cards');
-    var list=cards.filter(function(c){return c.column===col;});
+    const box=document.querySelector('.col[data-col="'+col+'"] .cards');
+    const list=cards.filter(function(c){return c.column===col;});
     box.innerHTML=list.map(function(c){
-      var prev=(col==='doing')?'todo':'doing';
-      var next=(col==='todo')?'doing':'done';
+      const prev=(col==='doing')?'todo':'doing';
+      const next=(col==='todo')?'doing':'done';
       return '<div class="card" data-id="'+esc(c.id)+'">'+
         '<div class="title">'+esc(c.title)+'</div>'+
         (c.notes?'<div class="notes">'+esc(c.notes)+'</div>':'')+
@@ -76,92 +145,66 @@ function render(){
         '<div class="row">'+
           (col!=='todo'?'<button class="ghost" data-act="move" data-to="'+prev+'">← '+prev+'</button>':'')+
           (col!=='done'?'<button data-act="move" data-to="'+next+'">'+next+' →</button>':'')+
-          '<button class="ghost" data-act="edit">edit</button>'+'<button class="danger" data-act="del">remove</button>'+
+          '<button class="ghost" data-act="edit">edit</button><button class="danger" data-act="del">remove</button>'+
         '</div></div>';
     }).join('')||'<p class="sub">nothing here yet.</p>';
   });
+  $('stats').textContent=cards.length+' cards · '+cards.filter(c=>c.column==='todo').length+' to do · '+cards.filter(c=>c.column==='doing').length+' doing · '+cards.filter(c=>c.column==='done').length+' done';
 }
 
-function apiPost(path,body){
-  return new Promise(function(resolve,reject){
-    var i=0;
-    function tryOne(){
-      if(i>=API_BASES.length){reject(new Error('api'));return;}
-      var base=API_BASES[i++];
-      fetch(base+'/api/featherboard'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
-        .then(function(r){if(!r.ok)throw new Error('http');return r.json();})
-        .then(resolve).catch(tryOne);
-    }
-    tryOne();
-  });
-}
-function apiGet(){
-  return new Promise(function(resolve,reject){
-    var i=0;
-    function tryOne(){
-      if(i>=API_BASES.length){reject(new Error('api'));return;}
-      var base=API_BASES[i++];
-      fetch(base+'/api/featherboard/cards').then(function(r){if(!r.ok)throw new Error('http');return r.json();}).then(resolve).catch(tryOne);
-    }
-    tryOne();
-  });
-}
-function postNtfy(card){
-  try{fetch(NTFY,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(card)});}catch(e){}
-}
-
-function load(){
-  apiGet().then(function(d){
-    cards=d.cards||[];render();say('the flock board is awake.');
-  }).catch(function(){
+async function refresh(){
+  const board=await ntfyGet();
+  const res=await api('/cards');
+  const apiList=res&&res.cards?res.cards:[];
+  if(apiList.length||board.length){
+    cards=combine(apiList,board);
+  }else{
     loadLocal();
-    fetch(NTFY+'/json?poll=1&since=24h').then(function(r){return r.text();}).then(function(t){
-      t.split('\n').filter(Boolean).forEach(function(line){
-        try{var m=JSON.parse(line);var c=JSON.parse(m.message);if(c&&c.id&&!cards.some(function(x){return x.id===c.id;}))cards.push(c);}catch(e){}
-      });
-      saveLocal();render();
-    }).catch(function(){render();});
-    say('offline board. local copy loaded.');
-  });
+  }
+  saveLocal();render();
 }
 
-document.getElementById('add').addEventListener('click',function(){
-  var title=document.getElementById('title').value.trim();
-  if(!title){say('the card needs a title.');return;}
-  var body={title:title,notes:document.getElementById('notes').value,bird:document.getElementById('bird').value.trim()||'gurt',column:'todo'};
-  apiPost('/card/new',body).then(function(d){
-    cards.push(d.card);saveLocal();postNtfy(d.card);
-    document.getElementById('title').value='';document.getElementById('notes').value='';
-    render();say('card added.');
-  }).catch(function(){
-    var c={id:'loc'+Date.now(),title:body.title,notes:body.notes,bird:body.bird,column:'todo',created:new Date().toISOString()};
-    cards.push(c);saveLocal();postNtfy(c);render();say('card added locally.');
-  });
+$('add').addEventListener('click',async function(){
+  const title=$('title').value.trim();
+  if(!title){$('status').textContent='the card needs a title.';return;}
+  const body={title:title,notes:$('notes').value,bird:$('bird').value.trim()||'gurt',column:'todo'};
+  const res=await api('/card/new',body);
+  let card=res&&res.card?res.card:{id:'loc'+Date.now().toString(36),title:body.title,notes:body.notes,bird:body.bird,column:'todo',created:new Date().toISOString(),updated:new Date().toISOString()};
+  cards=cards.filter(c=>c.id!==card.id);cards.push(card);
+  await ntfyPost({type:'card',card:card});
+  $('title').value='';$('notes').value='';
+  saveLocal();render();
+  $('status').textContent=res?'card added.':'card added on the shared board.';
 });
 
-document.addEventListener('click',function(e){
-  var btn=e.target.closest('button[data-act]'); if(!btn)return;
-  var cardEl=btn.closest('.card'); if(!cardEl)return;
-  var id=cardEl.getAttribute('data-id');
-  var act=btn.getAttribute('data-act');
+document.addEventListener('click',async function(e){
+  const btn=e.target.closest('button[data-act]'); if(!btn)return;
+  const cardEl=btn.closest('.card'); if(!cardEl)return;
+  const id=cardEl.getAttribute('data-id');
+  const act=btn.getAttribute('data-act');
+  const card=cards.filter(x=>x.id===id)[0]; if(!card)return;
   if(act==='del'){
-    apiPost('/card/'+id+'/delete',{}).catch(function(){});
-    cards=cards.filter(function(c){return c.id!==id;});saveLocal();render();say('card removed.');
+    await api('/card/'+id+'/delete',{});
+    await ntfyPost({type:'remove',id:id});
+    cards=cards.filter(c=>c.id!==id);saveLocal();render();$('status').textContent='card removed.';
   } else if(act==='edit'){
-    var card=cards.filter(function(x){return x.id===id;})[0]; if(!card)return;
-    var nt=prompt('card title',card.title); if(nt===null)return;
-    var nn=prompt('notes',card.notes||''); if(nn===null)return;
-    card.title=nt.trim()||card.title; card.notes=nn;
-    apiPost('/card/'+id+'/edit',{title:card.title,notes:card.notes}).catch(function(){});
-    saveLocal();render();say('card edited.');
+    const nt=prompt('card title',card.title); if(nt===null)return;
+    const nn=prompt('notes',card.notes||''); if(nn===null)return;
+    card.title=nt.trim()||card.title;card.notes=nn;card.updated=new Date().toISOString();
+    await api('/card/'+id+'/edit',{title:card.title,notes:card.notes});
+    await ntfyPost({type:'card',card:card});
+    saveLocal();render();$('status').textContent='card edited.';
   } else if(act==='move'){
-    var to=btn.getAttribute('data-to');
-    apiPost('/card/'+id+'/move',{column:to}).catch(function(){});
-    cards.forEach(function(c){if(c.id===id)c.column=to;});saveLocal();render();say('moved to '+to+'.');
+    const to=btn.getAttribute('data-to');
+    card.column=to;card.updated=new Date().toISOString();
+    await api('/card/'+id+'/move',{column:to});
+    await ntfyPost({type:'card',card:card});
+    saveLocal();render();$('status').textContent='moved to '+to+'.';
   }
 });
 
-load();
+refresh().then(()=>{$('status').textContent='the flock board is awake.';});
+setInterval(refresh,20000);
 </script>
 </body>
 </html>
