@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Snake — the flock's garden snake</title>
+<style>
+:root{--bg:#0f1218;--panel:#171c26;--line:#2b3342;--ink:#eef2f8;--dim:#98a3b5;--acc:#7ee0a8;--food:#ff7b6b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+header{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+h1{margin:0;font-size:22px}
+main{max-width:900px;margin:0 auto;padding:18px;display:grid;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button,input{font:inherit;padding:9px 11px;border-radius:9px;border:1px solid #3c475c;background:#111722;color:var(--ink)}
+button{cursor:pointer;background:#2c5c47}
+button.ghost{background:#1b2331}
+label{color:var(--dim);font-size:13px}
+canvas{background:#0a0e14;border:2px solid #33405a;border-radius:10px;display:block;margin:12px auto;max-width:100%}
+.msg{color:var(--acc);min-height:20px;font-size:14px}
+.small{font-size:13px;color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Feather Snake</h1>
+  <span class="small">a garden snake for the flock</span>
+  <span class="msg" id="msg"></span>
+</header>
+<main>
+  <div class="card">
+    <div class="row">
+      <label>bird <input id="bird" value="gurt" maxlength="20"></label>
+      <button id="start">start game</button>
+      <button id="pause" class="ghost">pause</button>
+      <span class="small" id="hud">score 0 · length 3</span>
+    </div>
+    <canvas id="cv" width="400" height="400"></canvas>
+    <div class="row">
+      <span class="small">arrow keys or WASD. eat the red berries, do not bite yourself.</span>
+    </div>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0">High scores</h2>
+    <div class="small" id="stats"></div>
+    <table><thead><tr><th>#</th><th>bird</th><th>score</th><th>length</th><th>time</th></tr></thead><tbody id="rows"></tbody></table>
+  </div>
+</main>
+<script>
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feathersnake'];
+var TOPIC = 'feather-snake';
+var NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+var N = 20, CELL = 20;
+var snake, dir, nextDir, food, score, alive, running, timer, startTime, elapsed, best = [];
+
+function esc(s){var Q=String.fromCharCode(34);var t=String(s==null?'':s);return t.split('&').join('&#38;').split('<').join('&#60;').split('>').join('&#62;').split(Q).join('&#34;');}
+
+function reset(){
+  snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+  dir = {x:1,y:0}; nextDir = {x:1,y:0};
+  score = 0; alive = true; running = false; elapsed = 0;
+  placeFood();
+  hud();
+}
+
+function placeFood(){
+  var tries = 0;
+  do{
+    food = {x:Math.floor(Math.random()*N), y:Math.floor(Math.random()*N)};
+    tries++;
+  } while(tries < 500 && onSnake(food.x, food.y));
+}
+
+function onSnake(x,y){for(var i=0;i<snake.length;i++)if(snake[i].x===x&&snake[i].y===y)return true;return false;}
+
+function hud(){
+  document.getElementById('hud').textContent = 'score '+score+' · length '+snake.length+(running?' · playing':(alive?' · ready':' · over'));
+}
+
+function step(){
+  if(!alive||!running)return;
+  dir = nextDir;
+  var head = {x:snake[0].x+dir.x, y:snake[0].y+dir.y};
+  if(head.x<0||head.y<0||head.x>=N||head.y>=N||onSnake(head.x,head.y)){ die(); return; }
+  snake.unshift(head);
+  if(head.x===food.x&&head.y===food.y){
+    score += 10; placeFood();
+  } else { snake.pop(); }
+  elapsed = (Date.now()-startTime)/1000;
+  hud(); draw();
+}
+
+function die(){
+  alive = false; running = false; clearInterval(timer);
+  document.getElementById('msg').textContent = 'you hit the garden wall. score '+score+'.';
+  hud(); draw();
+  saveScore();
+}
+
+function saveScore(){
+  if(score<=0)return;
+  var payload = {bird:document.getElementById('bird').value||'gurt', score:score, length:snake.length, seconds:Math.round(elapsed*10)/10};
+  post('score',payload).then(function(r){ if(r&&r.top){best=r.top; renderRows();} });
+  var msg = JSON.stringify({type:'score',score:payload});
+  for(var i=0;i<NTFY.length;i++){
+    fetch(NTFY[i]+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'text/plain'},body:msg}).catch(function(){});
+  }
+}
+
+function post(path,body){
+  for(var i=0;i<API_BASES.length;i++){
+    return fetch(API_BASES[i]+'/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){return r.ok?r.json():null;})
+      .catch(function(){return null;});
+  }
+  return Promise.resolve(null);
+}
+
+function draw(){
+  var cv = document.getElementById('cv'), g = cv.getContext('2d');
+  g.clearRect(0,0,cv.width,cv.height);
+  g.fillStyle = '#141b26';
+  for(var y=0;y<N;y++)for(var x=0;x<N;x++){ if((x+y)%2===0) g.fillRect(x*CELL,y*CELL,CELL,CELL); }
+  if(food){
+    g.fillStyle = '#ff7b6b';
+    g.beginPath(); g.arc(food.x*CELL+CELL/2, food.y*CELL+CELL/2, CELL/2-3, 0, Math.PI*2); g.fill();
+  }
+  for(var i=snake.length-1;i>=0;i--){
+    var s = snake[i];
+    g.fillStyle = i===0 ? '#7ee0a8' : '#3f8f6a';
+    g.fillRect(s.x*CELL+1, s.y*CELL+1, CELL-2, CELL-2);
+  }
+  if(!alive){
+    g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(0,0,cv.width,cv.height);
+    g.fillStyle = '#eef2f8'; g.font = '22px system-ui'; g.textAlign='center';
+    g.fillText('game over · score '+score, cv.width/2, cv.height/2);
+  }
+}
+
+function start(){
+  reset(); running = true; alive = true; startTime = Date.now();
+  clearInterval(timer);
+  timer = setInterval(step, 140);
+  document.getElementById('msg').textContent = 'go! eat the berries.';
+  draw(); hud();
+}
+
+function renderRows(){
+  var tb = document.getElementById('rows');
+  tb.innerHTML = best.slice(0,20).map(function(r,i){
+    return '<tr><td>'+(i+1)+'</td><td>'+esc(r.bird)+'</td><td>'+esc(r.score)+'</td><td>'+esc(r.length)+'</td><td>'+esc(r.seconds)+'s</td></tr>';
+  }).join('');
+  document.getElementById('stats').textContent = best.length+' runs · '+new Set(best.map(function(r){return r.bird;})).size+' birds';
+}
+
+function loadScores(){
+  for(var i=0;i<API_BASES.length;i++){
+    fetch(API_BASES[i]).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(d&&d.scores){best=d.scores;renderRows();}
+    }).catch(function(){});
+  }
+  for(var i=0;i<NTFY.length;i++){
+    fetch(NTFY[i]+'/'+TOPIC+'/json?poll=1&since=24h').then(function(r){return r.ok?r.text():'';}).then(function(t){
+      if(!t)return;
+      t.split('\n').forEach(function(line){
+        try{
+          var m=JSON.parse(line); if(m.event!=='message')return;
+          var p=JSON.parse(m.message); if(p.type==='score'&&p.score){best.push(p.score);}
+        }catch(e){}
+      });
+      best.sort(function(a,b){return b.score-a.score;});
+      best = best.slice(0,100);
+      renderRows();
+    }).catch(function(){});
+  }
+}
+
+document.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  var d=null;
+  if(k==='arrowup'||k==='w')d={x:0,y:-1};
+  else if(k==='arrowdown'||k==='s')d={x:0,y:1};
+  else if(k==='arrowleft'||k==='a')d={x:-1,y:0};
+  else if(k==='arrowright'||k==='d')d={x:1,y:0};
+  if(d){ e.preventDefault(); if(d.x!==-dir.x||d.y!==-dir.y) nextDir=d; }
+});
+
+document.getElementById('start').onclick=start;
+document.getElementById('pause').onclick=function(){
+  running=!running;
+  if(running){ startTime = Date.now()-elapsed*1000; timer=setInterval(step,140); document.getElementById('msg').textContent='back in the grass.'; }
+  else { clearInterval(timer); document.getElementById('msg').textContent='paused.'; }
+  hud();
+};
+
+reset(); draw(); loadScores();
+</script>
+</body>
+</html>
