@@ -84,8 +84,8 @@
       if (ch === 'f') enemies.push({ kind: 'flyer', x: xx * T + 4, y: yy * T + 4, w: 22, h: 22, vx: 1.3, vy: 0, dead: false, t: 0, base: yy * T, x0: xx * T, x1: Math.min(W * T - T, xx * T + T * 3) });
       if (ch === 'm') enemies.push({ kind: 'hammer', x: xx * T + 4, y: yy * T + 4, w: 26, h: 26, vx: 1.6, vy: 0, dead: false, t: 0, base: yy * T });
       if (ch === 'M') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: xx * T + T * 2, dx: 0, dy: 0 });
-      if (ch === 'F') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: 21 * T, dx: 1.1, dy: 0, wait: 90 });
-      if (ch === 'G') platforms.push({ kind: 'h', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.max(4 * T, xx * T - 18 * T), dx: -1.1, dy: 0, wait: 30 });
+      if (ch === 'F') platforms.push({ kind: 'm', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: 21 * T, dx: 1.1, dy: 0, wait: 90 });
+      if (ch === 'G') platforms.push({ kind: 'm', x: xx * T, y: yy * T, w: T * 2, h: 12, x0: xx * T, x1: Math.max(4 * T, xx * T - 18 * T), dx: -1.1, dy: 0, wait: 30 });
       if (ch === 'V') platforms.push({ kind: 'v', x: xx * T, y: (yy + 1) * T, w: T * 2, h: 12, y0: (yy + 1) * T, y1: (yy - 5) * T, dx: 0, dy: -0.9, wait: 120 });
     }
     p = { x: sx * T + 4, y: sy * T + 4, w: 24, h: 24, vx: 0, vy: 0, onGround: false, face: 1, ride: null };
@@ -110,7 +110,17 @@
     if (ty >= H) return '.';
     return grid[ty][tx];
   }
-  function solid(tx, ty) { const ch = tileAt(tx, ty); if (ch === 'D') return keys <= 0; return ch === '#' || ch === 'i' || ch === 'c'; }
+  function solid(tx, ty) {
+    const ch = tileAt(tx, ty);
+    if (ch === 'D') return keys <= 0;
+    if (ch === 'i') {
+      // ice on the ground row is a slippery patch the bird walks across;
+      // ice floating in the air is a solid block to climb
+      const below = tileAt(tx, ty + 1);
+      return !(below === '#' || below === 'c' || below === 'i');
+    }
+    return ch === '#' || ch === 'c';
+  }
   function platform(tx, ty) { return tileAt(tx, ty) === '='; }
 
   function moveX(e, dx) {
@@ -230,7 +240,8 @@
     if (p.onGround) {
       const ix = Math.floor((p.x + p.w / 2) / T);
       const iy = Math.floor((p.y + p.h + 2) / T);
-      onIce = tileAt(ix, iy) === 'i' || tileAt(Math.floor((p.x + 4) / T), iy) === 'i';
+      onIce = tileAt(ix, iy) === 'i' || tileAt(Math.floor((p.x + 4) / T), iy) === 'i' ||
+        tileAt(ix, iy - 1) === 'i' || tileAt(Math.floor((p.x + 4) / T), iy - 1) === 'i';
     }
     const accel = p.onGround ? 0.55 : 0.32; // ice keeps momentum, handled by friction
     if (left) { p.vx -= accel; p.face = -1; }
@@ -242,7 +253,7 @@
     // a bird riding a moving platform stays glued to it
     if (p.ride) {
       const r = p.ride;
-      const stillOn = p.x + p.w > r.x && p.x < r.x + r.w && Math.abs((p.y + p.h) - r.y) < 18;
+      const stillOn = p.x + p.w > r.x - 10 && p.x < r.x + r.w + 10 && Math.abs((p.y + p.h) - r.y) < 18;
       if (stillOn) { p.y = r.y - p.h; p.vy = 0; p.onGround = true; }
       else p.ride = null;
     }
@@ -370,7 +381,7 @@
 
     // moving platforms (simulation)
     for (const pl of platforms) {
-      if (pl.kind === 'h') {
+      if (pl.kind === 'h' || pl.kind === 'm') {
         if (pl.wait > 0) { pl.wait--; pl.moveX = 0; }
         else {
           pl.moveX = pl.dx; pl.x += pl.dx;
@@ -393,8 +404,11 @@
         p.y = pl.y - p.h; p.vy = 0; p.onGround = true;
       }
       if (p.onGround && feet >= pl.y - 14 && feet <= pl.y + 12 &&
-          p.x + p.w > pl.x && p.x < pl.x + pl.w) {
-        p.x += (pl.moveX || 0); p.y += (pl.dy || 0); p.ride = pl;
+          p.x + p.w > pl.x - 10 && p.x < pl.x + pl.w + 10) {
+        // if we are already riding this deck the ride block above moved us,
+        // so do not add the platform's travel a second time
+        if (p.ride !== pl) p.x += (pl.moveX || 0);
+        p.y += (pl.dy || 0); p.ride = pl;
         p.y = pl.y - p.h; p.vy = 0;
       }
     }
