@@ -115,34 +115,38 @@ async function ntfyGet(){
   }
   return Object.values(seen);
 }
+function norm(st){
+  st=Object.assign({},st);
+  const ss=[];const seen={};
+  for(const x of (st.sentences||[])){
+    const k=String(x.bird)+'|'+String(x.text);
+    if(seen[k])continue;seen[k]=1;ss.push(x);
+  }
+  st.sentences=ss;
+  st.words=ss.reduce((n,x)=>n+String(x.text||'').trim().split(/\s+/).filter(Boolean).length,0);
+  st.birds=[...new Set(ss.map(x=>x.bird))];
+  return st;
+}
 function merge(list){
   const map={};
   for(const p of list){
     if(!p||!p.story||!p.story.id)continue;
     const id=p.story.id;
+    let st=p.story;
+    if(p.sentence)st=Object.assign({},st,{sentences:(st.sentences||[]).concat([p.sentence])});
     const prev=map[id];
-    if(!prev){map[id]=Object.assign({},p.story,{sentences:(p.story.sentences||[]).slice()});continue;}
-    const ss=[];const seen={};
-    for(const s of (prev.sentences||[]).concat(p.story.sentences||[])){
-      const k=s.bird+'|'+s.text+'|'+String(s.created||'');
-      if(seen[k])continue;seen[k]=1;ss.push(s);
-    }
-    map[id]=Object.assign({},prev,p.story,{sentences:ss});
+    if(!prev){map[id]=norm(st);continue;}
+    map[id]=norm(Object.assign({},prev,st,{sentences:(prev.sentences||[]).concat(st.sentences||[])}));
   }
   return Object.values(map);
 }
 function combine(apiList,boardList){
   const map={};
-  for(const s of apiList)map[s.id]=Object.assign({},s,{sentences:(s.sentences||[]).slice()});
+  for(const s of apiList)map[s.id]=norm(s);
   for(const s of boardList){
     const prev=map[s.id];
-    if(!prev){map[s.id]=Object.assign({},s,{sentences:(s.sentences||[]).slice()});continue;}
-    const ss=[];const seen={};
-    for(const x of (prev.sentences||[]).concat(s.sentences||[])){
-      const k=x.bird+'|'+x.text+'|'+String(x.created||'');
-      if(seen[k])continue;seen[k]=1;ss.push(x);
-    }
-    map[s.id]=Object.assign({},prev,s,{sentences:ss});
+    if(!prev){map[s.id]=norm(s);continue;}
+    map[s.id]=norm(Object.assign({},prev,s,{sentences:(prev.sentences||[]).concat(s.sentences||[])}));
   }
   return Object.values(map);
 }
@@ -180,7 +184,7 @@ async function load(){
   if(st)renderStats(st);
   else{
     const birds=[...new Set(stories.flatMap(s=>s.sentences.map(x=>x.bird)))];
-    renderStats({stories:stories.length,sentences:stories.reduce((n,s)=>n+s.sentences.length,0),words:stories.reduce((n,s)=>n+s.words,0),birds:birds.length});
+    renderStats({stories:stories.length,sentences:stories.reduce((n,s)=>n+s.sentences.length,0),words:stories.reduce((n,s)=>n+s.sentences.reduce((m,x)=>m+String(x.text||'').trim().split(/\s+/).filter(Boolean).length,0),0),birds:birds.length});
   }
 }
 $('open').onclick=async()=>{
@@ -208,7 +212,7 @@ $('write').onclick=async()=>{
   const r=await api('/sentence',{story_id:current.id,bird:bird,text:text});
   if(r&&r.story){current=r.story;}
   else{current.sentences.push(s);current.words+=text.split(/\s+/).length;}
-  await ntfyPost({type:'sentence',story:Object.assign({},current,{sentences:current.sentences})});
+  await ntfyPost({type:'sentence',story:{id:current.id,title:current.title,by_bird:current.by_bird,premise:current.premise,created:current.created},sentence:s});
   $('wtext').value='';$('wmsg').textContent='your sentence is in the tale';
   renderReader();await load();
 };
