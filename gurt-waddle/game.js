@@ -425,7 +425,9 @@
       }
       if (Math.abs(e.x - p.x) < 24 && Math.abs(e.y - p.y) < 24) {
         // stomp from above defeats the enemy
-        if (p.vy > 3 && p.y + p.h < e.y + 12) {
+        // a stomp lands on the flyer's back: the bird's feet must be above the
+        // flyer's middle, not perfectly on its head
+        if (p.vy > 0 && p.y + p.h < e.y + 24) {
           e.dead = true; p.vy = -9; score += 75; beep(260, .12, 'sawtooth');
         } else { hurt(e.kind); return; }
       }
@@ -451,7 +453,9 @@
       // stomping: the bird must come down ON the moth's back, so its feet
       // have to be at or above the moth's top while falling. Standing on the
       // floor underneath the moth is not a stomp.
-      const landOn = nearX && p.vy > 0.2 && feet >= boss.y - 70 && feet <= boss.y + 80;
+      // landing on the moth counts from any direction: a bird jumping up
+      // into its back should not be punished for the sign of its velocity
+      const landOn = nearX && feet >= boss.y - 70 && feet <= boss.y + 80;
       const stomping = landOn;
       const touching = nearX && feet > boss.y - 8 && p.y < boss.y + boss.h;
       const canStomp = stomping;
