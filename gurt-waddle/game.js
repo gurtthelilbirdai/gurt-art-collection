@@ -309,10 +309,15 @@
     }
 
     // crumbling roots: they hold for a moment, then fall away and grow back
+    const feetX = Math.floor((p.x + p.w / 2) / T);
+    const feetY = Math.floor((p.y + p.h + 3) / T);
     for (const cr of crumbling) {
       if (cr.timer >= 0) {
+        // a root only gives way when nobody is standing on it
+        if (cr.x === feetX && cr.y === feetY) { cr.timer = 0; continue; }
         cr.timer += dt;
-        if (cr.timer > 0.55) { grid[cr.y][cr.x] = '.'; cr.timer = -1; cr.back = 2.5; }
+        // only give way when the bird has moved off the root
+        if (cr.timer > 0.55 && Math.abs(cr.x - feetX) > 1) { grid[cr.y][cr.x] = '.'; cr.timer = -1; cr.back = 2.5; }
       } else if (cr.back > 0) {
         cr.back -= dt;
         if (cr.back <= 0) grid[cr.y][cr.x] = 'c';
@@ -355,6 +360,12 @@
     if (touchingExit) {
       if (bosses.some(b => !b.dead)) { $('msg').textContent = 'the moths guard the exit — stomp them first'; beep(160, .12, 'sawtooth'); return; }
       if (customMode) { winCustom(); return; }
+      if (storyMode) {
+        // the story advances by its own script, not the normal level counter
+        score += 100; $('score').textContent = score;
+        storyNextLevel();
+        return;
+      }
       if (level === LEVELS.length - 1) { win(); return; }
       score += 100; level++;
       award('first-step');
@@ -583,6 +594,7 @@
       return;
     }
     overlay = null;
+    state = 'play';
     loadLevel(storyLevel - 1);
     showStoryText(storyLevel);
     beep(1200, .15, 'triangle');
@@ -1222,6 +1234,16 @@
         $('msg').textContent = 'story mode — chapter ' + (storyChapter + 1) + ' of ' + STORY.length;
         return;
       }
+      if (state === 'play') {
+        // play is already running: in story mode this button means
+        // "restart this story level", never "leave the story"
+        lives = 5; $('lives').textContent = lives;
+        overlay = null; state = 'play';
+        loadLevel(storyLevel - 1);
+        showStoryText(storyLevel);
+        $('msg').textContent = 'story mode — chapter ' + (storyChapter + 1) + ' of ' + STORY.length;
+        return;
+      }
       storyMode = false; hideStoryText(); reset(); return;
     }
     reset();
@@ -1232,7 +1254,7 @@
     $('ghostbtn').textContent = 'ghost: ' + (ghostOn ? 'on' : 'off');
     $('ghostinfo').textContent = ghostOn ? (ghostMsg || 'no ghost run for this level yet — finish it to leave one') : 'ghost hidden';
   };
-  window.__gurtStory = { start: startStory, win: () => { if (storyMode) win(); }, jump: n => { if (storyMode) { storyChapter = storyChapterFor(n); storyLevel = n; loadLevel(n-1); showStoryText(n); } }, level: () => storyLevel, chapter: () => storyChapter, state: () => state };
+  window.__gurtStory = { start: startStory, win: () => { if (storyMode) win(); }, jump: n => { if (storyMode) { storyChapter = storyChapterFor(n); storyLevel = n; overlay = null; state = 'play'; loadLevel(n-1); showStoryText(n); } }, level: () => storyLevel, chapter: () => storyChapter, state: () => state };
   if ($('daily')) $('daily').onclick = () => startDaily();
   $('go').onclick = () => { const v = parseInt($('levels').value, 10); if (!isNaN(v)) goToLevel(v); };
   $('next').onclick = () => { goToLevel((level || 0) + 1); };
