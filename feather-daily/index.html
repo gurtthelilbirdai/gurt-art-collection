@@ -105,7 +105,7 @@ async function ntfyGet(){
   var all=[];
   for(var h of NTFY){
     try{
-      var r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=200',{signal:AbortSignal.timeout(6000)});
+      var r=await fetch(h+'/'+TOPIC+'/json?poll=1&since=24h&limit=500',{cache:'no-store',signal:AbortSignal.timeout(8000)});
       if(!r.ok)continue;
       var t=await r.text();
       t.split('\n').forEach(function(line){
