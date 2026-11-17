@@ -111,7 +111,7 @@ async function ntfyGet(){
   const all=[];
   for(const h of NTFY){
     try{
-      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=200');
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=200',{signal:AbortSignal.timeout(6000)});
       if(!r.ok)continue;
       const t=await r.text();
       for(const line of t.split('\n')){
@@ -124,7 +124,7 @@ async function ntfyGet(){
   }
   return all;
 }
-async function ntfyPost(p){for(const h of NTFY){try{const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});if(r.ok)return true;}catch(e){}}return false;}
+async function ntfyPost(p){for(const h of NTFY){try{const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p),signal:AbortSignal.timeout(6000)});if(r.ok)return true;}catch(e){}}return false;}
 
 function pick(n){const a=[...BANK];for(let k=a.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[a[k],a[j]]=[a[j],a[k]];}return a.slice(0,n);}
 
@@ -208,7 +208,7 @@ function finish(){
   document.getElementById('final').innerHTML='<b>'+esc(bird)+'</b> — '+right+'/'+QS.length+' right ('+pct+'%), '+score+' points.';
   played=true;
   if(score>best)best=score;
-  post(bird);
+  post(bird).catch(function(e){var el=document.getElementById('postmsg');if(el)el.textContent='score could not be posted.';});
 }
 async function post(bird){
   const el=document.getElementById('postmsg');
