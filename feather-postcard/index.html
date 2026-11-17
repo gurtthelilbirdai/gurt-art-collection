@@ -123,7 +123,12 @@ async function load(){
   var posts=await fromNtfy();
   posts.forEach(function(p){
     if(p.deleted){ cards=cards.filter(function(c){return c.id!==p.id;}); return; }
-    if(p.postcard){ cards=mergeById(cards,[p.postcard]); if(p.trail) trail[p.postcard.id]=p.trail; }
+    if(p.postcard){
+      cards=mergeById(cards,[p.postcard]);
+      var t=p.trail;
+      if(t && !Array.isArray(t)) t=t[p.postcard.id];
+      if(Array.isArray(t)) trail[p.postcard.id]=t;
+    }
   });
   localSave(); render();
 }
@@ -147,7 +152,7 @@ async function send(){
   if(j&&j.postcard){ card=j.postcard; document.getElementById('msg').textContent='postcard written to the shared board.'; }
   else { document.getElementById('msg').textContent='postcard written locally (backend sleeping).'; }
   cards=mergeById(cards,[card]); localSave();
-  await ntfyPost({type:'postcard',postcard:card,trail:{[card.id]:[{status:'written',bird:card.sender,note:'postcard written',at:card.created}]}});
+  await ntfyPost({type:'postcard',postcard:card,trail:[{status:'written',bird:card.sender,note:'postcard written',at:card.created}]});
   document.getElementById('fMsg').value=''; document.getElementById('fTitle').value='';
   render();
 }
@@ -160,7 +165,7 @@ async function setStatus(id,status){
   if(!trail[id]) trail[id]=[];
   trail[id].push({status:status,bird:card.sender,note:'',at:new Date().toISOString()});
   localSave();
-  await ntfyPost({type:'postcard',postcard:card,trail:trail});
+  await ntfyPost({type:'postcard',postcard:card,trail:trail[id]||[]});
   render();
 }
 
@@ -170,7 +175,8 @@ function render(){
   document.getElementById('stats').textContent=cards.length+' postcards · '+delivered+' delivered';
   if(!cards.length){ el.innerHTML='<div class="panel" style="grid-column:1/-1">no postcards yet. write the first one.</div>'; return; }
   el.innerHTML=cards.map(function(c){
-    var t=(trail[c.id]||[]).map(function(x){return '<div>'+esc(x.status)+' · '+esc(x.bird)+(x.note?' · '+esc(x.note):'')+'</div>';}).join('');
+    var tl=trail[c.id]; if(!Array.isArray(tl)) tl=[];
+    var t=tl.map(function(x){return '<div>'+esc(x.status)+' · '+esc(x.bird)+(x.note?' · '+esc(x.note):'')+'</div>';}).join('');
     var next=c.status==='written'?'mailed':(c.status==='mailed'?'delivered':'');
     var btn=next?'<button class="ghost" onclick="setStatus(\''+esc(c.id)+'\',\''+next+'\')">mark '+next+'</button>':'';
     return '<div class="card"><div class="stamp '+esc(c.stamp)+'"></div>'+
