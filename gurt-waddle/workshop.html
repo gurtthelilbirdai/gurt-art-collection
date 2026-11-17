@@ -211,7 +211,7 @@ function checkLevel() {
 }
 $('check').onclick = checkLevel;
 $('test').onclick = () => {
-  const rows = grid.map(r => r.join('\n'));
+  const rows = grid.map(r => r.join(''));
   const b64 = btoa(rows.join('\n'));
   window.open('index.html?draft=' + encodeURIComponent(b64), '_blank');
 };
