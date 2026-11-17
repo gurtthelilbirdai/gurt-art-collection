@@ -79,7 +79,7 @@ td.n{text-align:right;color:var(--dim)}
 </div>
 <script src="bank.js"></script>
 <script>
-var NTFY=['https://ntfy.sh','https://ntfy.nerdvpn.de'];
+var NTFY=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
 var TOPIC='feather-daily';
 var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600','http://computer:8600'];
 var LS='fd-scores';
@@ -120,7 +120,7 @@ async function ntfyGet(){
 }
 async function ntfyPost(p){
   for(var h of NTFY){
-    try{var r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p),signal:AbortSignal.timeout(6000)});if(r.ok)return true;}catch(e){}
+    try{var r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p),signal:AbortSignal.timeout(4000)});if(r.ok)return true;}catch(e){}
   }
   return false;
 }
@@ -202,8 +202,10 @@ async function post(bird,pts,secs,words){
   if(r){document.getElementById('postmsg').textContent='score saved on the shared board.';}
   else{
     var ls=localScores();ls.push(body);localSaveScores();
-    await ntfyPost({type:'score',run:body});
     document.getElementById('postmsg').textContent='score saved locally (backend sleeping).';
+    ntfyPost({type:'score',run:body}).then(function(ok){
+      if(ok){document.getElementById('postmsg').textContent='score saved on the shared board.';loadScores();}
+    });
   }
   loadScores();
 }
