@@ -82,7 +82,7 @@
       return '<div class="medal ' + (got?'got':'locked') + '"' + (got?' style="border-color:'+m.color+'"':'') + '>' +
         '<span class="ct">' + (n ? n + ' bird' + (n===1?'':'s') : '—') + '</span>' +
         '<div class="ic">' + (got ? m.icon : '🔒') + '</div>' +
-        '<div class="nm">' + (got ? esc(m.name) : '???') + '</div>' +
+        '<div class="nm">' + esc(m.name) + '</div>' +
         '<div class="hw">' + esc(m.how) + '</div></div>';
     }).join('');
   }
