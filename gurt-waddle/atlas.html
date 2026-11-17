@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>The Waddle Atlas — every room of Gurt's Waddle</title>
+<style>
+  body{margin:0;background:#101827;color:#e8f1ff;font-family:system-ui,sans-serif;padding:14px 14px 40px}
+  h1{font-size:22px;letter-spacing:2px;margin:6px 0 2px}
+  .note{font-size:12px;opacity:.7;max-width:760px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+  input,button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid #3b5876;background:#1b3049;color:#e8f1ff;cursor:pointer}
+  button:hover{background:#26456a}
+  a{color:#9fc3e8}
+  #stats{font-size:13px;color:#ffd23f}
+  .region{margin:16px 0 6px}
+  .region h2{font-size:15px;margin:0 0 6px;letter-spacing:1px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .card{border:1px solid #2b425c;border-radius:10px;background:#152741;padding:8px;cursor:pointer;position:relative}
+  .card:hover{border-color:#6fa8dc;background:#1b3352}
+  .card.locked{opacity:.4;cursor:default}
+  .card.done{border-color:#2f7d4a}
+  .card canvas{width:100%;height:auto;display:block;border-radius:6px;image-rendering:pixelated;background:#0d1726}
+  .card .nm{font-size:12px;margin-top:5px;display:flex;justify-content:space-between}
+  .card .nm b{color:#ffd23f}
+  .card .tag{font-size:10px;opacity:.75}
+</style>
+</head>
+<body>
+<h1>THE WADDLE ATLAS</h1>
+<div class="note">every one of the hundred and twenty rooms, drawn small. click a room to waddle it. locked rooms stay locked until the flock unlocks them.</div>
+<div class="row">
+  <input id="name" maxlength="18" placeholder="your bird name" value="gurt">
+  <button id="load">show my map</button>
+  <span id="stats">loading…</span>
+  <a href="index.html">back to the game</a>
+  <a href="medals.html">medal wall</a>
+  <a href="workshop.html">level workshop</a>
+</div>
+<div id="atlas"></div>
+<script src="levels.js?v=61001"></script>
+<script src="levels81.js?v=81001"></script>
+<script src="levels101.js?v=101001"></script>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const LEVELS = window.LEVELS || [];
+  const REGIONS = [
+    { name: 'the garden', from: 1, to: 20, sky: '#17324a', ground: '#3f7d4a' },
+    { name: 'frozen north', from: 21, to: 40, sky: '#1b3450', ground: '#7fb3d5' },
+    { name: 'lantern woods', from: 41, to: 60, sky: '#2a2440', ground: '#4a7d3f' },
+    { name: 'starfall coast', from: 61, to: 80, sky: '#241d3f', ground: '#6b5aa0' },
+    { name: 'root cellar', from: 81, to: 100, sky: '#241a16', ground: '#7a5236' },
+    { name: 'wind gardens', from: 101, to: 120, sky: '#18384a', ground: '#5aa88a' }
+  ];
+  const COLORS = {
+    '#': '#8b6b4a', '=': '#c8a06a', 'o': '#ffd23f', 'k': '#ffd23f', 'D': '#4a8fd8',
+    'S': '#e05fa0', '^': '#d85f5f', 'w': '#3aa6d8', 'C': '#f1c40f', 'B': '#c86bd8',
+    'e': '#d86b4a', 'M': '#a0a0b8', 'm': '#b05050', 'i': '#bfe9ff', 'f': '#e07f5f',
+    'h': '#b08050', '>': '#9fe8ff', '<': '#9fe8ff', 'U': '#c9f0ff'
+  };
+  function unlockedCount(){
+    const n = parseInt(localStorage.getItem('waddle-progress') || '1', 10);
+    return Math.min(LEVELS.length, Math.max(1, isNaN(n) ? 1 : n));
+  }
+  function regionOf(n){
+    for (const r of REGIONS) if (n >= r.from && n <= r.to) return r;
+    return REGIONS[0];
+  }
+  function drawThumb(canvas, rows, region){
+    const W = rows[0] ? rows[0].length : 25, H = rows.length || 14;
+    const S = 4;
+    canvas.width = W * S; canvas.height = H * S;
+    const g = canvas.getContext('2d');
+    g.fillStyle = region.sky; g.fillRect(0, 0, canvas.width, canvas.height);
+    for (let y = 0; y < H; y++){
+      const row = rows[y] || '';
+      for (let x = 0; x < W; x++){
+        const ch = row[x] || '.';
+        if (ch === '.') continue;
+        let col = COLORS[ch];
+        if (!col) {
+          if (ch === 'P') col = '#5fb3ff';
+          else if (ch === 'E') col = '#8fd6a8';
+          else col = region.ground;
+        }
+        g.fillStyle = col;
+        g.fillRect(x * S, y * S, S, S);
+        if (ch === 'P' || ch === 'E'){
+          g.fillStyle = ch === 'P' ? '#e8f1ff' : '#2f7d4a';
+          g.fillRect(x * S + 1, y * S + 1, S - 2, S - 2);
+        }
+      }
+    }
+  }
+  function render(){
+    const max = unlockedCount();
+    let html = '';
+    for (const r of REGIONS){
+      html += '<div class="region"><h2>' + r.name + ' · levels ' + r.from + '–' + r.to + '</h2><div class="grid">';
+      for (let n = r.from; n <= r.to; n++){
+        const locked = n > max;
+        const done = n < max;
+        const boss = (rows) => (rows || []).some(r => (r || '').includes('B'));
+        const isBoss = boss(LEVELS[n - 1]);
+        html += '<div class="card ' + (locked ? 'locked' : (done ? 'done' : '')) + '" data-lv="' + n + '">' +
+          '<canvas></canvas><div class="nm"><b>' + n + '</b><span class="tag">' +
+          (isBoss ? 'moth' : (locked ? 'locked' : (done ? 'waddled' : 'next'))) + '</span></div></div>';
+      }
+      html += '</div></div>';
+    }
+    $('atlas').innerHTML = html;
+    const cards = $('atlas').querySelectorAll('.card');
+    cards.forEach((card, i) => {
+      const n = parseInt(card.dataset.lv, 10);
+      drawThumb(card.querySelector('canvas'), LEVELS[n - 1], regionOf(n));
+      if (n <= unlockedCount()) card.onclick = () => { location.href = 'index.html?level=' + n; };
+    });
+    $('stats').textContent = LEVELS.length + ' rooms · ' + max + ' unlocked';
+  }
+  $('load').onclick = render;
+  $('name').addEventListener('keydown', e => { if (e.key === 'Enter') render(); });
+  render();
+})();
+</script>
+</body>
+</html>
