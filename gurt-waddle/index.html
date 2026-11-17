@@ -29,11 +29,11 @@
 </head>
 <body>
 <h1>GURT'S WADDLE</h1>
-<div id="hud"><span>level <b id="lvl">1/100</b></span><span>coins <b id="coins">0</b></span><span>keys <b id="keys">0</b></span><span>score <b id="score">0</b></span><span>time <b id="time">0</b>s</span><span>lives <b id="lives">3</b></span><span>moths <b id="moths">0</b></span><span id="pos"></span></div>
+<div id="hud"><span>level <b id="lvl">1/120</b></span><span>coins <b id="coins">0</b></span><span>keys <b id="keys">0</b></span><span>score <b id="score">0</b></span><span>time <b id="time">0</b>s</span><span>lives <b id="lives">3</b></span><span>moths <b id="moths">0</b></span><span id="pos"></span></div>
 <canvas id="c" width="800" height="450"></canvas>
 <div class="row"><button id="trailerbtn">watch the trailer</button><a href="workshop.html" style="color:#9fc3e8">level workshop</a><a href="medals.html" style="color:#9fc3e8">medal wall</a><span id="medalcount" style="color:#ffd23f;font-size:13px"></span></div>
 <video id="trailer" controls preload="none" style="display:none;max-width:96vw;border-radius:12px" src="gurt-waddle-trailer.mp4"></video>
-<p style="margin:10px 0"><a href="waddle-full-run.mp4" target="_blank" style="color:#9fc3e8">watch the full 100-level run</a> &middot; <a href="waddle-story.mp4" target="_blank" style="color:#9fc3e8">watch the story run</a> <span style="color:#8aa; font-size:13px">(one bird, no cheats, all hundred levels)</span></p>
+<p style="margin:10px 0"><a href="waddle-full-run.mp4" target="_blank" style="color:#9fc3e8">watch the full 100-level run</a> &middot; <a href="waddle-story.mp4" target="_blank" style="color:#9fc3e8">watch the story run</a> <span style="color:#8aa; font-size:13px">(one bird, no cheats, all hundred and twenty levels)</span></p>
 <div id="story" style="display:none;max-width:760px;margin:8px auto 0;padding:10px 14px;border:1px solid #3b5876;border-radius:10px;background:#152741">
   <div id="storyline" style="font-size:15px;color:#ffd23f"></div>
   <div id="storygoal" class="note" style="margin-top:4px"></div>
@@ -56,7 +56,7 @@
   <button id="daily">daily waddle</button>
   <button id="storybtn">story mode</button><button id="ghostbtn">ghost: on</button>
 </div>
-<div class="note">move ← → or A/D · jump space / W / ↑ · hold jump for higher · coins, keys and locked doors · springs bounce · levels 21-40 are the frozen north · levels 41-60 are the lantern woods · levels 61-80 are the starfall coast · levels 81-100 are the root cellar · ice is slippery · brown roots crumble when you stand on them</div>
+<div class="note">move ← → or A/D · jump space / W / ↑ · hold jump for higher · coins, keys and locked doors · springs bounce · levels 21-40 are the frozen north · levels 41-60 are the lantern woods · levels 61-80 are the starfall coast · levels 81-100 are the root cellar · levels 101-120 are the wind gardens, where the air pushes you and updrafts lift you · ice is slippery · brown roots crumble when you stand on them</div>
 <div id="map"></div>
 <h3>today's daily waddle</h3>
 <div class="note" style="margin-bottom:6px">same level for every bird, 90 seconds, one shared scoreboard</div>
@@ -71,6 +71,7 @@
 <script src="story.js?v=1101"></script>
 <script src="levels.js?v=61001"></script>
 <script src="levels81.js?v=81001"></script>
+<script src="levels101.js?v=101001"></script>
 <script src="game.js?v=11030"></script>
 </body>
 </html>

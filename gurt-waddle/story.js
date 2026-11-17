@@ -136,5 +136,30 @@ window.STORY = [
       { n: 99, line: 'The root moth wakes up. It is the size of your house.', goal: 'face the root moth' },
       { n: 100, line: 'You are round, and grounded, and you are not running.', goal: 'stomp the root moth' }
     ]
+  },
+  {
+    title: 'the wind gardens',
+    lines: [
+      { n: 101, line: 'The cellar roof opens and the wind takes your hat. You do not have a hat.', goal: 'walk into the first gust' },
+      { n: 102, line: 'The air pushes both ways here. It is not cruel, only busy.', goal: 'cross the crosswind bridge' },
+      { n: 103, line: 'Tall grass leans all in one direction. Something tall is moving in it.', goal: 'push through the grass' },
+      { n: 104, line: 'The wind lifts you a little. You fall. You try again.', goal: 'ride the first updraft' },
+      { n: 105, line: 'A sky-moth circles the updraft column, waiting for the wind to drop.', goal: 'reach the top of the column' },
+      { n: 106, line: 'The clouds here are the colour of old feathers.', goal: 'climb the feather stairs' },
+      { n: 107, line: 'Two gusts meet and make a whirl. Coins orbit inside it.', goal: 'collect the orbiting coins' },
+      { n: 108, line: 'The ground is a moving floor now. Hold on to the wind.', goal: 'ride the shifting ground' },
+      { n: 109, line: 'A bridge of woven air. It holds only if you keep moving.', goal: 'cross without stopping' },
+      { n: 110, line: 'The guardian of the gardens is a bird with no feathers at all.', goal: 'meet the featherless bird' },
+      { n: 111, line: 'It asks how you breathe underground. You answer: badly, but happily.', goal: 'answer the guardian' },
+      { n: 112, line: 'The wind is carrying seeds from the garden below. Up here they fly.', goal: 'catch the flying seeds' },
+      { n: 113, line: 'A long fall. The wind will not save you. It will only slow you.', goal: 'fall safely' },
+      { n: 114, line: 'The updrafts are singing. You did not know wind could sing.', goal: 'sing along' },
+      { n: 115, line: 'A storm rolls across the gardens, sideways.', goal: 'outrun the sideways storm' },
+      { n: 116, line: 'The storm is made of leaves and old letters.', goal: 'find the letter in the leaves' },
+      { n: 117, line: 'The letter says: keep going up. That is all it says.', goal: 'keep going up' },
+      { n: 118, line: 'Above the clouds the wind goes quiet for one whole breath.', goal: 'stand in the quiet' },
+      { n: 119, line: 'The wind moth wakes. It is the wind, folded into a body.', goal: 'face the wind moth' },
+      { n: 120, line: 'You cannot fly. But you can waddle into the wind, and it can carry you.', goal: 'stomp the wind moth' }
+    ]
   }
 ];

@@ -46,7 +46,8 @@
     { from: 21, to: 40,  file: 'music/frozen.mp3' },
     { from: 41, to: 60,  file: 'music/woods.mp3' },
     { from: 61, to: 80,  file: 'music/starfall.mp3' },
-    { from: 81, to: 100, file: 'music/cellar.mp3' }
+    { from: 81, to: 100, file: 'music/cellar.mp3' },
+    { from: 101, to: 120, file: 'music/wind.mp3' }
   ];
   let theme = null, themeName = '';
   function playTheme(n) {
@@ -77,7 +78,7 @@
     for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
       const ch = grid[yy][xx];
       if (ch === 'P') { sx = xx; sy = yy; spawn = { x: xx, y: yy }; }
-      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 || level === 100 ? 11 * T - 70 : yy * T - 18), w: 26, h: (level === 79 ? 58 : (level === 80 || level === 100 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? (level >= 100 ? 3 : 2) : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
+      if (ch === 'B') bosses.push({ x: xx * T + 4, y: yy * T, baseY: yy * T, hoverY: (level === 80 || level === 100 || level === 119 ? 11 * T - 70 : yy * T - 18), w: 26, h: (level === 79 ? 58 : (level === 80 || level === 100 || level === 119 ? 44 : 26)), vx: level >= 41 ? -0.8 : -1.2, vx0: level >= 41 ? -0.8 : -1.2, vy: 0, hp: (level >= 60 && level !== 79) ? (level >= 119 ? 3 : (level >= 100 ? 3 : 2)) : (level >= 41 ? 1 : 2), maxHp: (level >= 60 && level !== 79) ? (level >= 119 ? 3 : (level >= 100 ? 3 : 2)) : (level >= 41 ? 1 : 2), dead: false, stun: 0, t: 0, x0: Math.max(1 * T, xx * T - 2 * T), x1: Math.min(23 * T, xx * T + 2 * T) });
       if (ch === 'C') checkpoint = { x: xx, y: yy };
       if (ch === 'c') crumbling.push({ x: xx, y: yy, timer: -1, back: 0 });
       if (ch === 'e') enemies.push({ kind: 'walker', x: xx * T + 4, y: yy * T + 4, w: 24, h: 24, vx: 1.1, vy: 0, dead: false, t: 0 });
@@ -253,6 +254,16 @@
     if (right) { p.vx += accel; p.face = 1; }
     p.vx = Math.max(-5, Math.min(5, p.vx));
     if (!left && !right) p.vx *= p.onGround ? (onIce ? 0.985 : 0.78) : 0.94;
+
+    // wind gardens: the air itself pushes the bird around
+    for (let ty = Math.floor(p.y / T); ty <= Math.floor((p.y + p.h - 1) / T); ty++) {
+      for (let tx = Math.floor(p.x / T); tx <= Math.floor((p.x + p.w - 1) / T); tx++) {
+        const wc = tileAt(tx, ty);
+        if (wc === '>') { p.vx += 0.16; p.vx = Math.max(-7, Math.min(7, p.vx)); }
+        else if (wc === '<') { p.vx -= 0.16; p.vx = Math.max(-7, Math.min(7, p.vx)); }
+        else if (wc === 'U') { p.vy -= 0.42; p.onGround = false; }
+      }
+    }
 
     const wasGround = p.onGround;
     // a bird riding a moving platform stays glued to it
@@ -544,7 +555,7 @@
     const ci = storyChapterFor(n);
     const c = STORY[ci];
     const chap = $('storychap');
-    if (chap) chap.textContent = c ? ('chapter ' + (ci + 1) + ' of ' + STORY.length + ' \u00b7 ' + c.title + ' \u00b7 level ' + n + ' of 100') : ('level ' + n);
+    if (chap) chap.textContent = c ? ('chapter ' + (ci + 1) + ' of ' + STORY.length + ' \u00b7 ' + c.title + ' \u00b7 level ' + n + ' of 120') : ('level ' + n);
   }
   function hideStoryText() { const b = $('story'); if (b) b.style.display = 'none'; }
   function startStory() {
@@ -640,7 +651,8 @@
     const icy = level >= 20 && level < 40;
     const woods = level >= 40 && level < 60;
     const coast = level >= 60 && level < 80;
-    const cellar = level >= 80;
+    const cellar = level >= 80 && level < 100;
+    const gardens = level >= 100;
     const g = x.createLinearGradient(0, 0, 0, c.height);
     if (icy) {
       g.addColorStop(0, '#2b4f74'); g.addColorStop(0.55, '#3d6f99'); g.addColorStop(1, '#dcefff');
@@ -743,7 +755,8 @@
         const ax = i * 220 - 30;
         x.beginPath(); x.moveTo(ax, 450); x.lineTo(ax, 250); x.arc(ax + 55, 250, 55, Math.PI, 0); x.lineTo(ax + 110, 450); x.fill();
       }
-    } else if (coast) { x.fillStyle = '#c9b083'; x.fillRect(px, py, T, T); x.fillStyle = '#e3d3ab'; x.fillRect(px, py, T, 4); }
+    } else if (gardens) { x.fillStyle = '#4e7a3a'; x.fillRect(px, py, T, T); x.fillStyle = '#6ea14d'; x.fillRect(px, py, T, 4); }
+        else if (coast) { x.fillStyle = '#c9b083'; x.fillRect(px, py, T, T); x.fillStyle = '#e3d3ab'; x.fillRect(px, py, T, 4); }
         else if (woods) { x.fillStyle = '#4a331d'; x.fillRect(px, py, T, T); x.fillStyle = '#5f4327'; x.fillRect(px, py, T, 4); }
         else if (icy) { x.fillStyle = '#d7eaf7'; x.fillRect(px, py, T, T); x.fillStyle = '#ffffff'; x.fillRect(px, py, T, 5); x.fillStyle = '#9fc6de'; x.fillRect(px, py + T - 5, T, 5); }
         else { x.fillStyle = '#3b5876'; x.fillRect(px, py, T, T); x.fillStyle = '#4d7398'; x.fillRect(px, py, T, 4); }
@@ -762,6 +775,27 @@
       else if (ch === 'S') { x.fillStyle = '#45c26a'; x.fillRect(px + 6, py + 12, 20, 18); x.fillStyle = '#8ef0a8'; x.fillRect(px + 10, py + 6, 12, 8); }
       else if (ch === '^') { x.fillStyle = '#e05a5a'; x.beginPath(); x.moveTo(px + 4, py + 30); x.lineTo(px + 16, py + 6); x.lineTo(px + 28, py + 30); x.fill(); }
       else if (ch === 'i') { x.fillStyle = '#bfe9ff'; x.fillRect(px, py, T, T); x.fillStyle = '#7fc9ef'; x.fillRect(px, py + T - 6, T, 6); x.fillStyle = '#ffffffaa'; x.fillRect(px + 5, py + 6, 14, 3); }
+      else if (ch === '>') {
+        x.strokeStyle = '#bff3ffaa'; x.lineWidth = 2;
+        for (let k = 0; k < 3; k++) {
+          const off = (Date.now() / 18 + k * 10 + xx * 7) % 32;
+          x.beginPath(); x.moveTo(px - off + 8, py + 8 + k * 8); x.lineTo(px - off + 24, py + 8 + k * 8); x.stroke();
+        }
+      }
+      else if (ch === '<') {
+        x.strokeStyle = '#bff3ffaa'; x.lineWidth = 2;
+        for (let k = 0; k < 3; k++) {
+          const off = (Date.now() / 18 + k * 10 + xx * 7) % 32;
+          x.beginPath(); x.moveTo(px + off + 24, py + 8 + k * 8); x.lineTo(px + off + 8, py + 8 + k * 8); x.stroke();
+        }
+      }
+      else if (ch === 'U') {
+        x.strokeStyle = '#e8fff0aa'; x.lineWidth = 2;
+        for (let k = 0; k < 3; k++) {
+          const off = (Date.now() / 14 + k * 11 + yy * 5) % 32;
+          x.beginPath(); x.moveTo(px + 8 + k * 8, py + off + 26); x.lineTo(px + 8 + k * 8, py + off + 4); x.stroke();
+        }
+      }
       else if (ch === 'w') { x.fillStyle = coast ? '#2a5f9caa' : '#3aa6d8aa'; x.fillRect(px, py, T, T); x.fillStyle = '#8fd8ff'; x.fillRect(px + 4, py + 8 + Math.sin(Date.now() / 300 + xx) * 2, 12, 2); }
       else if (ch === 'P') { x.fillStyle = '#8ef0a8'; x.fillRect(px + 10, py + 10, 12, 20); }
       else if (ch === 'C') { x.fillStyle = '#45c26a'; x.fillRect(px + 14, py + 4, 4, 26); x.fillStyle = '#8ef0a8'; x.beginPath(); x.moveTo(px + 18, py + 4); x.lineTo(px + 30, py + 10); x.lineTo(px + 18, py + 16); x.fill(); }
@@ -1190,7 +1224,8 @@
     { name: 'frozen north', from: 21, to: 40 },
     { name: 'lantern woods', from: 41, to: 60 },
     { name: 'starfall coast', from: 61, to: 80 },
-    { name: 'root cellar', from: 81, to: 100 }
+    { name: 'root cellar', from: 81, to: 100 },
+    { name: 'wind gardens', from: 101, to: 120 }
   ];
   function buildMap() {
     const box = $('map'); if (!box) return;
