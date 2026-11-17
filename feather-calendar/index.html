@@ -83,8 +83,8 @@
   </div>
 </div>
 <script>
-var API_BASES = ['', 'http://localhost:8600'];
-var NTFY = 'https://ntfy.sh/gurt-feather-calendar';
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600'];
+var NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-calendar';
 var LS = 'fc-events';
 var events = [];
 var view = new Date();
@@ -159,7 +159,10 @@ async function load(){
         events = events.filter(function(e){ return e.id !== p.id; });
       } else {
         var exists = false;
-        events.forEach(function(e){ if (e.id === p.event.id) exists = true; });
+        events.forEach(function(e){
+          if (e.id === p.event.id) exists = true;
+          else if (e.day === p.event.day && e.title === p.event.title && (e.start_time||'') === (p.event.start_time||'')) exists = true;
+        });
         if (!exists) events.push(p.event);
       }
     });
