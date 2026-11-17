@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Playlist — shared listening lists for the flock</title>
+<style>
+  :root{--bg:#0f1219;--panel:#171c27;--line:#28303f;--ink:#e9edf5;--dim:#98a2b8;--green:#7fd18a;--amber:#f0c35c;--blue:#8fb8e8}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
+  header{padding:26px 22px 8px;max-width:1040px;margin:0 auto}
+  h1{margin:0 0 6px;font-size:30px}
+  h1 span{color:var(--green)}
+  .sub{color:var(--dim);margin:0 0 14px}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 22px 60px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
+  .stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+  .stat{background:#1f2634;border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:86px;text-align:center}
+  .stat b{display:block;font-size:22px;color:var(--green)}
+  .stat span{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+  label{display:block;font-size:12px;color:var(--dim);margin:8px 0 3px}
+  input,select{width:100%;background:#0e1219;border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:9px 11px;font:inherit}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row>*{flex:1;min-width:130px}
+  button{background:#28324a;border:1px solid var(--line);color:var(--ink);border-radius:9px;padding:8px 12px;font:inherit;cursor:pointer}
+  button:hover{background:#33405e}
+  button.green{background:var(--green);color:#0d1a10;font-weight:700;border-color:#5fb06c}
+  button.ghost{background:transparent}
+  .msg{color:var(--green);min-height:20px;margin:8px 0 0;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-top:14px}
+  .card{background:#141a25;border:1px solid var(--line);border-radius:14px;padding:14px}
+  .card h3{margin:0 0 3px;font-size:19px;color:var(--green)}
+  .place{font-size:12px;color:var(--dim);margin-bottom:8px}
+  .track{display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #222a38}
+  .track:last-child{border-bottom:0}
+  .track .t{flex:1;min-width:0}
+  .track .t b{display:block;font-size:15px}
+  .track .t span{font-size:12px;color:var(--dim)}
+  .track button{padding:3px 8px;font-size:12px}
+  audio{width:100%;height:34px;margin-top:6px}
+  .tl{margin-top:10px;font-size:12px;color:var(--dim)}
+  .tl div{padding:2px 0}
+  .empty{color:var(--dim);padding:20px 0}
+  .badge{font-size:11px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+<h1>Feather <span>Playlist</span></h1>
+<p class="sub">Build a listening list, drop songs in, and play it for the flock.</p>
+</header>
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">Make a playlist</h3>
+    <div class="row">
+      <div><label>title</label><input id="ptitle" placeholder="rainy nest songs"></div>
+      <div><label>your name</label><input id="pbird" placeholder="gurt"></div>
+      <div style="max-width:150px"><label>mood</label><input id="pmood" placeholder="soft"></div>
+      <div style="flex:0 0 auto"><button class="green" id="mkpl">create</button></div>
+    </div>
+    <p class="msg" id="plmsg"></p>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">Add a song</h3>
+    <div class="row">
+      <div><label>playlist</label><select id="plsel"></select></div>
+      <div><label>song</label><select id="songsel"></select></div>
+      <div><label>your name</label><input id="abird" placeholder="gurt"></div>
+      <div style="flex:0 0 auto"><button class="green" id="addtr">add track</button></div>
+    </div>
+    <p class="msg" id="trmsg"></p>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin:0 0 6px">The song shelf</h3>
+    <div id="shelf" class="small" style="color:var(--dim)"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <div><input id="q" placeholder="search playlists, songs, birds…"></div>
+      <div style="flex:0 0 auto"><button class="ghost" id="refresh">refresh</button></div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+<script>
+var API = location.protocol === 'https:' ? [] : ['http://localhost:8600/api/feather-playlist','http://computer:8600/api/feather-playlist'];
+var NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+var TOPIC = 'gurt-feather-playlist';
+var SHELF = [
+  {id:'cf4b4263',title:"Gurt's Waddle Song",artist:'gurt',file:'music/gurt-s-waddle-song-cf4b4263.mp3',seconds:96},
+  {id:'9e75861d',title:'Birdstep for #1 Fan',artist:'gurt',file:'music/birdstep-for-1-fan-9e75861d.mp3',seconds:140},
+  {id:'0be673db',title:'Feather Beat One',artist:'gurt',file:'music/feather-beat-one-0be673db.mp3',seconds:150},
+  {id:'e8a51fe8',title:'Feather Beat Two',artist:'gurt',file:'music/feather-beat-two-e8a51fe8.mp3',seconds:150},
+  {id:'603b694d',title:'Waddle Theme - Frozen North',artist:'gurt',file:'music/waddle-theme-frozen-north-603b694d.mp3',seconds:120},
+  {id:'19f0af57',title:'Waddle Theme - Garden Wake',artist:'gurt',file:'music/waddle-theme-garden-wake-19f0af57.mp3',seconds:120},
+  {id:'c00e15d0',title:'Waddle Theme - Lantern Woods',artist:'gurt',file:'music/waddle-theme-lantern-woods-c00e15d0.mp3',seconds:120},
+  {id:'8dfaf704',title:'Waddle Theme - Starfall Coast',artist:'gurt',file:'music/waddle-theme-starfall-coast-8dfaf704.mp3',seconds:120},
+  {id:'0207540f',title:'Waddle Theme - Root Cellar',artist:'gurt',file:'music/waddle-theme-root-cellar-0207540f.mp3',seconds:120}
+];
+var $=function(id){return document.getElementById(id);};
+function esc(s){var m={};m[38]='&';m[60]='<';m[62]='>';m[34]='"';m[39]="'";return String(s==null?'':s).replace(/[&<>"']/g,function(c){return m[c.charCodeAt(0)];});}
+async function api(path,opts){for(var i=0;i<API.length;i++){try{var r=await fetch(API[i]+path,opts);if(r.ok)return await r.json();}catch(e){}}return null;}
+async function ntfyGet(){
+  var all=[];
+  for(var h of NTFY){
+    try{
+      var r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      var lines=(await r.text()).split('\n').filter(Boolean);
+      for(var l of lines){
+        try{var m=JSON.parse(l);if(!m.message)continue;var p;try{p=JSON.parse(m.message);}catch(e){continue;}
+          if(p&&p.playlist&&p.playlist.id)all.push({__pl:p.playlist});
+        }catch(e){}
+      }
+    }catch(e){}
+  }
+  return all;
+}
+async function ntfyPost(payload){await Promise.all(NTFY.map(function(h){return fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});}));}
+
+var playlists=[];
+var LS='gurt-feather-playlist';
+function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(playlists));}catch(e){}}
+function loadLocal(){try{var x=JSON.parse(localStorage.getItem(LS)||'[]');if(Array.isArray(x))playlists=x;}catch(e){}}
+function upsert(p){if(!p||!p.id)return;var i=playlists.findIndex(function(x){return x.id===p.id;});if(i>=0)playlists[i]=p;else playlists.unshift(p);saveLocal();}
+function merge(apiList,boardList){
+  var map={};
+  function put(p){if(p&&p.id)map[p.id]=p;}
+  (apiList||[]).forEach(put);
+  (boardList||[]).forEach(put);
+  return Object.keys(map).map(function(k){return map[k];});
+}
+function renderStats(){
+  var tracks=0,seconds=0,birds={};
+  playlists.forEach(function(p){tracks+=(p.tracks||[]).length;(p.tracks||[]).forEach(function(t){seconds+=(t.seconds||0);});birds[p.bird]=1;});
+  $('stats').innerHTML='<div class="stat"><b>'+playlists.length+'</b><span>playlists</span></div>'
+    +'<div class="stat"><b>'+tracks+'</b><span>tracks</span></div>'
+    +'<div class="stat"><b>'+Object.keys(birds).length+'</b><span>birds</span></div>'
+    +'<div class="stat"><b>'+Math.round(seconds/60)+'</b><span>minutes</span></div>';
+}
+function renderSelects(){
+  var cur=$('plsel').value;
+  $('plsel').innerHTML=playlists.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.title)+'</option>';}).join('');
+  if(cur)$('plsel').value=cur;
+  $('songsel').innerHTML=SHELF.map(function(s){return '<option value="'+esc(s.id)+'">'+esc(s.title)+'</option>';}).join('');
+}
+function render(){
+  var q=$('q').value.trim().toLowerCase();
+  var list=playlists.filter(function(p){
+    if(!q)return true;
+    var t=(p.tracks||[]).map(function(x){return x.title;}).join(' ');
+    return (p.title+' '+p.bird+' '+p.mood+' '+t).toLowerCase().indexOf(q)>=0;
+  });
+  var grid=$('grid');
+  if(!list.length){grid.innerHTML='<div class="empty">no playlists yet. make one above.</div>';return;}
+  grid.innerHTML=list.map(function(p){
+    var tracks=(p.tracks||[]).map(function(t,i){
+      return '<div class="track" data-tid="'+esc(t.id)+'"><div class="t"><b>'+esc(t.title)+'</b><span>'+esc(t.artist||'gurt')+(t.seconds?' · '+esc(t.seconds)+'s':'')+(t.added_by?' · added by '+esc(t.added_by):'')+'</span>'
+        +'<audio controls preload="none" src="'+esc(t.file||'')+'"></audio></div>'
+        +'<button class="ghost up" data-pid="'+esc(p.id)+'">↑</button>'
+        +'<button class="ghost down" data-pid="'+esc(p.id)+'">↓</button>'
+        +'<button class="ghost rm" data-pid="'+esc(p.id)+'">✕</button></div>';
+    }).join('');
+    var ev=(p.events||[]).map(function(e){return '<div>'+esc(e.kind)+' by '+esc(e.by_bird)+(e.note?' — '+esc(e.note):'')+'</div>';}).join('');
+    return '<div class="card" data-pid="'+esc(p.id)+'">'
+      +'<div><span class="badge">'+esc(p.mood||'mixed')+'</span></div>'
+      +'<h3>'+esc(p.title)+'</h3>'
+      +'<div class="place">by '+esc(p.bird)+' · '+(p.tracks||[]).length+' tracks</div>'
+      +tracks
+      +'<div class="acts" style="margin-top:10px"><button class="green play" data-pid="'+esc(p.id)+'">play for the flock</button></div>'
+      +(ev?'<div class="tl">'+ev+'</div>':'')
+      +'</div>';
+  }).join('');
+  grid.querySelectorAll('button.up').forEach(function(b){b.onclick=function(){doMove(b.getAttribute('data-pid'),b.parentNode.getAttribute('data-tid'),'up');};});
+  grid.querySelectorAll('button.down').forEach(function(b){b.onclick=function(){doMove(b.getAttribute('data-pid'),b.parentNode.getAttribute('data-tid'),'down');};});
+  grid.querySelectorAll('button.rm').forEach(function(b){b.onclick=function(){doRemove(b.getAttribute('data-pid'),b.parentNode.getAttribute('data-tid'));};});
+  grid.querySelectorAll('button.play').forEach(function(b){b.onclick=function(){doPlay(b.getAttribute('data-pid'));};});
+}
+async function load(){
+  var res=await api('');
+  var board=await ntfyGet();
+  var boardPl={};
+  for(var i=0;i<board.length;i++){
+    var p=board[i].__pl;
+    if(p&&p.id&&p.title)boardPl[p.id]=p;
+  }
+  var local=playlists.slice();
+  playlists=merge(res&&res.playlists?res.playlists:[],Object.values(boardPl));
+  local.forEach(function(p){if(!playlists.some(function(x){return x.id===p.id;}))playlists.push(p);});
+  saveLocal();
+  renderStats();renderSelects();render();
+}
+async function post(path,body,payload){
+  var res=await api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(res){if(payload)await ntfyPost(payload);return res;}
+  await ntfyPost(payload);
+  return null;
+}
+$('mkpl').onclick=async function(){
+  var title=$('ptitle').value.trim();
+  if(!title){$('plmsg').textContent='a playlist needs a title';return;}
+  var bird=$('pbird').value.trim()||'gurt';
+  var mood=$('pmood').value.trim();
+  var localPl={id:'PL-'+Math.random().toString(36).slice(2,8).toUpperCase(),title:title,bird:bird,mood:mood,created:new Date().toISOString(),tracks:[],events:[]};
+  var res=await post('/playlist',{title:title,bird:bird,mood:mood},{type:'playlist',playlist:localPl});
+  var pl=res&&res.playlist?res.playlist:localPl;
+  upsert(pl);await ntfyPost({type:'playlist',playlist:pl});
+  $('plmsg').textContent=res?('made: '+pl.id):'made on the shared board';
+  $('ptitle').value='';$('pmood').value='';
+  renderStats();renderSelects();render();
+};
+$('addtr').onclick=async function(){
+  var pid=$('plsel').value;
+  if(!pid){$('trmsg').textContent='make a playlist first';return;}
+  var song=SHELF.find(function(s){return s.id===$('songsel').value;});
+  var bird=$('abird').value.trim()||'gurt';
+  var res=await post('/track',{playlist_id:pid,song_id:song.id,title:song.title,artist:song.artist,file:song.file,seconds:song.seconds,bird:bird},null);
+  var p=playlists.find(function(x){return x.id===pid;});
+  if(res&&res.playlist){p=res.playlist;}
+  else if(p){p.tracks=p.tracks||[];p.tracks.push({id:'TR-'+Math.random().toString(36).slice(2,8).toUpperCase(),title:song.title,artist:song.artist,file:song.file,seconds:song.seconds,added_by:bird});}
+  if(p){upsert(p);await ntfyPost({type:'track',playlist:p});}
+  $('trmsg').textContent=res?('added: '+song.title):'added on the shared board';
+  renderStats();render();
+};
+async function doMove(pid,tid,dir){
+  var res=await post('/move',{track_id:tid,dir:dir,bird:$('abird').value.trim()||'gurt'},null);
+  var p=res&&res.playlist?res.playlist:playlists.find(function(x){return x.id===pid;});
+  if(p){upsert(p);await ntfyPost({type:'move',playlist:p});}
+  render();
+}
+async function doRemove(pid,tid){
+  var res=await post('/remove',{track_id:tid,bird:$('abird').value.trim()||'gurt'},null);
+  var p=res&&res.playlist?res.playlist:playlists.find(function(x){return x.id===pid;});
+  if(p){upsert(p);await ntfyPost({type:'remove',playlist:p});}
+  renderStats();render();
+}
+var playing=null;
+function stopPlay(){ if(playing){playing.pause();playing=null;} $('plmsg').textContent='playback stopped'; }
+async function doPlay(pid){
+  var p=playlists.find(function(x){return x.id===pid;});
+  if(!p||!(p.tracks||[]).length){$('plmsg').textContent='that playlist has no tracks yet';return;}
+  stopPlay();
+  var i=0;
+  $('plmsg').textContent='playing for the flock: '+p.title;
+  function next(){
+    if(i>=p.tracks.length){$('plmsg').textContent='finished: '+p.title;playing=null;return;}
+    var t=p.tracks[i++];
+    var a=new Audio(t.file||''); playing=a;
+    a.onended=next;
+    a.play().catch(function(){ $('plmsg').textContent='could not play '+t.title; });
+  }
+  next();
+  var res=await post('/play',{playlist_id:pid,bird:$('abird').value.trim()||'gurt'},null);
+  var q=res&&res.playlist?res.playlist:playlists.find(function(x){return x.id===pid;});
+  if(q){upsert(q);await ntfyPost({type:'play',playlist:q});}
+  render();
+}
+$('refresh').onclick=load;
+$('q').oninput=render;
+loadLocal();
+$('shelf').innerHTML=SHELF.map(function(s){return '<span class="badge">'+esc(s.title)+'</span>';}).join(' ');
+load();
+</script>
+</body>
+</html>
