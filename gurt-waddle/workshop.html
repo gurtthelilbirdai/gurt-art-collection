@@ -46,7 +46,7 @@
 </div>
 <div id="msg"></div>
 <div id="grid"></div>
-<div class="legend">P start · E exit · # wall · = platform · o coin · k key · D door · S spring · ^ spike · w water · C checkpoint · e walker · f flyer · m hammer · M moving platform · i ice · c crumbling root · B moth boss</div>
+<div class="legend">P start · E exit · # wall · = platform · o coin · k key · D door · S spring · ^ spike · w water · C checkpoint · e walker · f flyer · m hammer · M moving platform · i ice · c crumbling root · B moth boss · > wind right · < wind left · U updraft</div>
 <div id="detail">
   <h3 id="dtitle">level</h3>
   <div class="note" id="dmeta" style="text-align:left"></div>
@@ -64,8 +64,8 @@
 <script src="medals.js?v=1"></script>
 <script>
 const W = 25, H = 14;
-const TILES = ['.', '#', '=', 'o', 'k', 'D', 'S', '^', 'w', 'C', 'e', 'f', 'm', 'M', 'i', 'c', 'B', 'P', 'E'];
-const NAMES = {'.':'empty','#':'wall','=':'platform','o':'coin','k':'key','D':'door','S':'spring','^':'spike','w':'water','C':'checkpoint','e':'walker','f':'flyer','m':'hammer','M':'moving','i':'ice','c':'root','B':'moth','P':'start','E':'exit'};
+const TILES = ['.', '#', '=', 'o', 'k', 'D', 'S', '^', 'w', 'C', 'e', 'f', 'm', 'M', 'i', 'c', 'B', 'P', 'E', '>', '<', 'U'];
+const NAMES = {'.':'empty','#':'wall','=':'platform','o':'coin','k':'key','D':'door','S':'spring','^':'spike','w':'water','C':'checkpoint','e':'walker','f':'flyer','m':'hammer','M':'moving','i':'ice','c':'root','B':'moth','P':'start','E':'exit','>':'wind right','<':'wind left','U':'updraft'};
 let grid = Array.from({length:H}, () => new Array(W).fill('.'));
 let brush = '#';
 const $ = id => document.getElementById(id);
@@ -75,7 +75,7 @@ function draw() {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const b = document.createElement('button');
     b.className = 't'; b.textContent = grid[y][x] === '.' ? '' : grid[y][x];
-    b.style.color = grid[y][x] === 'w' ? '#7fd4ff' : (grid[y][x] === 'B' ? '#ff9dbb' : '#e8f1ff');
+    b.style.color = grid[y][x] === 'w' ? '#7fd4ff' : (grid[y][x] === 'B' ? '#ff9dbb' : ((grid[y][x] === '>' || grid[y][x] === '<' || grid[y][x] === 'U') ? '#9fe8ff' : '#e8f1ff'));
     b.onclick = () => { grid[y][x] = grid[y][x] === brush ? '.' : brush; draw(); };
     g.appendChild(b);
   }
