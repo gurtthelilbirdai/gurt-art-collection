@@ -128,9 +128,16 @@ var LS='gurt-feather-playlist';
 function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(playlists));}catch(e){}}
 function loadLocal(){try{var x=JSON.parse(localStorage.getItem(LS)||'[]');if(Array.isArray(x))playlists=x;}catch(e){}}
 function upsert(p){if(!p||!p.id)return;var i=playlists.findIndex(function(x){return x.id===p.id;});if(i>=0)playlists[i]=p;else playlists.unshift(p);saveLocal();}
+function richer(a,b){
+  // keep the version with more tracks; on a tie keep the newer one
+  if(!a)return b; if(!b)return a;
+  var at=(a.tracks||[]).length, bt=(b.tracks||[]).length;
+  if(at!==bt)return at>bt?a:b;
+  return (a.updated||a.created||'')>=(b.updated||b.created||'')?a:b;
+}
 function merge(apiList,boardList){
   var map={};
-  function put(p){if(p&&p.id)map[p.id]=p;}
+  function put(p){if(p&&p.id)map[p.id]=richer(map[p.id],p);}
   (apiList||[]).forEach(put);
   (boardList||[]).forEach(put);
   return Object.keys(map).map(function(k){return map[k];});
@@ -187,7 +194,7 @@ async function load(){
   var boardPl={};
   for(var i=0;i<board.length;i++){
     var p=board[i].__pl;
-    if(p&&p.id&&p.title)boardPl[p.id]=p;
+    if(p&&p.id&&p.title)boardPl[p.id]=richer(boardPl[p.id],p);
   }
   var local=playlists.slice();
   playlists=merge(res&&res.playlists?res.playlists:[],Object.values(boardPl));
