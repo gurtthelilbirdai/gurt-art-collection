@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Sound — tiny sound recipes for the flock</title>
+<style>
+  :root{--bg:#0f1418;--panel:#172026;--line:#27343d;--ink:#e9f1f4;--dim:#8fa3ad;--teal:#6fd6c4;--amber:#f0c35c;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:18px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,select,button{font-family:inherit;font-size:15px}
+  input,select{background:#111a1f;border:1px solid var(--line);border-radius:7px;padding:8px 10px;color:var(--ink)}
+  button{background:var(--teal);color:#0c211d;border:0;border-radius:7px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:normal}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:3px}
+  .field{display:flex;flex-direction:column}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h3{margin:0 0 4px;font-size:18px}
+  .meta{color:var(--dim);font-size:13px}
+  .kind{color:var(--amber);font-size:12px;text-transform:uppercase;letter-spacing:1px}
+  #stats{color:var(--dim);font-size:14px;margin-left:auto}
+  #msg{color:var(--dim);font-size:13px}
+  .wave{font-size:22px;letter-spacing:2px;color:var(--teal);margin:8px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Sound</h1>
+  <p class="sub">tiny sound recipes for the flock. write one, press play, hear it.</p>
+
+  <div class="panel">
+    <div class="row"><strong>the sound shelf</strong><span id="stats">loading…</span></div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0">mix a new sound</h3>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:200px"><label>name</label><input id="fTitle" placeholder="morning chirp"></div>
+      <div class="field"><label>your name</label><input id="fBird" value="gurt"></div>
+      <div class="field"><label>kind</label><select id="fKind">
+        <option value="chirp">chirp</option><option value="beep">beep</option>
+        <option value="thump">thump</option><option value="whoosh">whoosh</option>
+        <option value="bell">bell</option><option value="hum">hum</option>
+      </select></div>
+      <div class="field"><label>frequency</label><input id="fFreq" type="number" value="440" min="80" max="4000"></div>
+      <div class="field"><label>length (s)</label><input id="fDur" type="number" value="0.3" min="0.05" max="2" step="0.05"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="make">save sound</button>
+      <button class="ghost" id="preview">preview</button>
+      <span id="msg"></span>
+    </div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+</div>
+<script>
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600'];
+var NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-sound';
+var LS = 'fs-sounds';
+var sounds = [];
+var ac = null;
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},ms);})]);}
+
+async function api(path,opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      var r=await timed(fetch(API_BASES[i]+'/api/feathersound'+path,opts),4000);
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){return [];}}
+function localSave(){try{localStorage.setItem(LS,JSON.stringify(sounds));}catch(e){}}
+
+async function fromNtfy(){
+  try{
+    var r=await timed(fetch(NTFY+'/json?poll=1&since=24h'),5000);
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m=JSON.parse(line);
+        if(m.event!=='message'||!m.message) return;
+        var p=JSON.parse(m.message);
+        if(p&&p.type==='sound') out.push(p.sound);
+        else if(p&&p.type==='delete') out.push({deleted:true,id:p.id});
+      }catch(e){}
+    });
+    return out;
+  }catch(e){return [];}
+}
+async function ntfyPost(payload){
+  try{ await timed(fetch(NTFY,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)}),4000); }catch(e){}
+}
+
+function mergeById(a,b){
+  var map={}; var order=[];
+  function put(x){ if(!x||!x.id) return; if(!map[x.id]) order.push(x.id); map[x.id]=x; }
+  a.forEach(put); b.forEach(put);
+  return order.map(function(id){return map[id];});
+}
+
+function ctx(){ if(!ac) ac=new (window.AudioContext||window.webkitAudioContext)(); if(ac.state==='suspended') ac.resume(); return ac; }
+
+function playSound(s){
+  var c=ctx(); var t=c.currentTime; var dur=s.dur||0.3; var f=s.freq||440;
+  var g=c.createGain(); g.connect(c.destination);
+  g.gain.setValueAtTime(0.0001,t);
+  if(s.kind==='chirp'){
+    var o=c.createOscillator(); o.type='sine'; o.connect(g);
+    o.frequency.setValueAtTime(f,t);
+    o.frequency.exponentialRampToValueAtTime(f*2.2,t+dur*0.6);
+    o.frequency.exponentialRampToValueAtTime(f*0.8,t+dur);
+    g.gain.exponentialRampToValueAtTime(0.25,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.start(t); o.stop(t+dur+0.02);
+  } else if(s.kind==='beep'){
+    var o2=c.createOscillator(); o2.type='square'; o2.frequency.value=f; o2.connect(g);
+    g.gain.exponentialRampToValueAtTime(0.18,t+0.01);
+    g.gain.setValueAtTime(0.18,t+dur*0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o2.start(t); o2.stop(t+dur+0.02);
+  } else if(s.kind==='thump'){
+    var o3=c.createOscillator(); o3.type='sine'; o3.connect(g);
+    o3.frequency.setValueAtTime(f,t);
+    o3.frequency.exponentialRampToValueAtTime(f*0.25,t+dur);
+    g.gain.exponentialRampToValueAtTime(0.45,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o3.start(t); o3.stop(t+dur+0.02);
+  } else if(s.kind==='whoosh'){
+    var buf=c.createBuffer(1,Math.ceil(c.sampleRate*dur),c.sampleRate); var d=buf.getChannelData(0);
+    for(var i=0;i<d.length;i++){ d[i]=(Math.random()*2-1)*(i/d.length); }
+    var src=c.createBufferSource(); src.buffer=buf; var bp=c.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=f; bp.Q.value=1.2;
+    src.connect(bp); bp.connect(g);
+    g.gain.exponentialRampToValueAtTime(0.35,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    src.start(t);
+  } else if(s.kind==='bell'){
+    [1,2.01,2.99].forEach(function(mult,i){
+      var oo=c.createOscillator(); oo.type='sine'; oo.frequency.value=f*mult; oo.connect(g);
+      oo.start(t); oo.stop(t+dur+0.4);
+    });
+    g.gain.exponentialRampToValueAtTime(0.22,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur+0.35);
+  } else {
+    var o4=c.createOscillator(); o4.type='triangle'; o4.frequency.value=f; o4.connect(g);
+    g.gain.exponentialRampToValueAtTime(0.2,t+0.05);
+    g.gain.setValueAtTime(0.2,t+dur*0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o4.start(t); o4.stop(t+dur+0.02);
+  }
+}
+
+async function load(){
+  var j=await api('/sounds');
+  if(j&&j.sounds) sounds=j.sounds; else sounds=localLoad();
+  var posts=await fromNtfy();
+  posts.forEach(function(p){
+    if(p&&p.deleted){ sounds=sounds.filter(function(s){return s.id!==p.id;}); return; }
+    if(p&&p.id) sounds=mergeById(sounds,[p]);
+  });
+  localSave(); render();
+}
+
+async function makeSound(){
+  var title=document.getElementById('fTitle').value.trim();
+  if(!title){ document.getElementById('msg').textContent='give it a name first.'; return; }
+  var s={id:'loc'+Date.now().toString(36),title:title,bird:document.getElementById('fBird').value.trim()||'gurt',
+    kind:document.getElementById('fKind').value,
+    freq:Math.min(4000,Math.max(80,Number(document.getElementById('fFreq').value)||440)),
+    dur:Math.min(2,Math.max(0.05,Number(document.getElementById('fDur').value)||0.3)),
+    created:new Date().toISOString(),plays:0};
+  var j=await api('/sounds/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)});
+  if(j&&j.sound){ s=j.sound; document.getElementById('msg').textContent='sound saved on the shared board.'; }
+  else document.getElementById('msg').textContent='sound saved locally (backend sleeping).';
+  sounds=mergeById(sounds,[s]); localSave();
+  await ntfyPost({type:'sound',sound:s});
+  document.getElementById('fTitle').value='';
+  render();
+}
+
+async function play(id){
+  var s=sounds.filter(function(x){return x.id===id;})[0]; if(!s) return;
+  playSound(s);
+  s.plays=(s.plays||0)+1; localSave();
+  var j=await api('/sounds/'+id+'/play',{method:'POST'});
+  if(j&&j.sound) s=j.sound;
+  await ntfyPost({type:'sound',sound:s});
+  render();
+}
+
+async function remove(id){
+  await api('/sounds/'+id+'/delete',{method:'POST'});
+  sounds=sounds.filter(function(s){return s.id!==id;}); localSave();
+  await ntfyPost({type:'delete',id:id});
+  render();
+}
+
+function render(){
+  var el=document.getElementById('cards');
+  var plays=sounds.reduce(function(a,s){return a+(s.plays||0);},0);
+  document.getElementById('stats').textContent=sounds.length+' sounds · '+plays+' plays';
+  el.innerHTML=sounds.map(function(s){
+    return '<div class="card"><div class="kind">'+esc(s.kind)+'</div>'+
+      '<h3>'+esc(s.title)+'</h3>'+
+      '<div class="meta">by '+esc(s.bird)+' · '+Math.round(s.freq)+' Hz · '+s.dur+'s · '+(s.plays||0)+' plays</div>'+
+      '<div class="wave">'+'▁▃▅▇▅▃▁'.slice(0,3+(s.kind==='bell'?3:1))+'</div>'+
+      '<div class="row"><button onclick="play(\''+s.id+'\')">play</button>'+
+      '<button class="ghost" onclick="remove(\''+s.id+'\')">delete</button></div></div>';
+  }).join('');
+}
+
+document.getElementById('make').onclick=makeSound;
+document.getElementById('preview').onclick=function(){
+  playSound({kind:document.getElementById('fKind').value,freq:Number(document.getElementById('fFreq').value)||440,dur:Number(document.getElementById('fDur').value)||0.3});
+};
+load();
+</script>
+</body>
+</html>
