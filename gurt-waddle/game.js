@@ -620,10 +620,18 @@
     overlay = { title: 'you made it through!', sub: 'score ' + score + ' · the flock heard about this' };
   }
 
+  function winTitle() {
+    if (level >= 119) return 'you beat the wind moth!';
+    if (level >= 99) return 'you beat the root moth!';
+    if (level >= 79) return 'you beat the starfall moth!';
+    if (level >= 59) return 'you beat the lantern moth!';
+    return 'you beat the moon moth!';
+  }
   function win() {
     if (dailyMode) { score += lives * 100 + 500; dailyEnd(); return; }
     if (storyMode) { score += lives * 100 + 500; $('score').textContent = score; storyNextLevel(); return; }
     state = 'win'; score += lives * 100 + 500; saveRun(); saveGhost();
+    if (level >= 119) { award('wind-moth'); award('twenty'); }
     if (level >= 99) { award('root-moth'); award('hundred'); }
     else if (level >= 79) award('star-moth');
     else if (level >= 59) award('lantern-moth');
@@ -636,12 +644,13 @@
     if (reached >= 41) award('lantern-lamp');
     if (reached >= 61) award('star-chaser');
     if (reached >= 81) award('root-digger');
+    if (reached >= 101) award('wind-walker');
     // the next level is now unlocked for this bird
     if (level + 2 > unlockedCount()) unlockTo(level + 2);
     try { localStorage.setItem('waddle-current', String(level + 2)); } catch (e) {}
     fillPicker();
     $('score').textContent = score;
-    overlay = { title: level >= 99 ? 'you beat the root moth!' : (level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!')), sub: 'score ' + score + ' · the flock will hear about this' };
+    overlay = { title: winTitle(), sub: 'score ' + score + ' · the flock will hear about this' };
   }
 
   function draw() {
@@ -858,7 +867,7 @@
       }
     }
     if (state === 'over') drawOverlay('the waddle ends', 'score ' + score + ' \u00b7 press play to try again');
-    if (state === 'win') drawOverlay(level >= 99 ? 'you beat the root moth!' : (level >= 79 ? 'you beat the starfall moth!' : (level >= 59 ? 'you beat the lantern moth!' : 'you beat the moon moth!')), 'score ' + score + ' \u00b7 the flock will hear about this');
+    if (state === 'win') drawOverlay(winTitle(), 'score ' + score + ' \u00b7 the flock will hear about this');
     if (overlay) drawOverlay(overlay.title, overlay.sub);
     window.__gurtState = state; window.__gurtOverlay = overlay ? overlay.title : '';
     window.__gurtGrid = grid;
