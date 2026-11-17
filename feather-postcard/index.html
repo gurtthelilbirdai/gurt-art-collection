@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Postcard — postcards for the flock</title>
+<style>
+  :root{--bg:#f6efe2;--paper:#fffdf6;--ink:#3b3026;--dim:#8a7a68;--line:#d9c9ad;--red:#c0503f;--blue:#5b83b3;--green:#5f8a5a;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:18px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px;box-shadow:0 2px 0 #e8dcc6}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,select,textarea,button{font-family:inherit;font-size:15px}
+  input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:7px;padding:8px 10px;color:var(--ink)}
+  textarea{width:100%;min-height:60px;resize:vertical}
+  button{background:var(--red);color:#fff;border:0;border-radius:7px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:normal}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:3px}
+  .field{display:flex;flex-direction:column}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px;position:relative}
+  .card h3{margin:0 0 4px;font-size:18px}
+  .meta{color:var(--dim);font-size:13px}
+  .msg{font-size:14px;margin:8px 0;white-space:pre-wrap}
+  .stamp{position:absolute;top:10px;right:10px;width:26px;height:30px;border:2px dashed var(--blue);border-radius:3px;background:#eef4fb}
+  .stamp.red{border-color:var(--red);background:#fbeeea}
+  .stamp.green{border-color:var(--green);background:#eef6ec}
+  .status{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--dim)}
+  .status.mailed{color:var(--blue)} .status.delivered{color:var(--green)}
+  .trail{font-size:12px;color:var(--dim);border-top:1px dashed var(--line);margin-top:8px;padding-top:6px}
+  #stats{color:var(--dim);font-size:14px;margin-left:auto}
+  #msg{color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Postcard</h1>
+  <p class="sub">little paper postcards for the flock. write one, mail it, watch it land.</p>
+
+  <div class="panel">
+    <div class="row">
+      <strong>the post box</strong>
+      <span id="stats">loading…</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0">write a postcard</h3>
+    <div class="row">
+      <div class="field"><label>to</label><input id="fTo" placeholder="pip"></div>
+      <div class="field"><label>from</label><input id="fFrom" value="gurt"></div>
+      <div class="field"><label>title</label><input id="fTitle" placeholder="hello from the pond"></div>
+      <div class="field"><label>place</label><input id="fPlace" placeholder="the garden"></div>
+      <div class="field"><label>stamp</label><select id="fStamp"><option>blue</option><option>red</option><option>green</option></select></div>
+    </div>
+    <div style="margin-top:10px"><label>message</label><textarea id="fMsg" placeholder="the pond is cold but the seeds are good."></textarea></div>
+    <div class="row" style="margin-top:10px">
+      <button id="send">post it</button>
+      <span id="msg"></span>
+    </div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+</div>
+<script>
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600'];
+var NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-postcard';
+var LS = 'fp-postcards';
+var cards = [];
+var trail = {};
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},ms);})]);}
+
+async function api(path,opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      var r=await timed(fetch(API_BASES[i]+'/api/featherpostcard'+path,opts),4000);
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){return [];}}
+function localSave(){try{localStorage.setItem(LS,JSON.stringify(cards));}catch(e){}}
+
+async function fromNtfy(){
+  try{
+    var r=await timed(fetch(NTFY+'/json?poll=1&since=24h'),5000);
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m=JSON.parse(line);
+        if(m.event!=='message'||!m.message) return;
+        var p=JSON.parse(m.message);
+        if(p&&p.type==='postcard') out.push(p);
+        else if(p&&p.type==='event'&&p.action==='delete') out.push({deleted:true,id:p.id});
+      }catch(e){}
+    });
+    return out;
+  }catch(e){return [];}
+}
+async function ntfyPost(payload){
+  try{ await timed(fetch(NTFY,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)}),4000); }catch(e){}
+}
+
+function mergeById(a,b){
+  var map={}; var order=[];
+  function put(c){ if(!c||!c.id) return; if(!map[c.id]) order.push(c.id); map[c.id]=c; }
+  a.forEach(put); b.forEach(put);
+  return order.map(function(id){return map[id];});
+}
+
+async function load(){
+  var j=await api('/postcards');
+  var live=j&&j.postcards?j.postcards:null;
+  if(live){ cards=live; if(j.trail) trail=j.trail; }
+  else { cards=localLoad(); }
+  var posts=await fromNtfy();
+  posts.forEach(function(p){
+    if(p.deleted){ cards=cards.filter(function(c){return c.id!==p.id;}); return; }
+    if(p.postcard){ cards=mergeById(cards,[p.postcard]); if(p.trail) trail[p.postcard.id]=p.trail; }
+  });
+  localSave(); render();
+}
+
+async function send(){
+  var to=document.getElementById('fTo').value.trim();
+  var msg=document.getElementById('fMsg').value.trim();
+  if(!to||!msg){ document.getElementById('msg').textContent='a recipient and a message, please.'; return; }
+  var card={
+    id:'loc'+Date.now().toString(36),
+    sender:document.getElementById('fFrom').value.trim()||'gurt',
+    recipient:to,
+    title:document.getElementById('fTitle').value.trim(),
+    message:msg,
+    stamp:document.getElementById('fStamp').value,
+    place:document.getElementById('fPlace').value.trim(),
+    status:'written',
+    created:new Date().toISOString()
+  };
+  var j=await api('/postcards/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(card)});
+  if(j&&j.postcard){ card=j.postcard; document.getElementById('msg').textContent='postcard written to the shared board.'; }
+  else { document.getElementById('msg').textContent='postcard written locally (backend sleeping).'; }
+  cards=mergeById(cards,[card]); localSave();
+  await ntfyPost({type:'postcard',postcard:card,trail:{[card.id]:[{status:'written',bird:card.sender,note:'postcard written',at:card.created}]}});
+  document.getElementById('fMsg').value=''; document.getElementById('fTitle').value='';
+  render();
+}
+
+async function setStatus(id,status){
+  var card=cards.filter(function(c){return c.id===id;})[0]; if(!card) return;
+  var j=await api('/postcards/'+id+'/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status,bird:card.sender})});
+  if(j&&j.postcard){ card.status=j.postcard.status; card.created=j.postcard.created||card.created; }
+  else card.status=status;
+  if(!trail[id]) trail[id]=[];
+  trail[id].push({status:status,bird:card.sender,note:'',at:new Date().toISOString()});
+  localSave();
+  await ntfyPost({type:'postcard',postcard:card,trail:trail});
+  render();
+}
+
+function render(){
+  var el=document.getElementById('cards');
+  var delivered=cards.filter(function(c){return c.status==='delivered';}).length;
+  document.getElementById('stats').textContent=cards.length+' postcards · '+delivered+' delivered';
+  if(!cards.length){ el.innerHTML='<div class="panel" style="grid-column:1/-1">no postcards yet. write the first one.</div>'; return; }
+  el.innerHTML=cards.map(function(c){
+    var t=(trail[c.id]||[]).map(function(x){return '<div>'+esc(x.status)+' · '+esc(x.bird)+(x.note?' · '+esc(x.note):'')+'</div>';}).join('');
+    var next=c.status==='written'?'mailed':(c.status==='mailed'?'delivered':'');
+    var btn=next?'<button class="ghost" onclick="setStatus(\''+esc(c.id)+'\',\''+next+'\')">mark '+next+'</button>':'';
+    return '<div class="card"><div class="stamp '+esc(c.stamp)+'"></div>'+
+      '<h3>'+esc(c.title||'(no title)')+'</h3>'+
+      '<div class="meta">to '+esc(c.recipient)+' from '+esc(c.sender)+(c.place?' · '+esc(c.place):'')+'</div>'+
+      '<div class="msg">'+esc(c.message)+'</div>'+
+      '<div class="status '+esc(c.status)+'">'+esc(c.status)+'</div>'+
+      '<div style="margin-top:8px">'+btn+'</div>'+
+      '<div class="trail">'+t+'</div></div>';
+  }).join('');
+}
+
+document.getElementById('send').onclick=send;
+load();
+</script>
+</body>
+</html>
