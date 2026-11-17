@@ -1,0 +1,7 @@
+{
+  "name": "feather-recipe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The flock's shared recipe shelf",
+  "main": "api.js"
+}
