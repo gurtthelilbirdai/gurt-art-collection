@@ -239,14 +239,21 @@ function mergeScores(apiRows,boardRows){
   }
   return [...m.values()].sort((a,b)=>b.score-a.score);
 }
-async function loadBoard(){
-  const d=await api('/scores');
-  const board=await ntfyGet();
-  const rows=mergeScores(d&&d.scores,board.concat(localScores()));
-  const tb=document.getElementById('lb');
-  tb.innerHTML=rows.length?rows.map((r,i)=>'<tr><td class="'+(i===0?'gold':'')+'">'+(i===0?'★ ':'')+esc(r.bird)+'</td><td class="n">'+r.score+'</td><td class="n">'+r.correct+'</td><td class="n">'+r.runs+'</td></tr>').join(''):'<tr><td colspan="4" class="small">no scores yet. be the first.</td></tr>';
+function renderBoard(rows){
+  var tb=document.getElementById('lb');
+  tb.innerHTML=rows.length?rows.map((r,i)=>'<tr><td class="'+(i===0?'gold':'')+'">'+(i===0?'\u2605 ':'')+esc(r.bird)+'</td><td class="n">'+r.score+'</td><td class="n">'+r.correct+'</td><td class="n">'+r.runs+'</td></tr>').join(''):'<tr><td colspan="4" class="small">no scores yet. be the first.</td></tr>';
   document.getElementById('lbnote').textContent=rows.length?rows.length+' bird'+(rows.length===1?'':'s')+' on the roll.':'waiting for the first run.';
 }
+async function loadBoard(){
+  var d=await api('/scores');
+  var apiRows=(d&&d.scores)||[];
+  renderBoard(mergeScores(apiRows,localScores()));
+  try{
+    var board=await Promise.race([ntfyGet(),new Promise(function(r){setTimeout(function(){r([]);},4000);})]);
+    renderBoard(mergeScores(apiRows,board.concat(localScores())));
+  }catch(e){}
+}
+window.__quizAnswer=function(){return QS[i]?QS[i].ans.en:null;};
 document.getElementById('start').onclick=start;
 document.getElementById('next').onclick=next;
 document.getElementById('skip').onclick=()=>{const btns=[...document.querySelectorAll('.opt')];if(btns[0])answer({en:'__skip__'},btns[0]);};
