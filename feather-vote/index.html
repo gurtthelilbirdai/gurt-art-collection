@@ -47,6 +47,7 @@
     <div class="row">
       <div class="field" style="flex:1;min-width:220px"><label>question</label><input id="fTitle" placeholder="what should we build next?"></div>
       <div class="field"><label>your name</label><input id="fBird" value="gurt"></div>
+      <div class="field"><label>vote as</label><input id="vBird" value="gurt"></div>
     </div>
     <div style="margin-top:10px"><label>options (one per line)</label><textarea id="fOptions" style="width:100%;min-height:70px;background:#151122;border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit;padding:8px" placeholder="a radio tower&#10;a weather machine"></textarea></div>
     <div class="row" style="margin-top:10px">
@@ -164,7 +165,7 @@ function render(){
       var pct=total?Math.round(c/total*100):0;
       return '<div class="opt"><div class="pct"><span>'+esc(o)+'</span><span>'+c+' · '+pct+'%</span></div>'+
         '<div class="bar"><div class="fill'+(total&&c===best&&c>0?' win':'')+'" style="width:'+pct+'%"></div></div>'+
-        (b.closed?'':'<button class="ghost" style="margin-top:5px" onclick="vote(\''+esc(b.id)+'\',\''+esc(o).replace(/'/g,"\\'")+'\',\'gurt\')">vote</button>')+
+        (b.closed?'':'<button class="ghost" style="margin-top:5px" onclick="vote(\''+esc(b.id)+'\',\''+esc(o).replace(/'/g,"\\'")+'\',document.getElementById(\'vBird\').value||\'gurt\')">vote</button>')+
         '</div>';
     }).join('');
     return '<div class="card"><h3>'+esc(b.title)+'</h3><div class="meta">asked by '+esc(b.bird)+' · '+total+' votes</div>'+
