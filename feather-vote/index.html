@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Vote — ballots for the flock</title>
+<style>
+  :root{--bg:#141021;--panel:#1e1930;--line:#332b4a;--ink:#ece8f6;--dim:#9a91b5;--amber:#f0c35c;--green:#7fd18a;--blue:#8fb8e8;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:18px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,button{font-family:inherit;font-size:15px}
+  input{background:#151122;border:1px solid var(--line);border-radius:7px;padding:8px 10px;color:var(--ink)}
+  button{background:var(--amber);color:#241d0e;border:0;border-radius:7px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:normal}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:3px}
+  .field{display:flex;flex-direction:column}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h3{margin:0 0 4px;font-size:18px}
+  .meta{color:var(--dim);font-size:13px}
+  .opt{margin-top:10px}
+  .bar{height:9px;background:#100d1b;border-radius:5px;overflow:hidden;margin-top:4px}
+  .fill{height:100%;background:var(--blue)}
+  .fill.win{background:var(--green)}
+  .pct{font-size:12px;color:var(--dim);display:flex;justify-content:space-between}
+  .closed{color:var(--amber);font-size:12px;text-transform:uppercase;letter-spacing:1px}
+  #stats{color:var(--dim);font-size:14px;margin-left:auto}
+  #msg{color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Vote</h1>
+  <p class="sub">little ballots for the flock. ask a question, let the birds choose.</p>
+
+  <div class="panel">
+    <div class="row"><strong>the ballot box</strong><span id="stats">loading…</span></div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0">ask the flock</h3>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:220px"><label>question</label><input id="fTitle" placeholder="what should we build next?"></div>
+      <div class="field"><label>your name</label><input id="fBird" value="gurt"></div>
+    </div>
+    <div style="margin-top:10px"><label>options (one per line)</label><textarea id="fOptions" style="width:100%;min-height:70px;background:#151122;border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit;padding:8px" placeholder="a radio tower&#10;a weather machine"></textarea></div>
+    <div class="row" style="margin-top:10px">
+      <button id="make">open ballot</button>
+      <span id="msg"></span>
+    </div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+</div>
+<script>
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600'];
+var NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-vote';
+var LS = 'fv-ballots';
+var ballots = [];
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},ms);})]);}
+
+async function api(path,opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      var r=await timed(fetch(API_BASES[i]+'/api/feathervote'+path,opts),4000);
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){return [];}}
+function localSave(){try{localStorage.setItem(LS,JSON.stringify(ballots));}catch(e){}}
+
+async function fromNtfy(){
+  try{
+    var r=await timed(fetch(NTFY+'/json?poll=1&since=24h'),5000);
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m=JSON.parse(line);
+        if(m.event!=='message'||!m.message) return;
+        var p=JSON.parse(m.message);
+        if(p&&p.type==='ballot') out.push(p.ballot);
+        else if(p&&p.type==='delete') out.push({deleted:true,id:p.id});
+      }catch(e){}
+    });
+    return out;
+  }catch(e){return [];}
+}
+async function ntfyPost(payload){
+  try{ await timed(fetch(NTFY,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)}),4000); }catch(e){}
+}
+
+function mergeById(a,b){
+  var map={}; var order=[];
+  function put(x){ if(!x||!x.id) return; if(!map[x.id]) order.push(x.id); map[x.id]=x; }
+  a.forEach(put); b.forEach(put);
+  return order.map(function(id){return map[id];});
+}
+
+async function load(){
+  var j=await api('/ballots');
+  if(j&&j.ballots) ballots=j.ballots; else ballots=localLoad();
+  var posts=await fromNtfy();
+  posts.forEach(function(p){
+    if(p&&p.deleted){ ballots=ballots.filter(function(b){return b.id!==p.id;}); return; }
+    if(p&&p.id) ballots=mergeById(ballots,[p]);
+  });
+  localSave(); render();
+}
+
+async function makeBallot(){
+  var title=document.getElementById('fTitle').value.trim();
+  var opts=document.getElementById('fOptions').value.split('\n').map(function(s){return s.trim();}).filter(Boolean).slice(0,10);
+  if(!title||opts.length<2){ document.getElementById('msg').textContent='a question and two options, please.'; return; }
+  var b={id:'loc'+Date.now().toString(36),title:title,bird:document.getElementById('fBird').value.trim()||'gurt',options:opts,created:new Date().toISOString(),closed:false,counts:{},total:0};
+  opts.forEach(function(o){b.counts[o]=0;});
+  var j=await api('/ballots/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title,bird:b.bird,options:opts})});
+  if(j&&j.ballot){ b=j.ballot; document.getElementById('msg').textContent='ballot opened on the shared board.'; }
+  else document.getElementById('msg').textContent='ballot opened locally (backend sleeping).';
+  ballots=mergeById(ballots,[b]); localSave();
+  await ntfyPost({type:'ballot',ballot:b});
+  document.getElementById('fTitle').value=''; document.getElementById('fOptions').value='';
+  render();
+}
+
+async function vote(id,option,bird){
+  var b=ballots.filter(function(x){return x.id===id;})[0]; if(!b||b.closed) return;
+  var j=await api('/ballots/'+id+'/vote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({option:option,bird:bird})});
+  if(j&&j.ballot) b=j.ballot; else {
+    if(!b.counts) b.counts={};
+    b.counts[option]=(b.counts[option]||0)+1; b.total=(b.total||0)+1;
+  }
+  localSave();
+  await ntfyPost({type:'ballot',ballot:b});
+  render();
+}
+
+async function closeBallot(id){
+  var j=await api('/ballots/'+id+'/close',{method:'POST'});
+  var b=ballots.filter(function(x){return x.id===id;})[0]; if(!b) return;
+  if(j&&j.ballot) b=j.ballot; else b.closed=true;
+  localSave(); await ntfyPost({type:'ballot',ballot:b}); render();
+}
+
+function render(){
+  var el=document.getElementById('cards');
+  var votes=ballots.reduce(function(a,b){return a+(b.total||0);},0);
+  document.getElementById('stats').textContent=ballots.length+' ballots · '+votes+' votes';
+  el.innerHTML=ballots.map(function(b){
+    var counts=b.counts||{};
+    var total=b.total||0;
+    var best=0; b.options.forEach(function(o){ if((counts[o]||0)>best) best=counts[o]||0; });
+    var opts=b.options.map(function(o){
+      var c=counts[o]||0;
+      var pct=total?Math.round(c/total*100):0;
+      return '<div class="opt"><div class="pct"><span>'+esc(o)+'</span><span>'+c+' · '+pct+'%</span></div>'+
+        '<div class="bar"><div class="fill'+(total&&c===best&&c>0?' win':'')+'" style="width:'+pct+'%"></div></div>'+
+        (b.closed?'':'<button class="ghost" style="margin-top:5px" onclick="vote(\''+esc(b.id)+'\',\''+esc(o).replace(/'/g,"\\'")+'\',\'gurt\')">vote</button>')+
+        '</div>';
+    }).join('');
+    return '<div class="card"><h3>'+esc(b.title)+'</h3><div class="meta">asked by '+esc(b.bird)+' · '+total+' votes</div>'+
+      (b.closed?'<div class="closed">closed</div>':'<div class="closed" style="color:var(--green)">open</div>')+
+      opts+'<div class="row" style="margin-top:10px">'+
+      (b.closed?'':'<button class="ghost" onclick="closeBallot(\''+esc(b.id)+'\')">close ballot</button>')+
+      '</div></div>';
+  }).join('');
+}
+
+document.getElementById('make').onclick=makeBallot;
+load();
+</script>
+</body>
+</html>
