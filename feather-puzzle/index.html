@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Puzzle — word puzzles for the flock</title>
+<style>
+  :root{--bg:#141a24;--panel:#1c2432;--line:#2e3a4d;--ink:#eef3fa;--dim:#93a4bb;--gold:#f2c14e;--teal:#6fd6c4}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:18px}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,button,textarea{font-family:inherit;font-size:15px}
+  input,textarea{background:#121822;border:1px solid var(--line);border-radius:7px;padding:8px 10px;color:var(--ink)}
+  button{background:var(--gold);color:#241d0c;border:0;border-radius:7px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:normal}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:3px}
+  .field{display:flex;flex-direction:column}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h3{margin:0 0 2px;font-size:18px}
+  .meta{color:var(--dim);font-size:13px}
+  .clue{margin:8px 0 3px;font-size:14px;color:#cdd8e6}
+  .slots{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}
+  .slot{width:26px;height:30px;border:1px solid var(--line);border-bottom:3px solid var(--line);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:17px;background:#121822}
+  .slot.filled{color:var(--gold);border-bottom-color:var(--gold)}
+  .slot.cur{border-color:var(--teal);border-bottom-color:var(--teal)}
+  .bank{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}
+  .tile{width:30px;height:34px;border-radius:5px;background:#27354a;border:1px solid #3c4d66;color:var(--ink);font-weight:bold;font-size:17px;cursor:pointer}
+  .tile.used{opacity:.25;cursor:default}
+  .tile:hover{background:#33455f}
+  #stats{color:var(--dim);font-size:14px;margin-left:auto}
+  #msg{color:var(--dim);font-size:13px}
+  .best{color:var(--teal);font-size:13px;margin-top:6px}
+  .solved{color:var(--gold);font-weight:bold}
+  details{margin-top:6px}
+  summary{cursor:pointer;color:var(--dim);font-size:13px}
+  .newp{background:#121822;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:8px}
+  .newp input{width:100%;margin-bottom:6px}
+  .newp textarea{width:100%;height:60px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Puzzle</h1>
+  <p class="sub">shared word puzzles. fill the clues, beat the flock's times.</p>
+
+  <div class="panel">
+    <div class="row"><strong>the puzzle shelf</strong><span id="stats">loading…</span></div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0">make a new puzzle</h3>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:200px"><label>title</label><input id="fTitle" placeholder="things in my nest"></div>
+      <div class="field"><label>your name</label><input id="fBird" value="gurt"></div>
+    </div>
+    <div class="newp">
+      <label>clues — one per line</label>
+      <textarea id="fClues" placeholder="warm nest you sleep in&#10;small blue bird"></textarea>
+      <label>answers — one per line, same order</label>
+      <textarea id="fAnswers" placeholder="BED&#10;ROBIN"></textarea>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="make">publish puzzle</button>
+      <span id="msg"></span>
+    </div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+</div>
+<script>
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600'];
+var NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-puzzle';
+var LS = 'fp-puzzles';
+var puzzles = [];
+var solves = [];
+var play = {};   // id -> {slots:[], bank:[], cur:0, start:0, moves:0}
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},ms);})]);}
+
+async function api(path,opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      var r=await timed(fetch(API_BASES[i]+'/api/featherpuzzle'+path,opts),4000);
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){return [];}}
+function localSave(){try{localStorage.setItem(LS,JSON.stringify(puzzles));}catch(e){}}
+
+async function fromNtfy(){
+  try{
+    var r=await timed(fetch(NTFY+'/json?poll=1&since=24h'),5000);
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m=JSON.parse(line);
+        if(m.event!=='message'||!m.message) return;
+        var p=JSON.parse(m.message);
+        if(p&&p.type==='puzzle') out.push({puzzle:p.puzzle});
+        else if(p&&p.type==='solve') out.push({solve:p.solve});
+        else if(p&&p.type==='delete') out.push({deleted:true,id:p.id});
+      }catch(e){}
+    });
+    return out;
+  }catch(e){return [];}
+}
+async function ntfyPost(payload){
+  try{ await timed(fetch(NTFY,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)}),4000); }catch(e){}
+}
+
+function mergeById(a,b){
+  var map={}; var order=[];
+  function put(x){ if(!x||!x.id) return; if(!map[x.id]) order.push(x.id); map[x.id]=x; }
+  a.forEach(put); b.forEach(put);
+  return order.map(function(id){return map[id];});
+}
+
+async function load(){
+  var j=await api('/puzzles');
+  if(j&&j.puzzles){ puzzles=j.puzzles; solves=j.solves||[]; } else { puzzles=localLoad(); }
+  var posts=await fromNtfy();
+  posts.forEach(function(p){
+    if(p&&p.deleted){ puzzles=puzzles.filter(function(x){return x.id!==p.id;}); return; }
+    if(p&&p.puzzle&&p.puzzle.id) puzzles=mergeById(puzzles,[p.puzzle]);
+    if(p&&p.solve&&p.solve.id) solves=mergeById(solves,[p.solve]);
+  });
+  localSave(); render();
+}
+
+async function makePuzzle(){
+  var title=document.getElementById('fTitle').value.trim();
+  var clues=document.getElementById('fClues').value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  var answers=document.getElementById('fAnswers').value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
+  if(!title){ document.getElementById('msg').textContent='give the puzzle a title.'; return; }
+  if(!clues.length||clues.length!==answers.length){ document.getElementById('msg').textContent='clues and answers must match.'; return; }
+  var p={id:'loc'+Date.now().toString(36),title:title,bird:document.getElementById('fBird').value.trim()||'gurt',
+    clues:clues,answers:answers.map(function(a){return a.toUpperCase().replace(/[^A-Z]/g,'');}),created:new Date().toISOString()};
+  var j=await api('/puzzles/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+  if(j&&j.puzzle){ p=j.puzzle; document.getElementById('msg').textContent='puzzle published on the shared board.'; }
+  else document.getElementById('msg').textContent='puzzle published locally (backend sleeping).';
+  puzzles=mergeById(puzzles,[p]); localSave();
+  await ntfyPost({type:'puzzle',puzzle:p});
+  document.getElementById('fTitle').value=''; document.getElementById('fClues').value=''; document.getElementById('fAnswers').value='';
+  render();
+}
+
+function startPlay(pid){
+  var p=puzzles.filter(function(x){return x.id===pid;})[0]; if(!p) return;
+  var letters=[];
+  p.answers.forEach(function(a){ letters=a.split(''); });
+  // shuffle
+  for(var i=letters.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=letters[i]; letters[i]=letters[j]; letters[j]=t; }
+  var slots=[]; var pos=0;
+  p.answers.forEach(function(a){ for(var k=0;k<a.length;k++){ slots.push({word:pos,letter:'',used:false}); } pos++; });
+  play[p.id]={slots:slots,bank:letters.map(function(ch){return {ch:ch,used:false};}),cur:0,start:Date.now(),moves:0};
+  render();
+}
+
+function placeTile(pid,bi){
+  var st=play[pid]; if(!st) return;
+  var tile=st.bank[bi]; if(!tile||tile.used) return;
+  var idx=-1;
+  for(var i=0;i<st.slots.length;i++){ if(!st.slots[i].letter){ idx=i; break; } }
+  if(idx<0) return;
+  st.slots[idx].letter=tile.ch; tile.used=true; st.cur=idx+1; st.moves++;
+  render();
+  checkSolved(pid);
+}
+
+function clearSlot(pid,idx){
+  var st=play[pid]; if(!st) return;
+  var sl=st.slots[idx]; if(!sl||!sl.letter) return;
+  st.bank.forEach(function(t){ if(t.used&&t.ch===sl.letter){ t.used=false; } });
+  sl.letter=''; st.cur=idx; st.moves++;
+  render();
+}
+
+function isSolved(p,st){
+  var pos=0;
+  for(var w=0;w<p.answers.length;w++){
+    for(var k=0;k<p.answers[w].length;k++){
+      if(st.slots[pos].letter!==p.answers[w][k]) return false;
+      pos++;
+    }
+  }
+  return true;
+}
+
+async function checkSolved(pid){
+  var p=puzzles.filter(function(x){return x.id===pid;})[0]; if(!p) return;
+  var st=play[pid]; if(!st||st.done) return;
+  if(!isSolved(p,st)) return;
+  st.done=true;
+  var seconds=Math.max(1,Math.round((Date.now()-st.start)/1000));
+  var s={id:'locs'+Date.now().toString(36),puzzle:pid,bird:document.getElementById('fBird').value.trim()||'gurt',seconds:seconds,moves:st.moves,created:new Date().toISOString()};
+  var j=await api('/puzzles/'+pid+'/solve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bird:s.bird,seconds:seconds,moves:st.moves})});
+  if(j&&j.solve) s=j.solve;
+  solves=mergeById(solves,[s]);
+  await ntfyPost({type:'solve',solve:s});
+  render();
+}
+
+async function removePuzzle(id){
+  await api('/puzzles/'+id+'/delete',{method:'POST'});
+  puzzles=puzzles.filter(function(p){return p.id!==id;}); localSave();
+  await ntfyPost({type:'delete',id:id});
+  render();
+}
+
+function render(){
+  var el=document.getElementById('cards');
+  document.getElementById('stats').textContent=puzzles.length+' puzzles · '+solves.length+' solves · '+new Set(puzzles.map(function(p){return p.bird;})).size+' birds';
+  el.innerHTML=puzzles.map(function(p){
+    var best=solves.filter(function(s){return s.puzzle===p.id;}).sort(function(a,b){return a.seconds-b.seconds;})[0];
+    var st=play[p.id];
+    var body='';
+    if(st){
+      var pos=0;
+      var clueHtml=p.clues.map(function(c,w){
+        var slots='';
+        for(var k=0;k<p.answers[w].length;k++){
+          var sl=st.slots[pos];
+          slots+='<div class="slot'+(sl.letter?' filled':'')+(st.cur===pos?' cur':'')+'" onclick="clearSlot(\''+p.id+'\','+pos+')">'+esc(sl.letter)+'</div>';
+          pos++;
+        }
+        return '<div class="clue">'+esc(c)+'</div><div class="slots">'+slots+'</div>';
+      }).join('');
+      var bank=st.bank.map(function(t,i){ return '<button class="tile'+(t.used?' used':'')+'" onclick="placeTile(\''+p.id+'\','+i+')">'+esc(t.ch)+'</button>'; }).join('');
+      body=clueHtml+'<div class="bank">'+bank+'</div>'+
+        (st.done?'<div class="solved">solved! '+st.moves+' moves</div>':'<div class="meta">'+st.moves+' moves · click a tile to place it, click a filled slot to clear</div>');
+    } else {
+      body='<div class="meta">'+p.clues.length+' clues</div><div class="row" style="margin-top:8px"><button onclick="startPlay(\''+p.id+'\')">play</button>'+
+        '<button class="ghost" onclick="removePuzzle(\''+p.id+'\')">delete</button></div>';
+    }
+    return '<div class="card"><h3>'+esc(p.title)+'</h3><div class="meta">by '+esc(p.bird)+'</div>'+body+
+      (best?'<div class="best">best: '+best.seconds+'s by '+esc(best.bird)+'</div>':'')+
+      '<details><summary>solve history</summary>'+(solves.filter(function(s){return s.puzzle===p.id;}).map(function(s){return esc(s.bird)+' · '+s.seconds+'s · '+s.moves+' moves';}).join('<br>')||'none yet')+'</details>'+
+      '</div>';
+  }).join('');
+}
+
+document.getElementById('make').onclick=makePuzzle;
+load();
+</script>
+</body>
+</html>
