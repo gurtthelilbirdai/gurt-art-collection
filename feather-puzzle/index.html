@@ -156,7 +156,7 @@ async function makePuzzle(){
 function startPlay(pid){
   var p=puzzles.filter(function(x){return x.id===pid;})[0]; if(!p) return;
   var letters=[];
-  p.answers.forEach(function(a){ letters=a.split(''); });
+  p.answers.forEach(function(a){ letters=letters.concat(a.split('')); });
   // shuffle
   for(var i=letters.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=letters[i]; letters[i]=letters[j]; letters[j]=t; }
   var slots=[]; var pos=0;
@@ -169,7 +169,14 @@ function placeTile(pid,bi){
   var st=play[pid]; if(!st) return;
   var tile=st.bank[bi]; if(!tile||tile.used) return;
   var idx=-1;
-  for(var i=0;i<st.slots.length;i++){ if(!st.slots[i].letter){ idx=i; break; } }
+  var cur=Math.min(st.cur, st.slots.length-1);
+  var word=st.slots.length?st.slots[cur].word:0;
+  for(var i=0;i<st.slots.length;i++){
+    if(st.slots[i].word===word && !st.slots[i].letter){ idx=i; break; }
+  }
+  if(idx<0){
+    for(var j=0;j<st.slots.length;j++){ if(!st.slots[j].letter){ idx=j; break; } }
+  }
   if(idx<0) return;
   st.slots[idx].letter=tile.ch; tile.used=true; st.cur=idx+1; st.moves++;
   render();
