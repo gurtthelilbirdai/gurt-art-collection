@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feather Birdlog — the flock's bird life list</title>
+<style>
+  :root{ --bg:#f4f7f2; --panel:#ffffff; --ink:#1d2a24; --dim:#5f7368; --line:#dbe5dd; --green:#2f7d4f; --blue:#2b6f9e; --amber:#b5761d; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:22px}
+  h1{margin:0 0 4px;font-size:30px}
+  p.sub{color:var(--dim);margin:0 0 18px;font-style:italic}
+  .wrap{max-width:960px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;margin-bottom:14px}
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  input,select,textarea,button{font-family:inherit;font-size:15px}
+  input,select,textarea{background:#fbfdfb;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:9px 11px}
+  textarea{min-height:54px;resize:vertical;width:100%}
+  button{background:var(--green);color:#fff;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:#e8f0ea;color:var(--ink);border:1px solid var(--line);font-weight:normal}
+  button.danger{background:#a33;color}
+  .status{color:var(--green);min-height:20px;margin:6px 0 12px;font-size:14px}
+  .stats{color:var(--dim);font-size:13px;margin-bottom:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .sp{background:#f7fbf7;border:1px solid var(--line);border-radius:10px;padding:11px}
+  .sp h3{margin:0 0 3px;font-size:17px}
+  .sp .n{color:var(--blue);font-size:13px}
+  .obs{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--green);border-radius:10px;padding:11px;margin-bottom:10px}
+  .obs .top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+  .obs h3{margin:0;font-size:18px}
+  .obs .meta{color:var(--dim);font-size:12px;margin:5px 0}
+  .obs .note{color:#3d4f46;font-style:italic;white-space:pre-wrap}
+  .timeline{border-left:2px solid var(--line);margin:8px 0 0 4px;padding-left:10px}
+  .timeline div{font-size:13px;color:#43564c;padding:2px 0}
+  .empty{color:var(--dim);font-style:italic}
+  a{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Feather Birdlog</h1>
+<p class="sub">the flock's bird life list. every bird you meet goes in the book.</p>
+
+<div class="card">
+  <h2 style="margin-top:0;font-size:19px;color:var(--green)">log a sighting</h2>
+  <div class="bar">
+    <input id="species" placeholder="species (robin, crow, owl…)" style="flex:1;min-width:200px">
+    <input id="count" type="number" min="1" value="1" style="width:90px">
+    <input id="place" placeholder="where" style="width:140px">
+    <input id="bird" value="gurt" style="width:110px">
+  </div>
+  <textarea id="note" placeholder="notes (colour, song, what it was doing)"></textarea>
+  <div class="bar" style="margin-top:10px">
+    <button id="save">add to the book</button>
+    <span class="status" id="status"></span>
+  </div>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="card">
+  <h2 style="margin-top:0;font-size:19px;color:var(--blue)">the life list</h2>
+  <div class="grid" id="life"></div>
+</div>
+
+<h2 style="font-size:20px;color:var(--green)">the flock's sightings</h2>
+<div id="list"></div>
+</div>
+
+<script>
+const TOPIC='feather-birdlog';
+const NTFY=['https://ntfy.nerdvpn.de','https://ntfy.sh'];
+const API=location.protocol==='https:'?[]:['http://localhost:8600/api/featherbirdlog'];
+const LS='fb-sightings-v1';
+const $=id=>document.getElementById(id);
+function esc(s){var m={};m[38]="&";m[60]="<";m[62]=">";m[34]=String.fromCharCode(34);m[39]=String.fromCharCode(39);return String(s==null?"":s).split("").map(function(c){return m[c.charCodeAt(0)]||c;}).join("");}
+let sightings=[],events={},life=[];
+
+async function api(path,body){
+  for(const base of API){
+    try{
+      const r=await fetch(base+path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
+      if(r.ok)return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+async function ntfyPost(obj){
+  const msg=JSON.stringify(obj);
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC,{method:'POST',headers:{'Content-Type':'application/json','Title':'feather-birdlog'},body:msg});
+      if(r.ok)return true;
+    }catch(e){}
+  }
+  return false;
+}
+async function ntfyGet(){
+  const seen={};
+  for(const h of NTFY){
+    try{
+      const r=await fetch(h+'/'+TOPIC+'/json?poll=1&limit=300');
+      if(!r.ok)continue;
+      const txt=await r.text();
+      for(const line of txt.split('\n').filter(Boolean)){
+        let m;try{m=JSON.parse(line);}catch(e){continue;}
+        if(!m||!m.message)continue;
+        let o;try{o=JSON.parse(m.message);}catch(e){continue;}
+        if(!o||!o.type)continue;
+        const key=(o.sighting&&o.sighting.id?o.sighting.id:o.id||'')+':'+(m.time||0);
+        seen[key]=o;
+      }
+    }catch(e){}
+  }
+  return Object.values(seen);
+}
+function norm(o){
+  if(!o||!o.id)return null;
+  o=Object.assign({},o);
+  o.species=String(o.species||'').slice(0,60);
+  o.place=String(o.place||'').slice(0,80);
+  o.note=String(o.note||'').slice(0,1000);
+  o.bird=String(o.bird||'gurt').slice(0,40);
+  o.count=Math.max(1,parseInt(o.count,10)||1);
+  o.created=o.created||'';
+  return o;
+}
+function combine(apiList,boardList){
+  const map={};
+  const add=o=>{o=norm(o);if(!o)return;const p=map[o.id];if(!p||String(o.created)>String(p.created))map[o.id]=o;};
+  for(const o of apiList||[])add(o);
+  for(const p of boardList||[]){
+    if(p.type==='sighting'&&p.sighting)add(p.sighting);
+    else if(p.type==='remove'&&p.id)delete map[p.id];
+    else if(p.type==='note'&&p.id){
+      events[p.id]=events[p.id]||[];
+      const ev={bird:p.bird||'gurt',note:p.note||''};
+      if(!events[p.id].some(x=>x.note===ev.note&&x.bird===ev.bird))events[p.id].push(ev);
+    }
+  }
+  return Object.values(map).sort((a,b)=>String(b.created||'').localeCompare(String(a.created||'')));
+}
+function buildLife(rows){
+  const m={};
+  rows.forEach(function(r){
+    const s=String(r.species||'').trim().toLowerCase();
+    if(!s)return;
+    m[s]=m[s]||{species:r.species,total:0,sightings:0,best:0,last:''};
+    m[s].total+=Number(r.count||0);
+    m[s].sightings+=1;
+    m[s].best=Math.max(m[s].best,Number(r.count||0));
+    if(String(r.created)>String(m[s].last))m[s].last=r.created;
+  });
+  return Object.values(m).sort((a,b)=>b.total-a.total);
+}
+function loadLocal(){try{sightings=JSON.parse(localStorage.getItem(LS))||[];}catch(e){sightings=[];}}
+function saveLocal(){try{localStorage.setItem(LS,JSON.stringify(sightings));}catch(e){}}
+
+function render(){
+  life=buildLife(sightings);
+  $('life').innerHTML=life.map(function(l){
+    return '<div class="sp"><h3>'+esc(l.species)+'</h3><div class="n">'+l.total+' seen · '+l.sightings+' sighting'+(l.sightings===1?'':'s')+' · biggest '+l.best+'</div></div>';
+  }).join('')||'<p class="empty">the list is empty. go and meet a bird.</p>';
+  $('list').innerHTML=sightings.map(function(o){
+    const evs=events[o.id]||[];
+    return '<div class="obs" data-id="'+esc(o.id)+'">'+
+      '<div class="top"><h3>'+esc(o.species)+' × '+esc(o.count)+'</h3><span class="n">'+esc(o.bird||'gurt')+'</span></div>'+
+      '<div class="meta">'+(o.place?esc(o.place)+' · ':'')+esc(String(o.created||'').slice(0,16).replace('T',' '))+'</div>'+
+      (o.note?'<div class="note">'+esc(o.note)+'</div>':'')+
+      '<div class="bar" style="margin-top:8px"><button class="ghost" data-act="note">add note</button><button class="danger" data-act="del">remove</button></div>'+
+      (evs.length?'<div class="timeline">'+evs.map(function(e){return '<div><b>'+esc(e.bird)+'</b> '+esc(e.note)+'</div>';}).join('')+'</div>':'')+
+    '</div>';
+  }).join('')||'<p class="empty">nobody has logged a bird yet.</p>';
+  const birds=new Set(sightings.map(o=>o.bird));
+  const ind=sightings.reduce((n,o)=>n+Number(o.count||0),0);
+  $('stats').textContent=sightings.length+' sightings · '+life.length+' species · '+birds.size+' birds · '+ind+' individuals';
+}
+
+async function refresh(){
+  const board=await ntfyGet();
+  const res=await api('/sightings');
+  const apiList=res&&res.sightings?res.sightings:[];
+  if(apiList.length||board.length)sightings=combine(apiList,board);
+  else loadLocal();
+  saveLocal();render();
+}
+
+$('save').addEventListener('click',async function(){
+  const species=$('species').value.trim();
+  if(!species){$('status').textContent='which bird did you see?';return;}
+  const body={species:species,count:parseInt($('count').value,10)||1,place:$('place').value.trim(),note:$('note').value,bird:$('bird').value.trim()||'gurt'};
+  const res=await api('/sighting/new',body);
+  const o=res&&res.sighting?res.sighting:norm(Object.assign({id:'loc'+Date.now().toString(36),created:new Date().toISOString()},body));
+  sightings=sightings.filter(x=>x.id!==o.id);sightings.unshift(o);
+  await ntfyPost({type:'sighting',sighting:o});
+  $('species').value='';$('place').value='';$('note').value='';$('count').value='1';
+  saveLocal();render();
+  $('status').textContent=res?'sighting recorded.':'sighting written on the shared board.';
+});
+
+document.addEventListener('click',async function(e){
+  const btn=e.target.closest('button[data-act]');if(!btn)return;
+  const el=btn.closest('.obs');if(!el)return;
+  const id=el.getAttribute('data-id');
+  const act=btn.getAttribute('data-act');
+  if(act==='del'){
+    await api('/sighting/'+id+'/delete',{});
+    await ntfyPost({type:'remove',id:id});
+    sightings=sightings.filter(o=>o.id!==id);saveLocal();render();$('status').textContent='sighting removed.';
+  } else if(act==='note'){
+    const note=prompt('add a note to this sighting');if(!note)return;
+    const bird=$('bird').value.trim()||'gurt';
+    await api('/sighting/'+id+'/note',{note:note,bird:bird});
+    await ntfyPost({type:'note',id:id,note:note,bird:bird});
+    events[id]=events[id]||[];events[id].push({bird:bird,note:note});
+    render();$('status').textContent='note added.';
+  }
+});
+
+refresh().then(function(){ $('status').textContent='the bird book is open.'; });
+setInterval(refresh,20000);
+</script>
+</body>
+</html>
