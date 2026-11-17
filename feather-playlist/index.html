@@ -198,7 +198,10 @@ async function load(){
   }
   var local=playlists.slice();
   playlists=merge(res&&res.playlists?res.playlists:[],Object.values(boardPl));
-  local.forEach(function(p){if(!playlists.some(function(x){return x.id===p.id;}))playlists.push(p);});
+  local.forEach(function(p){
+    var i=playlists.findIndex(function(x){return x.id===p.id;});
+    if(i>=0)playlists[i]=richer(playlists[i],p); else playlists.push(p);
+  });
   saveLocal();
   renderStats();renderSelects();render();
 }
