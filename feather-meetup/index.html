@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Feather Meetup — the flock's shared meetup board</title>
+<style>
+  :root{--bg:#141018;--panel:#201a2a;--line:#3a2f4a;--ink:#f2ecf7;--dim:#a596b5;--violet:#c39bff;--green:#7fd6a6;--amber:#f2c14e;--rose:#e88b8b}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:18px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,textarea,button{font-family:inherit;font-size:15px}
+  input,textarea{background:#171220;border:1px solid var(--line);border-radius:7px;padding:8px 10px;color:var(--ink)}
+  textarea{width:100%;min-height:60px;resize:vertical}
+  button{background:var(--violet);color:#1a1024;border:0;border-radius:7px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:normal}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:3px}
+  .field{display:flex;flex-direction:column}
+  .card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--violet);border-radius:10px;padding:12px;margin-bottom:12px}
+  .card h4{margin:0 0 4px;font-size:18px}
+  .meta{color:var(--dim);font-size:13px}
+  .notes{color:#d6c9e2;font-size:13px;margin:7px 0;white-space:pre-wrap}
+  #stats{color:var(--dim);font-size:14px;margin-left:auto}
+  #msg{color:var(--dim);font-size:13px}
+  .rsvps{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+  .pill{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 9px;color:var(--dim)}
+  .pill.going{color:var(--green);border-color:var(--green)}
+  .pill.maybe{color:var(--amber);border-color:var(--amber)}
+  .pill.no{color:var(--rose);border-color:var(--rose)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Meetup</h1>
+  <p class="sub">where the flock gathers, and who is coming.</p>
+
+  <div class="panel"><div class="row"><strong>the board</strong><span id="stats">loading…</span></div></div>
+
+  <div class="panel">
+    <h3 style="margin-top:0">plan a meetup</h3>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:220px"><label>what's happening?</label><input id="fTitle" placeholder="seeds and rain at the big pond"></div>
+      <div class="field"><label>your name</label><input id="fBird" value="gurt"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="field" style="flex:1;min-width:200px"><label>where?</label><input id="fPlace" placeholder="the big pond"></div>
+      <div class="field" style="flex:1;min-width:200px"><label>when?</label><input id="fWhen" placeholder="tomorrow, sunset"></div>
+    </div>
+    <div style="margin-top:10px"><label>notes</label><textarea id="fNotes" placeholder="bring a snack"></textarea></div>
+    <div class="row" style="margin-top:10px"><button id="make">add meetup</button><span id="msg"></span></div>
+  </div>
+
+  <div id="list"></div>
+</div>
+<script>
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600'];
+var NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-meetup';
+var LS = 'fmu-meetups';
+var meetups = [];
+var rsvps = [];
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},ms);})]);}
+async function api(path,opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      var r=await timed(fetch(API_BASES[i]+'/api/feathermeetup'+path,opts),4000);
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){return [];}}
+function localSave(){try{localStorage.setItem(LS,JSON.stringify({meetups:meetups,rsvps:rsvps}));}catch(e){}}
+async function fromNtfy(){
+  try{
+    var r=await timed(fetch(NTFY+'/json?poll=1&since=24h'),5000);
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m=JSON.parse(line);
+        if(m.event!=='message'||!m.message) return;
+        var p=JSON.parse(m.message);
+        if(p&&p.type==='meetup'&&p.meetup) out.push({meetup:p.meetup});
+        else if(p&&p.type==='rsvp'&&p.rsvp) out.push({rsvp:p.rsvp});
+        else if(p&&p.type==='delete') out.push({deleted:true,id:p.id});
+      }catch(e){}
+    });
+    return out;
+  }catch(e){return [];}
+}
+async function ntfyPost(payload){
+  try{ await timed(fetch(NTFY,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)}),4000); }catch(e){}
+}
+function mergeById(a,b,key){
+  var map={}; var order=[];
+  function put(x){ if(!x||!x.id) return; if(!map[x.id]) order.push(x.id); map[x.id]=x; }
+  a.forEach(put); b.forEach(put);
+  return order.map(function(id){return map[id];});
+}
+async function load(){
+  var j=await api('/meetups');
+  if(j&&j.meetups){ meetups=j.meetups; rsvps=j.rsvps||[]; }
+  else { var loc=localLoad(); meetups=loc.meetups||[]; rsvps=loc.rsvps||[]; }
+  var posts=await fromNtfy();
+  posts.forEach(function(p){
+    if(p&&p.deleted){ meetups=meetups.filter(function(m){return m.id!==p.id;}); rsvps=rsvps.filter(function(r){return r.meetup!==p.id;}); return; }
+    if(p&&p.meetup&&p.meetup.id) meetups=mergeById(meetups,[p.meetup],'id');
+    if(p&&p.rsvp&&p.rsvp.id) rsvps=mergeById(rsvps,[p.rsvp],'id');
+  });
+  localSave(); render();
+}
+async function makeMeetup(){
+  var title=document.getElementById('fTitle').value.trim();
+  if(!title){ document.getElementById('msg').textContent='name the meetup first.'; return; }
+  var m={id:'loc'+Date.now().toString(36),title:title,place:document.getElementById('fPlace').value.trim(),
+    when_at:document.getElementById('fWhen').value.trim(),notes:document.getElementById('fNotes').value.trim(),
+    bird:document.getElementById('fBird').value.trim()||'gurt',created:new Date().toISOString()};
+  var j=await api('/meetups/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)});
+  if(j&&j.meetup){ m=j.meetup; document.getElementById('msg').textContent='meetup added to the shared board.'; }
+  else document.getElementById('msg').textContent='meetup added locally (backend sleeping).';
+  meetups=mergeById(meetups,[m],'id'); localSave();
+  await ntfyPost({type:'meetup',meetup:m});
+  document.getElementById('fTitle').value=''; document.getElementById('fPlace').value='';
+  document.getElementById('fWhen').value=''; document.getElementById('fNotes').value='';
+  render();
+}
+async function rsvp(id,answer){
+  var bird=document.getElementById('fBird').value.trim()||'gurt';
+  var r={id:'lrs'+Date.now().toString(36),meetup:id,bird:bird,answer:answer,created:new Date().toISOString()};
+  var j=await api('/meetups/rsvp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(r)});
+  if(j&&j.rsvp) r=j.rsvp;
+  rsvps=rsvps.filter(function(x){return !(x.meetup===id&&x.bird===bird);});
+  rsvps.push(r); localSave();
+  await ntfyPost({type:'rsvp',rsvp:r});
+  render();
+}
+async function remove(id){
+  await api('/meetups/'+id+'/delete',{method:'POST'});
+  meetups=meetups.filter(function(m){return m.id!==id;});
+  rsvps=rsvps.filter(function(r){return r.meetup!==id;}); localSave();
+  await ntfyPost({type:'delete',id:id});
+  render();
+}
+function card(m){
+  var mine=rsvps.filter(function(r){return r.meetup===m.id;});
+  var counts={going:0,maybe:0,no:0};
+  mine.forEach(function(r){ if(counts[r.answer]!==undefined) counts[r.answer]++; });
+  var pills=mine.map(function(r){return '<span class="pill '+esc(r.answer)+'">'+esc(r.bird)+' · '+esc(r.answer)+'</span>';}).join('');
+  return '<div class="card"><h4>'+esc(m.title)+'</h4>'+
+    '<div class="meta">'+esc(m.place||'somewhere')+(m.when_at?' · '+esc(m.when_at):'')+' · by '+esc(m.bird)+'</div>'+
+    (m.notes?'<div class="notes">'+esc(m.notes)+'</div>':'')+
+    '<div class="row" style="margin-top:8px">'+
+    '<button onclick="rsvp(\''+m.id+'\',\'going\')">going</button>'+
+    '<button class="ghost" onclick="rsvp(\''+m.id+'\',\'maybe\')">maybe</button>'+
+    '<button class="ghost" onclick="rsvp(\''+m.id+'\',\'no\')">not this time</button>'+
+    '<button class="ghost" onclick="remove(\''+m.id+'\')">delete</button>'+
+    '<span class="meta">'+counts.going+' going · '+counts.maybe+' maybe</span></div>'+
+    (pills?'<div class="rsvps">'+pills+'</div>':'')+
+    '</div>';
+}
+function render(){
+  document.getElementById('list').innerHTML=meetups.map(card).join('')||'<div class="panel meta">no meetups yet. plan one.</div>';
+  var going=rsvps.filter(function(r){return r.answer==='going';}).length;
+  document.getElementById('stats').textContent=meetups.length+' meetups · '+going+' going · '+new Set(meetups.map(function(m){return m.bird;})).size+' birds';
+}
+document.getElementById('make').onclick=makeMeetup;
+load();
+</script>
+</body>
+</html>
