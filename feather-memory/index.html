@@ -73,7 +73,7 @@ var NTFY = ['https://ntfy.nerdvpn.de','https://ntfy.sh'];
 var TOPIC = 'feather-memory';
 var DECKS = {
   garden: ['🌱','🍄','🌻','🌿','🪴','🌷','🍂','🪻'],
-  feathers: ['🪶','🕊️','🦆','🐦','🦉','🪺','🥚','🪶'],
+  feathers: ['🪶','🕊','🦆','🐦','🦉','🧺','🥚','💩'],
   stars: ['⭐','🌙','☄️','🌌','✨','🪐','🌟','🌕']
 };
 var cards=[], open=[], matched=0, moves=0, started=0, timer=null, busy=false, finished=false;
@@ -174,7 +174,7 @@ function ntfyPost(payload){
 function ntfyRead(){
   return NTFY.reduce(function(chain,base){
     return chain.then(function(acc){
-      return fetch(base+'/'+TOPIC+'/json?poll=1&limit=500',{cache:'no-store'})
+      return fetch(base+'/'+TOPIC+'/json?poll=1&limit=500',{cache:'no-store',signal:AbortSignal.timeout(6000)})
         .then(function(r){return r.text();})
         .then(function(txt){
           txt.split('\n').filter(Boolean).forEach(function(line){
@@ -209,6 +209,7 @@ async function save(seconds){
 async function loadRuns(){
   var res=await api('/runs');
   var apiRuns=(res&&res.runs)||[];
+  renderRuns(mergeRuns(apiRuns,localRuns()));
   var board=await ntfyRead();
   var boardRuns=board.filter(function(m){return m&&m.type==='run'&&m.run;}).map(function(m){return m.run;});
   var runs=mergeRuns(apiRuns,boardRuns);
