@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feather Tally — shared counters for the flock</title>
+<style>
+  :root{--bg:#171320;--panel:#221c2e;--line:#342b45;--ink:#efe9f7;--dim:#a396b8;--pink:#ef8bb7;--lime:#b6dd7a}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Georgia,serif;background:var(--bg);color:var(--ink);padding:18px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{margin:0 0 2px;font-size:27px}
+  .sub{color:var(--dim);font-style:italic;margin:0 0 16px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input,button{font-family:inherit;font-size:15px}
+  input{background:#15111d;border:1px solid var(--line);border-radius:7px;padding:8px 10px;color:var(--ink)}
+  button{background:var(--pink);color:#25121d;border:0;border-radius:7px;padding:9px 14px;cursor:pointer;font-weight:bold}
+  button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:normal}
+  label{display:block;font-size:12px;color:var(--dim);margin-bottom:3px}
+  .field{display:flex;flex-direction:column}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .card h3{margin:0 0 2px;font-size:18px}
+  .meta{color:var(--dim);font-size:13px}
+  .num{font-size:34px;font-weight:bold;color:var(--lime);margin:6px 0}
+  #stats{color:var(--dim);font-size:14px;margin-left:auto}
+  #msg{color:var(--dim);font-size:13px}
+  .log{color:var(--dim);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Feather Tally</h1>
+  <p class="sub">shared counters for the flock. count anything, together.</p>
+
+  <div class="panel">
+    <div class="row"><strong>the tally shelf</strong><span id="stats">loading…</span></div>
+  </div>
+
+  <div class="panel">
+    <h3 style="margin-top:0">start a new tally</h3>
+    <div class="row">
+      <div class="field" style="flex:1;min-width:200px"><label>what are we counting?</label><input id="fTitle" placeholder="seeds eaten today"></div>
+      <div class="field"><label>your name</label><input id="fBird" value="gurt"></div>
+      <div class="field"><label>unit</label><input id="fUnit" value="seeds"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="make">start tally</button>
+      <span id="msg"></span>
+    </div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+</div>
+<script>
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600'];
+var NTFY = 'https://ntfy.nerdvpn.de/gurt-feather-tally';
+var LS = 'ft-counters';
+var counters = [];
+var bumps = [];
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&#38;').replace(/</g,'&#60;').replace(/>/g,'&#62;').replace(/"/g,'&#34;');}
+function timed(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},ms);})]);}
+
+async function api(path,opts){
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      var r=await timed(fetch(API_BASES[i]+'/api/feathertally'+path,opts),4000);
+      if(r.ok) return await r.json();
+    }catch(e){}
+  }
+  return null;
+}
+function localLoad(){try{return JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){return [];}}
+function localSave(){try{localStorage.setItem(LS,JSON.stringify(counters));}catch(e){}}
+
+async function fromNtfy(){
+  try{
+    var r=await timed(fetch(NTFY+'/json?poll=1&since=24h'),5000);
+    if(!r.ok) return [];
+    var txt=await r.text(); var out=[];
+    txt.split('\n').filter(Boolean).forEach(function(line){
+      try{
+        var m=JSON.parse(line);
+        if(m.event!=='message'||!m.message) return;
+        var p=JSON.parse(m.message);
+        if(p&&p.type==='counter') out.push({counter:p.counter});
+        else if(p&&p.type==='bump') out.push({counter:p.counter,bump:p.bump});
+        else if(p&&p.type==='delete') out.push({deleted:true,id:p.id});
+      }catch(e){}
+    });
+    return out;
+  }catch(e){return [];}
+}
+async function ntfyPost(payload){
+  try{ await timed(fetch(NTFY,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)}),4000); }catch(e){}
+}
+
+function mergeById(a,b){
+  var map={}; var order=[];
+  function put(x){ if(!x||!x.id) return; if(!map[x.id]) order.push(x.id); map[x.id]=x; }
+  a.forEach(put); b.forEach(put);
+  return order.map(function(id){return map[id];});
+}
+
+async function load(){
+  var j=await api('/counters');
+  if(j&&j.counters){ counters=j.counters; bumps=j.bumps||[]; } else counters=localLoad();
+  var posts=await fromNtfy();
+  posts.forEach(function(p){
+    if(p&&p.deleted){ counters=counters.filter(function(c){return c.id!==p.id;}); return; }
+    if(p&&p.counter&&p.counter.id){
+      counters=mergeById(counters,[p.counter]);
+      if(p.bump) bumps=mergeById(bumps,[p.bump]);
+    }
+  });
+  localSave(); render();
+}
+
+async function makeCounter(){
+  var title=document.getElementById('fTitle').value.trim();
+  if(!title){ document.getElementById('msg').textContent='name the tally first.'; return; }
+  var c={id:'loc'+Date.now().toString(36),title:title,bird:document.getElementById('fBird').value.trim()||'gurt',
+    unit:document.getElementById('fUnit').value.trim()||'things',count:0,created:new Date().toISOString()};
+  var j=await api('/counters/new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});
+  if(j&&j.counter){ c=j.counter; document.getElementById('msg').textContent='tally started on the shared board.'; }
+  else document.getElementById('msg').textContent='tally started locally (backend sleeping).';
+  counters=mergeById(counters,[c]); localSave();
+  await ntfyPost({type:'counter',counter:c});
+  document.getElementById('fTitle').value='';
+  render();
+}
+
+async function bump(id,amount){
+  var c=counters.filter(function(x){return x.id===id;})[0]; if(!c) return;
+  c.count=(c.count||0)+amount; localSave();
+  var b={id:'locb'+Date.now().toString(36),counter:id,bird:document.getElementById('fBird').value.trim()||'gurt',amount:amount,note:'',created:new Date().toISOString()};
+  var j=await api('/counters/'+id+'/bump',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:amount,bird:b.bird})});
+  if(j&&j.counter){ c=j.counter; if(j.bump) b=j.bump; }
+  bumps=mergeById(bumps,[b]);
+  await ntfyPost({type:'bump',counter:c,bump:b});
+  render();
+}
+
+async function reset(id){
+  var c=counters.filter(function(x){return x.id===id;})[0]; if(!c) return;
+  c.count=0; localSave();
+  var j=await api('/counters/'+id+'/set',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({count:0})});
+  if(j&&j.counter) c=j.counter;
+  await ntfyPost({type:'counter',counter:c});
+  render();
+}
+
+async function remove(id){
+  await api('/counters/'+id+'/delete',{method:'POST'});
+  counters=counters.filter(function(c){return c.id!==id;}); localSave();
+  await ntfyPost({type:'delete',id:id});
+  render();
+}
+
+function render(){
+  var el=document.getElementById('cards');
+  var ticks=counters.reduce(function(a,c){return a+(c.count||0);},0);
+  document.getElementById('stats').textContent=counters.length+' tallies · '+ticks+' ticks · '+new Set(counters.map(function(c){return c.bird;})).size+' birds';
+  el.innerHTML=counters.map(function(c){
+    var mine=bumps.filter(function(b){return b.counter===c.id;}).slice(0,3);
+    return '<div class="card"><h3>'+esc(c.title)+'</h3>'+
+      '<div class="meta">by '+esc(c.bird)+' · '+esc(c.unit)+'</div>'+
+      '<div class="num">'+Math.round(c.count||0)+'</div>'+
+      '<div class="row"><button onclick="bump(\''+c.id+'\',1)">+1</button>'+
+      '<button class="ghost" onclick="bump(\''+c.id+'\',10)">+10</button>'+
+      '<button class="ghost" onclick="reset(\''+c.id+'\')">reset</button>'+
+      '<button class="ghost" onclick="remove(\''+c.id+'\')">delete</button></div>'+
+      (mine.length?'<div class="log">'+mine.map(function(b){return esc(b.bird)+' +'+b.amount;}).join(' · ')+'</div>':'')+
+      '</div>';
+  }).join('');
+}
+
+document.getElementById('make').onclick=makeCounter;
+load();
+</script>
+</body>
+</html>
