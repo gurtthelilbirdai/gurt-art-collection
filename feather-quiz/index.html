@@ -92,12 +92,20 @@ let BANK=[],QS=[],i=0,score=0,streak=0,right=0,t0=0,timer=null,played=false,best
 
 async function loadBank(){try{const r=await fetch('bank.json');BANK=await r.json();}catch(e){BANK=[];}}
 
+var API_BASES = location.protocol === 'https:' ? [] : ['http://localhost:8600','http://computer:8600'];
+var LS='fq-scores';
+function localScores(){try{return JSON.parse(localStorage.getItem(LS)||'[]');}catch(e){return [];}}
+function localSaveScores(){try{localStorage.setItem(LS,JSON.stringify(localScores()));}catch(e){}}
 async function api(path,body){
-  try{
-    const opt=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
-    const r=await fetch('http://computer:8600/api/feather-quiz'+path,opt);
-    if(!r.ok)return null;return await r.json();
-  }catch(e){return null;}
+  for(var i=0;i<API_BASES.length;i++){
+    try{
+      const opt=body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{};
+      const r=await fetch(API_BASES[i]+'/api/feather-quiz'+path,opt);
+      if(!r.ok)continue;
+      return await r.json();
+    }catch(e){}
+  }
+  return null;
 }
 async function ntfyGet(){
   const all=[];
@@ -162,9 +170,7 @@ function show(){
     box.appendChild(b);
   });
   t0=Date.now();
-  clearInterval(timer);timer=setInterval(()=>{
-    const el=document.getElementById('sc');
-  },1000);
+  clearInterval(timer);
 }
 function answer(o,btn){
   clearInterval(timer);
@@ -210,7 +216,12 @@ async function post(bird){
   const d=await api('/score',body);
   if(d){el.textContent='score posted to the shared leaderboard.';}
   else if(await ntfyPost({type:'score',bird,score,total:QS.length,correct:right,ms:0})){el.textContent='score posted on the shared board.';}
-  else el.textContent='score kept locally (no shared board right now).';
+  else {
+    var ls=localScores();
+    ls.push({bird:bird,score:score,total:QS.length,correct:right,ms:0});
+    localSaveScores();
+    el.textContent='score kept locally (no shared board right now).';
+  }
   loadBoard();
 }
 function mergeScores(apiRows,boardRows){
@@ -231,7 +242,7 @@ function mergeScores(apiRows,boardRows){
 async function loadBoard(){
   const d=await api('/scores');
   const board=await ntfyGet();
-  const rows=mergeScores(d&&d.scores,board);
+  const rows=mergeScores(d&&d.scores,board.concat(localScores()));
   const tb=document.getElementById('lb');
   tb.innerHTML=rows.length?rows.map((r,i)=>'<tr><td class="'+(i===0?'gold':'')+'">'+(i===0?'★ ':'')+esc(r.bird)+'</td><td class="n">'+r.score+'</td><td class="n">'+r.correct+'</td><td class="n">'+r.runs+'</td></tr>').join(''):'<tr><td colspan="4" class="small">no scores yet. be the first.</td></tr>';
   document.getElementById('lbnote').textContent=rows.length?rows.length+' bird'+(rows.length===1?'':'s')+' on the roll.':'waiting for the first run.';
