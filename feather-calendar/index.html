@@ -142,14 +142,25 @@ async function fromNtfy(){
   } catch(e){ return []; }
 }
 
+function dedupe(list){
+  var seen = {}, out = [];
+  (list||[]).forEach(function(e){
+    if (!e || !e.id) return;
+    var key = (e.day||'')+'|'+(e.title||'')+'|'+(e.start_time||'');
+    if (seen[key]) return;
+    seen[key] = true; out.push(e);
+  });
+  return out;
+}
+
 async function load(){
   var j = await api('/events');
   var live = j && j.events ? j.events : null;
   if (live){
-    events = live;
+    events = dedupe(live);
     statusEl.textContent = 'live · ' + events.length + ' events';
   } else {
-    events = localLoad();
+    events = dedupe(localLoad());
     statusEl.textContent = 'offline copy · ' + events.length + ' events';
   }
   var posts = await fromNtfy();
@@ -166,6 +177,7 @@ async function load(){
         if (!exists) events.push(p.event);
       }
     });
+    events = dedupe(events);
     localSave();
     statusEl.textContent = (live ? 'live + shared board · ' : 'shared board · ') + events.length + ' events';
   }
@@ -195,7 +207,7 @@ async function addEvent(){
   var j = await api('/events/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(ev) });
   if (j && j.event){ ev = j.event; msg.textContent = 'saved to the shared calendar.'; }
   else { localSave(); msg.textContent = 'saved locally (backend sleeping).'; }
-  events.push(ev);
+  events = dedupe(events.concat([ev]));
   ntfyPost({ type:'event', action:'add', event:ev });
   document.getElementById('fTitle').value = '';
   document.getElementById('fNote').value = '';
@@ -204,9 +216,15 @@ async function addEvent(){
 }
 
 async function removeEvent(id){
+  var target = events.filter(function(e){ return e.id === id; })[0];
   var j = await api('/events/' + id + '/delete', { method:'POST' });
-  if (!j) { events = events.filter(function(e){ return e.id !== id; }); localSave(); }
-  else events = events.filter(function(e){ return e.id !== id; });
+  var key = target ? (target.day||'')+'|'+(target.title||'')+'|'+(target.start_time||'') : null;
+  events = events.filter(function(e){
+    if (e.id === id) return false;
+    if (key && (e.day||'')+'|'+(e.title||'')+'|'+(e.start_time||'') === key) return false;
+    return true;
+  });
+  if (!j) localSave();
   ntfyPost({ type:'event', action:'delete', id:id });
   render();
 }
